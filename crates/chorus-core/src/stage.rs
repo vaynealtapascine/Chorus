@@ -3,7 +3,8 @@
 //!
 //! A stage is a *view definition* over real items — nothing here writes data. It lives in core so
 //! a saved stage renders the same on the web and on Android. Rendering (styles, blur, width) is
-//! the client's; those options pass through in `render` untouched.
+//! the client's; those options pass through in `render` untouched, except a custom theme's three
+//! colours, which core turns into a whole palette so both clients draw the same one.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -75,7 +76,13 @@ pub struct Definition {
     pub redact_names: bool,
     pub fake_names: BTreeMap<String, FakeName>,
     pub time: TimeOverride,
-    /// Client rendering options (style, theme, width, blur, hide_reactions…), passed through.
+    /// Words blacked out, per item: `[start, end)` ranges in UTF-16 code units of the item's text
+    /// (what Kotlin and JavaScript strings count). The plan hands them back sorted and merged.
+    pub blackout: BTreeMap<String, Vec<[u32; 2]>>,
+    /// Client rendering options, passed through: `style`, `theme` (`auto`/`light`/`dark`/`custom`
+    /// with `palette: {bg, ink, accent}`), `width` (`phone`/`square`/`wide`), `blur_avatars`,
+    /// `blur_attachments`, `hide_header`, `hide_reply_bars`, `hide_reactions`,
+    /// `hide_thread_previews`, `hide_dates`, `hide_counts`.
     pub render: Value,
 }
 
@@ -90,6 +97,9 @@ pub enum Row {
         at: Option<i64>,
         /// Whether the item this replies to is on stage (else the client hides the reply bar).
         reply_shown: bool,
+        /// Blacked-out ranges of its text, sorted and merged (omitted when none).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        blackout: Vec<[u32; 2]>,
     },
     /// Consecutive unselected items folded into one quiet row ("3 messages").
     Context { ids: Vec<String>, count: usize },
@@ -101,6 +111,72 @@ pub struct Plan {
     pub rows: Vec<Row>,
     /// member id → the name/colour to show instead of the real one (only overridden members).
     pub names: BTreeMap<String, FakeName>,
+    /// A custom theme's whole palette (`render.theme: "custom"` with a valid `render.palette`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub palette: Option<Palette>,
+}
+
+/// Every colour a stage preview uses, derived from a custom theme's background, text and accent.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Palette {
+    pub dark: bool,
+    pub bg: String,
+    pub surface: String,
+    pub surface2: String,
+    pub surface3: String,
+    pub line: String,
+    pub ink: String,
+    pub ink2: String,
+    pub ink3: String,
+    pub accent: String,
+    pub accent_soft: String,
+    pub on_accent: String,
+    pub bubble_out: String,
+}
+
+/// `{bg, ink, accent}` → the full palette: surfaces step from the background towards the text,
+/// softer inks step back towards the background, and the ink on the accent is whichever of black
+/// and white reads better.
+pub fn custom_palette(render: &Value) -> Option<Palette> {
+    if render.get("theme").and_then(Value::as_str) != Some("custom") {
+        return None;
+    }
+    let colors = render.get("palette")?;
+    let pick = |k: &str| colors.get(k).and_then(Value::as_str).and_then(crate::color::Rgb::parse);
+    let (bg, ink, accent) = (pick("bg")?, pick("ink")?, pick("accent")?);
+    let white = crate::color::Rgb { r: 1.0, g: 1.0, b: 1.0 };
+    let black = crate::color::Rgb { r: 0.0, g: 0.0, b: 0.0 };
+    let on_accent =
+        if crate::color::contrast(accent, white) >= crate::color::contrast(accent, black) { white } else { black };
+    Some(Palette {
+        dark: crate::color::luminance(bg) < crate::color::luminance(ink),
+        bg: bg.hex(),
+        surface: bg.mix(ink, 0.05).hex(),
+        surface2: bg.mix(ink, 0.09).hex(),
+        surface3: bg.mix(ink, 0.15).hex(),
+        line: bg.mix(ink, 0.14).hex(),
+        ink: ink.hex(),
+        ink2: ink.mix(bg, 0.25).hex(),
+        ink3: ink.mix(bg, 0.45).hex(),
+        accent: accent.hex(),
+        accent_soft: bg.mix(accent, 0.18).hex(),
+        on_accent: on_accent.hex(),
+        bubble_out: bg.mix(accent, 0.25).hex(),
+    })
+}
+
+/// Sorted, merged, non-empty ranges.
+fn merge_ranges(ranges: &[[u32; 2]]) -> Vec<[u32; 2]> {
+    let mut v: Vec<[u32; 2]> = ranges.iter().filter(|r| r[0] < r[1]).copied().collect();
+    crate::sort::by_key(&mut v, |r| (r[0], r[1]));
+    let mut out: Vec<[u32; 2]> = Vec::with_capacity(v.len());
+    for r in v {
+        match out.last_mut() {
+            Some(last) if r[0] <= last[1] => last[1] = last[1].max(r[1]),
+            _ => out.push(r),
+        }
+    }
+    out
 }
 
 fn placeholder(n: usize) -> String {
@@ -197,6 +273,7 @@ pub fn plan(items: &[Item], def: &Definition) -> Plan {
                     selected: *selected,
                     at: shown_at(it),
                     reply_shown: it.reply_to.as_deref().is_some_and(|r| on_stage.contains(r)),
+                    blackout: def.blackout.get(&it.id).map(|r| merge_ranges(r)).unwrap_or_default(),
                 });
             }
         }
@@ -223,7 +300,7 @@ pub fn plan(items: &[Item], def: &Definition) -> Plan {
     for (id, f) in &def.fake_names {
         names.insert(id.clone(), f.clone());
     }
-    Plan { rows, names }
+    Plan { rows, names, palette: custom_palette(&def.render) }
 }
 
 #[cfg(test)]
@@ -326,6 +403,27 @@ mod tests {
         // a cycle terminates
         v[0].reply_to = Some("4".into());
         assert_eq!(ids(&plan(&v, &d(Some(0)))), Vec::<String>::new());
+    }
+
+    #[test]
+    fn blackout_ranges_merge_and_custom_palettes_derive() {
+        let d = Definition {
+            blackout: BTreeMap::from([("2".to_string(), vec![[8, 12], [0, 3], [2, 5], [7, 7]])]),
+            render: serde_json::json!({"theme": "custom", "palette": {"bg": "#102030", "ink": "#ffffff", "accent": "#42a397"}}),
+            ..Default::default()
+        };
+        let p = plan(&items(), &d);
+        assert!(matches!(&p.rows[1], Row::Item { blackout, .. } if blackout == &vec![[0, 5], [8, 12]]));
+        assert!(matches!(&p.rows[0], Row::Item { blackout, .. } if blackout.is_empty()));
+        let palette = p.palette.expect("custom palette");
+        assert!(palette.dark);
+        assert_eq!(palette.bg, "#102030");
+        assert_eq!(palette.on_accent, "#000000");
+        let plain = Definition {
+            render: serde_json::json!({"theme": "custom", "palette": {"bg": "nope"}}),
+            ..Default::default()
+        };
+        assert_eq!(plan(&items(), &plain).palette, None);
     }
 
     #[test]

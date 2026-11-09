@@ -2,11 +2,11 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { core, loadCore, type FrontHistoryInterval, type FrontPresence, type FrontSystem, type SpeakerContext } from './index';
-import { project } from './pkg/chorus_wasm.js';
+import { project, stagePlan } from './pkg/chorus_wasm.js';
 
 interface Fixture { fn: string; args: unknown[]; expect: unknown }
 const fixtureRoot = new URL('../../../../fixtures/', import.meta.url);
-const fixtures = ['front_system', 'front_history', 'front_effective', 'front_runtime'].flatMap((area) => {
+const fixtures = ['front_system', 'front_history', 'front_effective', 'front_runtime', 'stage'].flatMap((area) => {
   const directory = new URL(`${area}/`, fixtureRoot);
   return readdirSync(directory).filter((file) => file.endsWith('.json')).sort().map((file) => ({
     name: `${area}/${file}`,
@@ -47,6 +47,9 @@ describe('named-front conformance through the actual wasm bridge', () => {
           break;
         case 'default_speaker_for_front':
           got = core.defaultSpeakerForFront(args[0] as SpeakerContext, args[1] as FrontSystem, args[2] as string, args[3] as string);
+          break;
+        case 'stage_plan':
+          got = JSON.parse(stagePlan(JSON.stringify(args[0]), JSON.stringify(args[1])));
           break;
         default: throw new Error(`Unsupported front fixture: ${data.fn}`);
       }

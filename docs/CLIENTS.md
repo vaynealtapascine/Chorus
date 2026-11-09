@@ -434,6 +434,10 @@ Measured 2026-09-25 (headless Chromium, remote box, minified build, three runs):
 - Fake names/times are a render-time override map in the stage state
   (`{names:{member_id→{label,color}}, time:{mode:'shift'|'start'|'manual', …}}`); the renderer
   substitutes them at display time only. Nothing is written to messages.
+- Black-outs and a custom theme (D-144) also go through core: the definition holds raw UTF-16
+  ranges and three colours, `stagePlan` returns merged ranges per row and the derived palette.
+  Android lays a square or wide stage out at its web width and shrinks it to fit the screen, so a
+  screenshot keeps the web's proportions.
 
 ## 5a. App updates (Android, D-051)
 

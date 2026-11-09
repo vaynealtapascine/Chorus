@@ -1,0 +1,104 @@
+{
+  "args": [
+    [
+      {
+        "at": 1000,
+        "authors": [
+          "kai"
+        ],
+        "id": "m1",
+        "reply_to": null
+      },
+      {
+        "at": 61000,
+        "authors": [
+          "june"
+        ],
+        "id": "m2",
+        "reply_to": "m1"
+      },
+      {
+        "at": 121000,
+        "authors": [
+          "june"
+        ],
+        "id": "m3",
+        "reply_to": null
+      },
+      {
+        "at": 181000,
+        "authors": [
+          "kai"
+        ],
+        "id": "m4",
+        "reply_to": "m3"
+      },
+      {
+        "at": 241000,
+        "authors": [
+          "moss"
+        ],
+        "id": "m5",
+        "reply_to": null
+      }
+    ],
+    {
+      "render": {
+        "hide_dates": true,
+        "hide_reactions": true,
+        "hide_thread_previews": true,
+        "style": "minimal",
+        "width": "wide"
+      },
+      "time": {
+        "at": {
+          "m2": 5000,
+          "m4": 7000
+        },
+        "mode": "manual"
+      }
+    }
+  ],
+  "description": "By hand: listed items take their own time, the rest keep theirs; render options pass through untouched",
+  "expect": {
+    "names": {},
+    "rows": [
+      {
+        "at": 1000,
+        "id": "m1",
+        "kind": "item",
+        "reply_shown": false,
+        "selected": true
+      },
+      {
+        "at": 5000,
+        "id": "m2",
+        "kind": "item",
+        "reply_shown": true,
+        "selected": true
+      },
+      {
+        "at": 121000,
+        "id": "m3",
+        "kind": "item",
+        "reply_shown": false,
+        "selected": true
+      },
+      {
+        "at": 7000,
+        "id": "m4",
+        "kind": "item",
+        "reply_shown": true,
+        "selected": true
+      },
+      {
+        "at": 241000,
+        "id": "m5",
+        "kind": "item",
+        "reply_shown": false,
+        "selected": true
+      }
+    ]
+  },
+  "fn": "stage_plan"
+}

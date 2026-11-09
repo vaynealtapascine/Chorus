@@ -38,7 +38,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
@@ -53,8 +62,11 @@ import garden.vayne.chorus.data.ForeignAuthor
 import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.SavedStage
 import garden.vayne.chorus.data.StagePlan
+import garden.vayne.chorus.designsystem.ChorusPalette
+import garden.vayne.chorus.designsystem.LocalChorusDark
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import garden.vayne.chorus.designsystem.R
+import garden.vayne.chorus.designsystem.Tokens
 import java.text.DateFormat
 import java.util.Date
 import org.json.JSONObject
@@ -93,7 +105,103 @@ internal fun countLabel(n: Int, one: String, many: String = one + "s") = "$n ${i
 
 /** What a stage hides, in a few words, for its subtitle and its saved row. */
 internal fun stageRedacted(s: StagePlan.Settings) =
-    s.redactNames || s.blurAvatars || s.timeMode == "hide" || s.hideHeader || s.blurAttachments
+    s.redactNames || s.blurAvatars || s.timeMode == "hide" || s.hideHeader || s.blurAttachments || s.blackout.isNotEmpty()
+
+/** The palette a stage's preview is drawn in, and whether it is dark: its theme, a custom one as
+ * core derived it, or the app's own. */
+@Composable
+internal fun stagePalette(s: StagePlan.Settings, custom: StagePlan.Palette?): Pair<ChorusPalette, Boolean> {
+    val host = LocalChorusPalette.current
+    val hostDark = LocalChorusDark.current
+    return when {
+        s.theme == "light" -> Tokens.Light to false
+        s.theme == "dark" -> Tokens.Dark to true
+        s.theme == "custom" && custom != null -> {
+            val base = if (custom.dark) Tokens.Dark else Tokens.Light
+            fun c(key: String, fallback: Color) = custom.colors[key]?.let { ColourValue.normalize(it) }?.let(ColourValue::rgb) ?: fallback
+            base.copy(bg = c("bg", base.bg), surface = c("surface", base.surface), surface2 = c("surface2", base.surface2),
+                surface3 = c("surface3", base.surface3), line = c("line", base.line), ink = c("ink", base.ink), ink2 = c("ink2", base.ink2),
+                ink3 = c("ink3", base.ink3), accent = c("accent", base.accent), accentSoft = c("accent_soft", base.accentSoft),
+                onAccent = c("on_accent", base.onAccent), bubbleOut = c("bubble_out", base.bubbleOut)) to custom.dark
+        }
+        else -> host to hostDark
+    }
+}
+
+/** Lays [content] out at a stage width (F8.4: phone, square, wide) and shrinks it to fit the
+ * screen, so a wide stage keeps the web's proportions on a phone. */
+internal fun Modifier.stageWidth(width: String): Modifier = layout { measurable, constraints ->
+    val target = (StagePlan.WIDTHS[width] ?: 390).dp.roundToPx()
+    if (width == "phone" || !constraints.hasBoundedWidth || target <= constraints.maxWidth) {
+        val w = minOf(constraints.maxWidth, target)
+        val placeable = measurable.measure(constraints.copy(minWidth = w, maxWidth = w))
+        return@layout layout(constraints.maxWidth, placeable.height) { placeable.place((constraints.maxWidth - placeable.width) / 2, 0) }
+    }
+    val scale = constraints.maxWidth.toFloat() / target
+    val height = if (constraints.hasBoundedHeight) (constraints.maxHeight / scale).toInt() else constraints.maxHeight
+    val placeable = measurable.measure(constraints.copy(minWidth = target, maxWidth = target,
+        minHeight = (constraints.minHeight / scale).toInt(), maxHeight = height))
+    layout(constraints.maxWidth, (placeable.height * scale).toInt()) {
+        placeable.placeWithLayer(0, 0) {
+            scaleX = scale; scaleY = scale
+            transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
+        }
+    }
+}
+
+/** The word around [index] in [text], or null on a space. */
+internal fun stageWordAt(text: String, index: Int): IntRange? {
+    if (text.isEmpty()) return null
+    var k = index.coerceIn(0, text.length - 1)
+    if (!text[k].isLetterOrDigit()) { if (k > 0 && text[k - 1].isLetterOrDigit()) k-- else return null }
+    var a = k
+    while (a > 0 && text[a - 1].isLetterOrDigit()) a--
+    var b = k
+    while (b < text.length - 1 && text[b + 1].isLetterOrDigit()) b++
+    return a..b
+}
+
+/**
+ * A message's text with its blacked-out [shown] ranges (core's, merged) drawn as solid bars. While
+ * [editing], a tap blacks out a word or gives one back, and a press-and-drag blacks out what it
+ * passes over (F8.6). [prefix] is drawn before the text and is never blacked out.
+ */
+@Composable
+internal fun StageText(text: String, shown: List<IntRange>, own: List<IntRange>, editing: Boolean, style: TextStyle,
+    onChange: (List<IntRange>) -> Unit, prefix: String = "") {
+    var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
+    var dragging by remember { mutableStateOf<IntRange?>(null) }
+    val annotated = buildAnnotatedString {
+        append(prefix); append(text)
+        for (r in shown + listOfNotNull(dragging)) {
+            val a = r.first.coerceIn(0, text.length)
+            val b = (r.last + 1).coerceIn(0, text.length)
+            if (a < b) addStyle(SpanStyle(color = Color.Black, background = Color.Black), prefix.length + a, prefix.length + b)
+        }
+    }
+    fun at(pos: Offset): Int? = layout?.getOffsetForPosition(pos)?.minus(prefix.length)?.takeIf { it >= 0 && it < text.length }
+    var start by remember { mutableStateOf<Int?>(null) }
+    Text(annotated, style = style, onTextLayout = { layout = it }, modifier = if (!editing) Modifier else Modifier
+        .pointerInput(text, own) {
+            detectTapGestures { pos ->
+                val i = at(pos) ?: return@detectTapGestures
+                val hit = own.filter { i in it }
+                if (hit.isNotEmpty()) onChange(own - hit.toSet())
+                else if (shown.none { i in it }) stageWordAt(text, i)?.let { onChange(own + listOf(it)) }
+            }
+        }
+        .pointerInput(text, own) {
+            detectDragGesturesAfterLongPress(onDragStart = { pos -> start = at(pos); dragging = start?.let { stageWordAt(text, it) } },
+                onDrag = { change, _ ->
+                    val from = start ?: return@detectDragGesturesAfterLongPress
+                    val to = at(change.position) ?: return@detectDragGesturesAfterLongPress
+                    val a = minOf(from, to); val b = maxOf(from, to)
+                    dragging = (stageWordAt(text, a)?.first ?: a)..(stageWordAt(text, b)?.last ?: b)
+                },
+                onDragEnd = { dragging?.let { onChange(own + listOf(it)) }; dragging = null; start = null },
+                onDragCancel = { dragging = null; start = null })
+        })
+}
 
 /** F8.2: close, the title over what is staged, save and the teal Capture pill. */
 @Composable
@@ -271,17 +379,38 @@ internal fun StageRedactPanel(s: StagePlan.Settings, onChange: (StagePlan.Settin
         if (chatName) ToggleRow("Hide the chat name", s.hideHeader, inset = 0.dp) { onChange(s.copy(hideHeader = it)) }
         ToggleRow("Blur photos and files", s.blurAttachments, inset = 0.dp) { onChange(s.copy(blurAttachments = it)) }
     }
+    if (s.blackout.isEmpty()) FormNote("To black out words, press and drag over them in the preview.", R.drawable.ic_select)
+    else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        StageChip("Clear black-outs") { onChange(s.copy(blackout = emptyMap())) }
+    }
 }
 
 /** F8.4: preset and theme. */
 @Composable
-internal fun StageStylePanel(s: StagePlan.Settings, hostDark: Boolean, onChange: (StagePlan.Settings) -> Unit) {
+internal fun StageStylePanel(s: StagePlan.Settings, hostDark: Boolean, widths: Boolean = true, onChange: (StagePlan.Settings) -> Unit) {
     StageLabel("Preset")
     StagePresets(s.style) { onChange(s.copy(style = it)) }
     StageLabel("Theme")
     val dark = s.theme == "dark" || s.theme == "auto" && hostDark
-    Segmented(listOf("Dark", "Light"), if (dark) 0 else 1, accent = true) { onChange(s.copy(theme = if (it == 0) "dark" else "light")) }
+    Segmented(listOf("Dark", "Light", "Custom"), if (s.theme == "custom") 2 else if (dark) 0 else 1, accent = true) {
+        onChange(when (it) {
+            0 -> s.copy(theme = "dark")
+            1 -> s.copy(theme = "light")
+            else -> s.copy(theme = "custom", palette = s.palette.takeIf { p -> p.size == 3 } ?: DEFAULT_CUSTOM)
+        })
+    }
+    if (s.theme == "custom") {
+        for ((key, label) in listOf("bg" to "Background", "ink" to "Text", "accent" to "Accent"))
+            ColourField(s.palette[key] ?: DEFAULT_CUSTOM.getValue(key), { onChange(s.copy(palette = s.palette + (key to it))) }, label = label)
+    }
+    if (widths) {
+        StageLabel("Width")
+        val values = listOf("phone", "square", "wide")
+        Segmented(listOf("Phone", "Square", "Wide"), values.indexOf(s.width), accent = true) { onChange(s.copy(width = values[it])) }
+    }
 }
+
+private val DEFAULT_CUSTOM = mapOf("bg" to "#F4EFE6", "ink" to "#2B211C", "accent" to "#247D73")
 
 /** F8.7: a fake name for each author and the shown times, for this stage only. */
 @Composable
@@ -294,14 +423,26 @@ internal fun StageNamesPanel(s: StagePlan.Settings, authors: List<StageAuthor>, 
             Avatar(a.glyph, a.color, 32.dp, avatarBlob = a.avatarBlob, ring = false)
             Text(a.name, color = p.ink2, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             Glyph(R.drawable.ic_chevron_right, p.ink3, 16.dp)
-            ChorusField(s.fakeNames[a.id].orEmpty(), { value ->
+            var picking by remember { mutableStateOf(false) }
+            val fake = s.fakeNames[a.id].orEmpty()
+            ChorusField(fake, { value ->
                 onChange(s.copy(fakeNames = s.fakeNames.toMutableMap().apply { if (value.isBlank()) remove(a.id) else put(a.id, value) }))
-            }, Modifier.weight(1.2f), singleLine = true, placeholder = { Text(a.name, color = p.ink3) })
+            }, Modifier.weight(1.2f), singleLine = true, placeholder = { Text(a.name, color = p.ink3) }, trailingIcon = {
+                val color = s.fakeColors[a.id]
+                Box(Modifier.size(32.dp).clip(CircleShape).clickable(enabled = fake.isNotBlank(), onClickLabel = "Colour for ${fake.ifBlank { a.name }}") {
+                    picking = true
+                }, contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(14.dp).background(color?.let(ColourValue::rgb) ?: p.ink3.copy(alpha = if (fake.isBlank()) .3f else .7f), CircleShape))
+                }
+            })
+            if (picking) ColourPicker(s.fakeColors[a.id] ?: a.color, onDismiss = { picking = false }, onApply = {
+                onChange(s.copy(fakeColors = s.fakeColors + (a.id to it))); picking = false
+            })
         }
     }
     StageLabel("Times")
-    val modes = listOf("shift", "start")
-    Segmented(listOf("Shift all", "Start at"), modes.indexOf(s.timeMode), accent = true) { i ->
+    val modes = listOf("shift", "start", "manual")
+    Segmented(listOf("Shift all", "Start at", "By hand"), modes.indexOf(s.timeMode), accent = true) { i ->
         val mode = modes[i]
         onChange(if (s.timeMode == mode) s.copy(timeMode = "real")
             else s.copy(timeMode = mode, startAt = if (mode == "start" && s.startAt == 0L) firstAt ?: System.currentTimeMillis() else s.startAt))
@@ -317,7 +458,9 @@ internal fun StageNamesPanel(s: StagePlan.Settings, authors: List<StageAuthor>, 
             }
             if (picking) DateTimeDrawer(s.startAt, { onChange(s.copy(startAt = it)); picking = false }, { picking = false }, "Start at")
         }
+        "manual" -> if (s.manualAt.isNotEmpty()) StageChip("Reset ${countLabel(s.manualAt.size, "time")}") { onChange(s.copy(manualAt = emptyMap())) }
     }
+    Column { ToggleRow("Hide dates", s.hideDates, inset = 0.dp) { onChange(s.copy(hideDates = it)) } }
 }
 
 /** A time to tap and change (F8.7 "09:00"). */

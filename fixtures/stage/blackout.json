@@ -1,0 +1,110 @@
+{
+  "args": [
+    [
+      {
+        "at": 1000,
+        "authors": [
+          "kai"
+        ],
+        "id": "m1",
+        "reply_to": null
+      },
+      {
+        "at": 61000,
+        "authors": [
+          "june"
+        ],
+        "id": "m2",
+        "reply_to": "m1"
+      },
+      {
+        "at": 121000,
+        "authors": [
+          "june"
+        ],
+        "id": "m3",
+        "reply_to": null
+      },
+      {
+        "at": 181000,
+        "authors": [
+          "kai"
+        ],
+        "id": "m4",
+        "reply_to": "m3"
+      },
+      {
+        "at": 241000,
+        "authors": [
+          "moss"
+        ],
+        "id": "m5",
+        "reply_to": null
+      }
+    ],
+    {
+      "blackout": {
+        "m2": [
+          [
+            10,
+            14
+          ],
+          [
+            0,
+            4
+          ],
+          [
+            3,
+            6
+          ],
+          [
+            9,
+            9
+          ]
+        ],
+        "m5": [
+          [
+            0,
+            2
+          ]
+        ]
+      },
+      "selected": [
+        "m2",
+        "m3"
+      ],
+      "unselected": "hidden"
+    }
+  ],
+  "description": "Black-out ranges come back sorted and merged per item (UTF-16 offsets), empty ones dropped",
+  "expect": {
+    "names": {},
+    "rows": [
+      {
+        "at": 61000,
+        "blackout": [
+          [
+            0,
+            6
+          ],
+          [
+            10,
+            14
+          ]
+        ],
+        "id": "m2",
+        "kind": "item",
+        "reply_shown": false,
+        "selected": true
+      },
+      {
+        "at": 121000,
+        "id": "m3",
+        "kind": "item",
+        "reply_shown": false,
+        "selected": true
+      }
+    ]
+  },
+  "fn": "stage_plan"
+}

@@ -1,0 +1,100 @@
+{
+  "args": [
+    [
+      {
+        "at": 1000,
+        "authors": [
+          "kai"
+        ],
+        "id": "m1",
+        "reply_to": null
+      },
+      {
+        "at": 61000,
+        "authors": [
+          "june"
+        ],
+        "id": "m2",
+        "reply_to": "m1"
+      },
+      {
+        "at": 121000,
+        "authors": [
+          "june"
+        ],
+        "id": "m3",
+        "reply_to": null
+      },
+      {
+        "at": 181000,
+        "authors": [
+          "kai"
+        ],
+        "id": "m4",
+        "reply_to": "m3"
+      },
+      {
+        "at": 241000,
+        "authors": [
+          "moss"
+        ],
+        "id": "m5",
+        "reply_to": null
+      }
+    ],
+    {
+      "render": {
+        "palette": {
+          "accent": "#8a3ffc",
+          "bg": "#f4efe6",
+          "ink": "#2b211c"
+        },
+        "theme": "custom"
+      },
+      "reply_depth": 0
+    }
+  ],
+  "description": "A custom theme's bg, ink and accent become the whole palette both clients draw",
+  "expect": {
+    "names": {},
+    "palette": {
+      "accent": "#8a3ffc",
+      "accent_soft": "#e1cfea",
+      "bg": "#f4efe6",
+      "bubble_out": "#dac3ec",
+      "dark": false,
+      "ink": "#2b211c",
+      "ink2": "#5d554f",
+      "ink3": "#857e77",
+      "line": "#d8d2ca",
+      "on_accent": "#ffffff",
+      "surface": "#eae5dc",
+      "surface2": "#e2dcd4",
+      "surface3": "#d6d0c8"
+    },
+    "rows": [
+      {
+        "at": 1000,
+        "id": "m1",
+        "kind": "item",
+        "reply_shown": false,
+        "selected": true
+      },
+      {
+        "at": 121000,
+        "id": "m3",
+        "kind": "item",
+        "reply_shown": false,
+        "selected": true
+      },
+      {
+        "at": 241000,
+        "id": "m5",
+        "kind": "item",
+        "reply_shown": false,
+        "selected": true
+      }
+    ]
+  },
+  "fn": "stage_plan"
+}

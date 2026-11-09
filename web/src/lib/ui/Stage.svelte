@@ -10,6 +10,7 @@
   import { activeViewers, memberVisible } from '../hidden';
   import { chatShown } from '../chat-visible';
   import { segmentRich } from '../segments';
+  import { blackoutParts, paletteStyle } from '../stage-text';
   import { sync, type Projection } from '../sync/client';
   import { bodyPresence } from '../front-view';
   import RichText from './RichText.svelte';
@@ -21,7 +22,13 @@
   type Style = 'chorus' | 'discord' | 'bubbles' | 'card' | 'transcript' | 'minimal';
   interface Render {
     style: Style;
-    theme: 'auto' | 'light' | 'dark';
+    // 'custom' and the hide_* switches below come from stages saved on Android (UI21 F8); the web
+    // draws them but can't set them yet
+    theme: 'auto' | 'light' | 'dark' | 'custom';
+    palette?: { bg: string; ink: string; accent: string };
+    hide_dates?: boolean;
+    hide_reactions?: boolean;
+    hide_thread_previews?: boolean;
     width: 'phone' | 'square' | 'wide';
     blur_avatars: boolean;
     blur_attachments: boolean;
@@ -35,12 +42,13 @@
     reply_depth?: number | null;
     redact_names: boolean;
     fake_names: Record<string, { label: string; color?: string | null }>;
-    time: { mode: 'real' } | { mode: 'hide' } | { mode: 'shift'; offset_ms: number } | { mode: 'start'; start: number };
+    time: { mode: 'real' } | { mode: 'hide' } | { mode: 'shift'; offset_ms: number } | { mode: 'start'; start: number } | { mode: 'manual'; at: Record<string, number> };
+    blackout?: Record<string, [number, number][]>;
     render: Render;
     channel_id?: string;
   }
   type Row =
-    | { kind: 'item'; id: string; selected: boolean; at: number | null; reply_shown: boolean }
+    | { kind: 'item'; id: string; selected: boolean; at: number | null; reply_shown: boolean; blackout?: [number, number][] }
     | { kind: 'context'; ids: string[]; count: number };
 
   const fresh = (): Def => ({
@@ -82,13 +90,14 @@
     return JSON.parse(stagePlan(JSON.stringify(items), JSON.stringify(d))) as {
       rows: Row[];
       names: Record<string, { label: string; color?: string | null }>;
+      palette?: Record<string, string | boolean>;
     };
   });
 
-  const stageDark = $derived(def.render.theme === 'dark' || (def.render.theme === 'auto' && dark));
+  const stageDark = $derived(def.render.theme === 'custom' ? plan.palette?.dark === true : def.render.theme === 'dark' || (def.render.theme === 'auto' && dark));
   $effect(() => {
     const root = document.documentElement;
-    if (def.render.theme === 'auto') delete root.dataset.theme;
+    if (def.render.theme === 'auto' || def.render.theme === 'custom') delete root.dataset.theme;
     else root.dataset.theme = def.render.theme;
   });
   $effect(() => {
@@ -278,10 +287,10 @@
   <div
     class="canvas style-{def.render.style}"
     class:blur={def.render.blur_avatars}
-    style="--w: {WIDTH[def.render.width]}px"
+    style="--w: {WIDTH[def.render.width]}px; {paletteStyle(plan.palette)}"
   >
     {#if !def.render.hide_header}
-      <header class="chan">#{channel?.name ?? 'channel'}{#if def.time.mode !== 'hide' && plan.rows[0]?.kind === 'item' && plan.rows[0].at}<span> · {day(plan.rows[0].at)}</span>{/if}</header>
+      <header class="chan">#{channel?.name ?? 'channel'}{#if def.time.mode !== 'hide' && !def.render.hide_dates && plan.rows[0]?.kind === 'item' && plan.rows[0].at}<span> · {day(plan.rows[0].at)}</span>{/if}</header>
     {/if}
     {#each plan.rows as row, i (row.kind === 'item' ? row.id : `c${i}`)}
       {#if row.kind === 'context'}
@@ -335,7 +344,9 @@
                 {#each f.attachments ?? [] as a (a.id)}<AttachmentView attachment={a} blur={def.render.blur_attachments} revealable={false} />{/each}
               </div>
             {/each}
-            {#if m.segments.length > 1}
+            {#if row.blackout?.length}
+              <div class="text">{#each blackoutParts(m.text, row.blackout) as part, j (j)}{#if part.black}<span class="blackout">{part.text}</span>{:else}{part.text}{/if}{/each}</div>
+            {:else if m.segments.length > 1}
               {#each m.segments as s, j (j)}
                 {@const seg = segmentRich(m, s)}
                 <div class="segment"><span class="seg-who" style="color: {colorOf(s.authors[0] ?? '').name}">{s.authors.map(nameOf).join(' & ')}</span> <RichText text={seg.text} entities={seg.entities} /></div>
@@ -397,6 +408,7 @@
     padding: var(--s-4); background: var(--bg); border: 1px dashed var(--line); border-radius: var(--r-lg);
   }
   .capturing .canvas { border-color: transparent; margin-top: var(--s-6); }
+  .blackout { background: #000; color: #000; border-radius: 2px; }
   .chan { font-weight: 600; color: var(--ink-2); padding-bottom: var(--s-2); border-bottom: 1px solid var(--line); margin-bottom: var(--s-2); }
   .chan span { font-weight: 400; color: var(--ink-3); }
   .item { display: flex; gap: var(--s-3); padding: var(--s-2); border-radius: var(--r-md); cursor: pointer; }

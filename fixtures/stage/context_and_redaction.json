@@ -1,0 +1,102 @@
+{
+  "args": [
+    [
+      {
+        "at": 1000,
+        "authors": [
+          "kai"
+        ],
+        "id": "m1",
+        "reply_to": null
+      },
+      {
+        "at": 61000,
+        "authors": [
+          "june"
+        ],
+        "id": "m2",
+        "reply_to": "m1"
+      },
+      {
+        "at": 121000,
+        "authors": [
+          "june"
+        ],
+        "id": "m3",
+        "reply_to": null
+      },
+      {
+        "at": 181000,
+        "authors": [
+          "kai"
+        ],
+        "id": "m4",
+        "reply_to": "m3"
+      },
+      {
+        "at": 241000,
+        "authors": [
+          "moss"
+        ],
+        "id": "m5",
+        "reply_to": null
+      }
+    ],
+    {
+      "fake_names": {
+        "june": {
+          "color": "#e07a7a",
+          "label": "Rose"
+        }
+      },
+      "redact_names": true,
+      "selected": [
+        "m1",
+        "m4"
+      ],
+      "time": {
+        "mode": "start",
+        "start": 3600000
+      },
+      "unselected": "context"
+    }
+  ],
+  "description": "Picked messages show; the run between folds into one context row; redaction names by first appearance and a fake name wins",
+  "expect": {
+    "names": {
+      "june": {
+        "color": "#e07a7a",
+        "label": "Rose"
+      },
+      "kai": {
+        "color": "#A09184",
+        "label": "Member A"
+      }
+    },
+    "rows": [
+      {
+        "at": 3600000,
+        "id": "m1",
+        "kind": "item",
+        "reply_shown": false,
+        "selected": true
+      },
+      {
+        "count": 2,
+        "ids": [
+          "m2",
+          "m3"
+        ],
+        "kind": "context"
+      },
+      {
+        "at": 3780000,
+        "id": "m4",
+        "kind": "item",
+        "reply_shown": false,
+        "selected": true
+      }
+    ]
+  },
+  "fn": "stage_plan"
+}
