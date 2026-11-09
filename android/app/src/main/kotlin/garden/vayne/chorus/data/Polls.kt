@@ -67,6 +67,18 @@ object Polls {
         return PollState(polls, tallies, votes)
     }
 
+    /** An option's share of the voters, as the whole percent a poll card shows. */
+    fun percent(count: Long, voters: Long): Int =
+        if (voters <= 0) 0 else Math.round(count * 100.0 / voters).toInt().coerceIn(0, 100)
+
+    /** Each of our [members] with what they chose in [parentId]; own account only (D-081, D-086). */
+    fun votesOf(state: PollState, parentId: String, members: List<Member>): List<Pair<Member, List<String>>> =
+        members.map { it to state.choices(parentId, it.id) }
+
+    /** How many of [members] have voted: "2 of 4 voted". */
+    fun voted(state: PollState, parentId: String, members: List<Member>): Int =
+        members.count { state.choices(parentId, it.id).isNotEmpty() }
+
     /** Next choices after tapping [option]: single choice replaces (or clears), multiple toggles. */
     fun toggled(poll: Poll, current: List<String>, option: String): List<String> = when {
         option in current -> current - option

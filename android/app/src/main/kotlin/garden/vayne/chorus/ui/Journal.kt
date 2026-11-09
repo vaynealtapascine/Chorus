@@ -513,6 +513,13 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
         JournalFeeds(chorus, model, onTimeline = { section = "timeline" }, onThread = { threadPostId = it }, onProfile = openFriend)
         return@ChorusScene
     }
+    if (shown == "board") {
+        BackHandler(active && shown == route) { section = "timeline" }
+        SystemBoard(chorus, model, onBack = { section = "timeline" }, onNew = { launchDraft("write", audience = "private") },
+            onReply = { launchDraft("reply", it.id) }, onThread = { threadPostId = it.id }, onQuote = { launchDraft("quote", it.id) },
+            onProfile = { profileId = it })
+        return@ChorusScene
+    }
     if (shown == "saved") {
         BackHandler(active && shown == route) { section = "timeline" }
         JournalSaved(chorus, model, onBack = { section = "timeline" }, onReply = { launchDraft("reply", it) },
@@ -566,6 +573,7 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
                 if (model.isPerson) model.members.firstOrNull { it.isSelf }?.let { self ->
                     MenuRow("My profile", leading = { ChatAvatar(self, 24.dp) }) { feedMenu = false; profileId = self.id }
                 }
+                if (!model.isPerson) MenuRow("System board", R.drawable.ic_users) { feedMenu = false; section = "board" }
                 MenuRow("Saved", R.drawable.ic_bookmark) { feedMenu = false; section = "saved" }
                 MenuRow("Search saved posts", R.drawable.ic_search) { feedMenu = false; onSearch("Saved") }
                 MenuRow("Lists", R.drawable.ic_friends) { feedMenu = false; section = "lists" }
@@ -754,7 +762,7 @@ private fun JournalPostCardBody(post: JournalPost, model: Model, chorus: Chorus,
             }
             post.mood?.let { Text(it, color = p.ink2, style = MaterialTheme.typography.bodySmall) }
             JournalMedia(post.attachments, chorus, names, post.occurredAt, full = full)
-            PollCard(chorus, model, post.id, Reply.speaker(model)?.id)
+            PollCard(chorus, model, post.id, Reply.speaker(model)?.id, internal = post.visibility == "private" && !model.isPerson)
             post.quotePostId?.let { id -> ThreadQuote(id, quoted, model, onOpenPost, chorus) }
             // tags close the post, after its media, poll and quote, just above the actions
             if (post.tags.isNotEmpty()) Text(post.tags.joinToString("  ") { "#$it" }, color = p.accent,
@@ -889,6 +897,10 @@ internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose
                     HorizontalDivider(color = p.line, thickness = .5.dp)
                     actionRow(focused)
                     HorizontalDivider(color = p.line, thickness = .5.dp)
+                    }
+                    // who voted for what, for a poll on our own system's post (F6.10)
+                    if (rootPost != null && rootPost.visibility == "private" && !model.isPerson) model.polls.polls[postId]?.let {
+                        PollVotes(model, chorus, postId, it, Reply.speaker(model)?.id)
                     }
                 }
             }

@@ -18,6 +18,16 @@ class PollsTest {
         assertNull(Polls.chatMember(model, "missing"))
     }
 
+    @Test fun percentsAndVoteCountsForOurOwnMembers() {
+        assertEquals(67, Polls.percent(2, 3)); assertEquals(33, Polls.percent(1, 3)); assertEquals(0, Polls.percent(0, 0))
+        assertEquals(100, Polls.percent(5, 4))
+        val members = listOf("a", "b", "c").map { Member(it, it, null, null, "#fff", emptyList(), null, false) }
+        val state = PollState(votes = mapOf("p|a" to listOf("x"), "p|b" to emptyList()))
+        assertEquals(1, Polls.voted(state, "p", members))
+        assertEquals(listOf("a" to listOf("x"), "b" to emptyList(), "c" to emptyList()),
+            Polls.votesOf(state, "p", members).map { it.first.id to it.second })
+    }
+
     @Test fun readsPollsTalliesAndOnlyOwnVotes() {
         val poll = """{"question":"Dinner?","options":[{"id":"a","text":"Soup"},{"id":"b","text":"Rice"}],"multiple":false}"""
         val p = JSONObject().put("rows", JSONObject()

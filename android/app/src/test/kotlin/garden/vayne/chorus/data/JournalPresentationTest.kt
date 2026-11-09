@@ -9,6 +9,15 @@ class JournalPresentationTest {
     private val now = 1_000_000_000L
     private fun ago(seconds: Long) = JournalPresentation.shortAgo(now - seconds * 1000, now) { "date" }
 
+    @Test fun theSystemBoardHoldsPrivateTopLevelPostsOnly() {
+        fun post(visibility: String = "private", replyTo: String? = null, repostOf: String? = null) =
+            JournalPost("p", "note", listOf("m"), null, "t", 0, null, visibility, replyTo, null, emptyList(), repostOf = repostOf)
+        assertTrue(JournalPresentation.isBoardPost(post()))
+        assertFalse(JournalPresentation.isBoardPost(post("friends")))
+        assertFalse(JournalPresentation.isBoardPost(post(replyTo = "q")))
+        assertFalse(JournalPresentation.isBoardPost(post(repostOf = "q")))
+    }
+
     @Test fun shortAgoIsCompactAndFallsBackToADateAfterAWeek() {
         assertEquals("now", ago(5))
         assertEquals("25m", ago(25 * 60 + 30))

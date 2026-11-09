@@ -11,6 +11,9 @@ object JournalPresentation {
         return if (before < 0) to != "private" else AUDIENCES.indexOf(to) > before
     }
 
+    /** The System board (D-135) lists our system's own top-level posts: private, not replies or reposts. */
+    fun isBoardPost(post: JournalPost): Boolean = post.visibility == "private" && post.replyTo == null && post.repostOf == null
+
     fun audience(mode: String, person: Boolean = false): String = when (mode) {
         "private" -> if (person) "Only me" else "Only our system"
         "friends" -> "Friends"
