@@ -518,7 +518,8 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                         sharedDraft = journalShare, onShareConsumed = { journalShare = null },
                         externalNewEntry = journalNewEntry, onExternalNewEntryConsumed = { journalNewEntry = null },
                         active = shownTab == activeTab, onFocusedRoute = { journalFocused = it },
-                        onSearch = { searchSection=it; searchOpen=true })
+                        onSearch = { searchSection=it; searchOpen=true },
+                        onMessage = { space, channel -> chatSpace = space; chatChannel = channel; chatMessage = null; chatSearchHit = null; tab = Tab.Chat })
                     Tab.People -> FriendsScreen(chorus, model,
                         onOpenChat = { spaceId -> chatSpace = spaceId; chatChannel = null; chatSearchHit = null; tab = Tab.Chat },
                         onReplyPost = { postId -> journalReplyPost = postId; tab = Tab.Journal },
@@ -526,7 +527,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                         openRoute = friendsRoute, onRouteConsumed = { friendsRoute = null })
                     Tab.Members -> Members(chorus, model, onJournal = { member, post ->
                         journalOpenProfile = member; journalOpenPost = post; tab = Tab.Journal
-                    }, active = shownTab == activeTab, onFocusedRoute = { membersFocused = it })
+                    }, onMessage = { space, channel -> chatSpace = space; chatChannel = channel; chatMessage = null; chatSearchHit = null; tab = Tab.Chat }, active = shownTab == activeTab, onFocusedRoute = { membersFocused = it })
                     Tab.History -> History(chorus, model, historyFront, onBack = { tab = Tab.Fronting })
                     Tab.More -> MoreScreen(chorus, model, destinations.filter { it != Tab.More }.map { it.key }, unread, garden.vayne.chorus.ui.MoreRoutes(
                         go = { key -> Tab.of(key)?.let { tab = it } }, onInsights = { insightsOpen = true }, onSettings = { openSettings(it) },

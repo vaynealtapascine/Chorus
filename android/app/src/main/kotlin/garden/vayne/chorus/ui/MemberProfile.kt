@@ -53,6 +53,8 @@ import garden.vayne.chorus.designsystem.LocalChorusPalette
 import garden.vayne.chorus.designsystem.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import garden.vayne.chorus.data.Reply
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.DateFormat
@@ -70,7 +72,9 @@ private val ProfileTabs = listOf("Posts", "Replies", "Journal", "Media", "Highli
 internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
     onClose: () -> Unit, onWrite: () -> Unit, onReply: (String) -> Unit,
     closeLabel: String = "Journal", writeLabel: String? = null, onOpenProfile: ((String) -> Unit)? = null,
-    onOpenPost: ((String) -> Unit)? = null) {
+    onOpenPost: ((String) -> Unit)? = null,
+    /** Opens the chat (space, channel) with this member: the Message pill (F6.1). */
+    onMessage: ((String, String) -> Unit)? = null) {
     val p = LocalChorusPalette.current
     val dev = chorus.device
     val actions = rememberCoroutineScope()
@@ -130,6 +134,20 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
         if (post.id in highlightedIds) "Remove highlight" to { setHighlight(post.id, false) }
         else "Highlight on profile" to { setHighlight(post.id, true) })
 
+    // Message: the same conversation each time, as whoever is speaking (never as the member themself)
+    val canMessage = onMessage != null && !model.isPerson && member.archived.not() && model.active.any { it.id != memberId }
+    fun message() = write("Could not start the message.") {
+        val latest = chorus.model.value
+        val home = latest.spaces.firstOrNull { it.kind == "internal" } ?: throw IllegalStateException("Your internal space is not available yet.")
+        val speaker = Reply.speaker(latest)?.takeIf { it.id != memberId } ?: latest.active.first { it.id != memberId }
+        val participants = garden.vayne.chorus.data.MemberDms.selected(latest.active, listOf(speaker.id, memberId), dev?.accountId.orEmpty())
+        val target = garden.vayne.chorus.data.MemberDms.existing(latest.channels, home.id, participants.map { it.id })?.id
+            ?: chorus.newId().also { id ->
+                chorus.create("channel.create", id, garden.vayne.chorus.data.MemberDms.payload(home.id, participants), scope = "space:${home.id}")
+            }
+        kotlinx.coroutines.withTimeout(15_000) { chorus.model.first { next -> next.channels.any { it.id == target && it.spaceId == home.id } } }
+        onMessage?.invoke(home.id, target)
+    }
     val openThread = onOpenPost?.let { open -> { post: JournalPost -> open(post.id) } }
     // front time and "last fronted" from Body's named-front history when the account has one (D-080)
     val historyRevision by chorus.frontHistoryRevision.collectAsState()
@@ -140,7 +158,7 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
     val list = rememberLazyListState()
     LazyColumn(Modifier.fillMaxSize().background(p.bg), state = list, contentPadding = PaddingValues(bottom = 24.dp)) {
         item(key = "hero") {
-            ProfileHero(member, chorus, closeLabel, onClose, writeLabel, onWrite, onEdit = { editing = true },
+            ProfileHero(member, chorus, closeLabel, onClose, writeLabel, onWrite, onMessage = if (canMessage) ({ message() }) else null, onEdit = { editing = true },
                 subsystemLabel = if (model.isPerson) null else if (Subsystems.groupOf(model, memberId) != null) "Who’s inside"
                     else "Make a subsystem", onSubsystem = { subsystemOpen = true })
         }
@@ -217,16 +235,19 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
 /** Our member's hero: the shared [ProfileHeroFrame] with Post / Edit profile and the `⋯` menu. */
 @Composable
 private fun ProfileHero(member: Member, chorus: Chorus, closeLabel: String, onClose: () -> Unit,
-    writeLabel: String?, onWrite: () -> Unit, onEdit: () -> Unit, subsystemLabel: String?, onSubsystem: () -> Unit) {
+    writeLabel: String?, onWrite: () -> Unit, onMessage: (() -> Unit)?, onEdit: () -> Unit, subsystemLabel: String?, onSubsystem: () -> Unit) {
     val p = LocalChorusPalette.current
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     ProfileHeroFrame(chorus, member.bannerBlob, member.color, member.glyph, member.avatarBlob, closeLabel, onClose,
         menuTitle = member.shownName, menu = { close ->
             MenuRow("Edit profile", R.drawable.ic_edit) { close(); onEdit() }
+            // Message takes the hero's first pill; the way into writing stays one tap away
+            if (onMessage != null) MenuRow(writeLabel ?: "Post as ${member.shownName}", if (writeLabel == null) R.drawable.ic_edit else R.drawable.ic_journal) { close(); onWrite() }
             if (subsystemLabel != null) MenuRow(subsystemLabel, R.drawable.ic_layers) { close(); onSubsystem() }
             MenuRow("Copy name", R.drawable.ic_copy) { close(); clipboard.setText(androidx.compose.ui.text.AnnotatedString(member.shownName)) }
         }) {
-        ProfilePill(writeLabel ?: "Post", if (writeLabel == null) R.drawable.ic_edit else R.drawable.ic_journal,
+        if (onMessage != null) ProfilePill("Message", R.drawable.ic_message, filled = true, description = "Message ${member.shownName}", onClick = onMessage)
+        else ProfilePill(writeLabel ?: "Post", if (writeLabel == null) R.drawable.ic_edit else R.drawable.ic_journal,
             filled = true, description = if (writeLabel == null) "Post as ${member.shownName}" else "Open ${member.shownName}’s journal",
             onClick = onWrite)
         ProfilePill("Edit profile", null, filled = false, onClick = onEdit)

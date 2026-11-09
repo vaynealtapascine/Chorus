@@ -10,6 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.SolidColor
@@ -156,5 +157,24 @@ internal fun JournalAudiencePicker(audience: String, person: Boolean, onChoose: 
         }
         ChoiceDrawer(open, "Who can see it", JournalPresentation.AUDIENCES, audience, { JournalPresentation.audience(it, person) },
             { onChoose(it); open = false }, { open = false })
+    }
+}
+
+/** F6.12's chips under a long read's title: who can read it, how long it takes, who was here. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun EntryChips(audience: String?, readTime: String, front: String?) {
+    val p = LocalChorusPalette.current
+    @Composable fun Chip(icon: Int?, text: String, accent: Boolean = false) {
+        Row(Modifier.clip(CircleShape).background(if (accent) p.accentSoft else p.surface2).padding(horizontal = 10.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            if (icon != null) Glyph(icon, if (accent) p.accent else p.ink3, 13.dp)
+            Text(text, color = if (accent) p.accent else p.ink2, fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+        }
+    }
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (audience != null) Chip(R.drawable.ic_lock, audience)
+        Chip(R.drawable.ic_clock, readTime)
+        if (front != null) Chip(null, front.replaceFirstChar { it.uppercase() }, accent = true)
     }
 }

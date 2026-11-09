@@ -69,7 +69,7 @@ private const val ARCHIVED = "archived"
  */
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
-fun Members(chorus: Chorus, model: Model, onJournal: (String?, String?) -> Unit,
+fun Members(chorus: Chorus, model: Model, onJournal: (String?, String?) -> Unit, onMessage: ((String, String) -> Unit)? = null,
     active: Boolean = true, onFocusedRoute: (Boolean) -> Unit = {}) {
     val p = LocalChorusPalette.current
     val ctx = LocalContext.current
@@ -112,7 +112,7 @@ fun Members(chorus: Chorus, model: Model, onJournal: (String?, String?) -> Unit,
     profile?.let { id ->
         MemberProfile(chorus, model, id, onClose = { profile = null }, onWrite = { onJournal(id, null) },
             onReply = { onJournal(null, it) }, closeLabel = "Members", writeLabel = "Journal", onOpenProfile = { profile = it },
-            onOpenPost = { postTrail = it })
+            onOpenPost = { postTrail = it }, onMessage = onMessage)
         return
     }
     val settings = model.memberList

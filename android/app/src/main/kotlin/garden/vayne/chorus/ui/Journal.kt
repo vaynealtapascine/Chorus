@@ -92,7 +92,8 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     onFocusedRoute: (Boolean) -> Unit = {},
     /** A profile to open: our member's id, or "<account> <member>" for another account's (from Chat). */
     externalOpenProfile: String? = null,
-    onExternalProfileConsumed: () -> Unit = {}, onSearch: (String) -> Unit = {}) {
+    onExternalProfileConsumed: () -> Unit = {}, onSearch: (String) -> Unit = {},
+    onMessage: ((String, String) -> Unit)? = null) {
     val owner = chorus.editorOwner
     val account = chorus.device?.accountId
     if (owner.isBlank() || account == null) return
@@ -120,7 +121,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
         JournalLoaded(chorus, model, session, externalReplyPost, onExternalReplyConsumed,
             externalOpenPost, onExternalOpenConsumed, sharedDraft, onShareConsumed,
             externalNewEntry, onExternalNewEntryConsumed, active, onFocusedRoute,
-            externalOpenProfile, onExternalProfileConsumed, onSearch)
+            externalOpenProfile, onExternalProfileConsumed, onSearch, onMessage)
     }
 }
 
@@ -130,7 +131,8 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
     externalReplyPost: String?, onExternalReplyConsumed: () -> Unit, externalOpenPost: String?,
     onExternalOpenConsumed: () -> Unit, sharedDraft: SharedDraft?, onShareConsumed: () -> Unit,
     externalNewEntry: Long?, onExternalNewEntryConsumed: () -> Unit, active: Boolean,
-    onFocusedRoute: (Boolean) -> Unit, externalOpenProfile: String?, onExternalProfileConsumed: () -> Unit, onSearch: (String) -> Unit) {
+    onFocusedRoute: (Boolean) -> Unit, externalOpenProfile: String?, onExternalProfileConsumed: () -> Unit, onSearch: (String) -> Unit,
+    onMessage: ((String, String) -> Unit)?) {
     val draftState by session.state.collectAsState()
     fun <T> field(get: (garden.vayne.chorus.data.JournalDraft) -> T,
         set: garden.vayne.chorus.data.JournalDraft.(T) -> garden.vayne.chorus.data.JournalDraft) =
@@ -309,7 +311,7 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
         MemberProfile(chorus, model, id, onClose = { profileId = null },
             onWrite = { launchDraft("write", author = id) },
             onReply = { postId -> launchDraft("reply", postId, id) }, onOpenProfile = { profileId = it },
-            onOpenPost = { post -> threadBack = ""; threadPostId = post; profileReturn = id; profileId = null })
+            onOpenPost = { post -> threadBack = ""; threadPostId = post; profileReturn = id; profileId = null }, onMessage = onMessage)
         return@ChorusScene
     }
 
@@ -569,12 +571,8 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
                 MenuRow("Lists", R.drawable.ic_friends) { feedMenu = false; section = "lists" }
             }
         }
-        ScrollableTabRow(selectedTabIndex = listOf("system", "friends", "entries").indexOf(journalTab).coerceAtLeast(0),
-            containerColor = p.surface, contentColor = p.accent, edgePadding = 16.dp, divider = { HorizontalDivider(color = p.line) }) {
-            for ((id, label) in listOf("system" to if (model.isPerson) "My posts" else "Our system", "friends" to "Friends", "entries" to "Journals")) Tab(
-                selected = journalTab == id, onClick = { journalTab = id }, text = { Text(label, style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp, lineHeight = 18.sp)) },
-                selectedContentColor = p.ink, unselectedContentColor = p.ink3)
-        }
+        val journalTabs = listOf("system" to if (model.isPerson) "My posts" else "Our system", "friends" to "Friends", "entries" to "Journals")
+        UnderlineTabs(journalTabs.map { it.second to 0 }, journalTabs.indexOfFirst { it.first == journalTab }.coerceAtLeast(0)) { journalTab = journalTabs[it].first }
         Box(Modifier.weight(1f)) {
         if (journalTab == "friends") JournalFriends(chorus, model, onThread = { threadPostId = it }, onProfile = openFriend, onReply = {
             launchDraft("reply", it, audience = "server")
@@ -748,8 +746,12 @@ private fun JournalPostCardBody(post: JournalPost, model: Model, chorus: Chorus,
                 style = MaterialTheme.typography.labelLarge, modifier = Modifier.clickable {
                     expanded = !expanded
                 }.heightIn(min = 32.dp).wrapContentHeight(Alignment.CenterVertically))
-            if (post.kind == "entry") Text(JournalPresentation.entryMeta(post.text, emptyList()), color = p.ink3,
-                style = MaterialTheme.typography.bodySmall)
+            if (post.kind == "entry") {
+                if (full) EntryChips(JournalPresentation.audience(post.visibility, model.isPerson).takeIf { post.visibility == "private" || post.visibility == "friends" || post.visibility == "followers" || post.visibility == "following" },
+                    JournalPresentation.readTime(post.text),
+                    post.takeIf { model.namedFronts == null }?.let { JournalPresentation.frontContext(model.frontIntervals, it.occurredAt) { id -> model.member(id)?.shownName } })
+                else Text(JournalPresentation.entryMeta(post.text, emptyList()), color = p.ink3, style = MaterialTheme.typography.bodySmall)
+            }
             post.mood?.let { Text(it, color = p.ink2, style = MaterialTheme.typography.bodySmall) }
             JournalMedia(post.attachments, chorus, names, post.occurredAt, full = full)
             PollCard(chorus, model, post.id, Reply.speaker(model)?.id)
@@ -783,6 +785,7 @@ internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose
     onProfile: ((String, String) -> Unit)? = null) {
     val p = LocalChorusPalette.current
     var historyOpen by remember(postId) { mutableStateOf(false) }
+    var threadMenu by remember(postId) { mutableStateOf(false) }
     if (historyOpen) PostHistoryDialog(postId, chorus) { historyOpen = false }
     val motion = rememberChorusMotion()
     var remote by remember(postId) { mutableStateOf<PostDetail?>(null) }
@@ -815,14 +818,25 @@ internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose
     // a post from another account has no local row: describe it with what the server sent
     val focused = rootPost ?: foreignRoot?.let { PostThreads.foreignPost(it.id, "note", it.title, it.text, it.occurredAt, it.cw) }
     val open: (String) -> Unit = { id -> if (id != postId) onOpenPost?.invoke(id) }
+    val sticky = rootPost?.kind == "entry"
+    @Composable fun actionRow(post: JournalPost) = JournalPostActions(post, model, chorus, onReply = onReply, onQuote = onQuote, large = true,
+        reactions = reactions, foreign = rootPost == null, onReacted = { member ->
+            remote = remote?.copy(reactions = PostReactions.toggle(remote?.reactions.orEmpty(), member.id, member.shownName))
+        })
     // opens on the focused post, its context above; parents arriving later keep it in place (keyed)
     val scroll = androidx.compose.foundation.lazy.rememberLazyListState(initialFirstVisibleItemIndex = localAncestors.size)
     Column(Modifier.fillMaxSize().background(p.bg).imePadding()) {
         Row(Modifier.fillMaxWidth().background(p.surface).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             ChatIconButton(R.drawable.ic_back, "Back", onClose)
-            Text(if (rootPost?.kind == "entry") "Journal entry" else if (ancestors.isNotEmpty()) "Thread" else "Post",
-                color = p.ink, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f).padding(horizontal = 8.dp))
-            TextButton(onClick = { historyOpen = true }) { Text("History") }
+            Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
+                Text(if (rootPost?.kind == "entry") "Journal entry" else if (ancestors.isNotEmpty()) "Thread" else "Post",
+                    color = p.ink, style = MaterialTheme.typography.titleMedium)
+                if (rootPost?.kind == "entry") model.systemName?.takeIf { it.isNotBlank() && !model.isPerson }?.let {
+                    Text(it, color = p.ink3, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            ChatIconButton(R.drawable.ic_more, "More options") { threadMenu = true }
+            MenuDrawer(threadMenu, { threadMenu = false }) { MenuRow("Edit history", R.drawable.ic_clock) { threadMenu = false; historyOpen = true } }
         }
         // pull down to fetch replies again; own replies are already local
         androidx.compose.material3.pulltorefresh.PullToRefreshBox(refreshing, { refreshing = true; refresh++ }, Modifier.weight(1f)) {
@@ -854,9 +868,9 @@ internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose
                 Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
                     Text(listOfNotNull(DateFormat.getTimeInstance(DateFormat.SHORT).format(at),
                         DateFormat.getDateInstance(DateFormat.MEDIUM).format(at),
-                        JournalPresentation.audience(focused.visibility, model.isPerson).takeIf { rootPost != null },
+                        JournalPresentation.audience(focused.visibility, model.isPerson).takeIf { rootPost != null && rootPost.kind != "entry" },
                         // own posts only: who was here when it was written (Body; not for configured layers)
-                        rootPost?.takeIf { model.namedFronts == null }?.let { post ->
+                        rootPost?.takeIf { model.namedFronts == null && it.kind != "entry" }?.let { post ->
                             JournalPresentation.frontContext(model.frontIntervals, post.occurredAt) { model.member(it)?.shownName }
                         }).joinToString(" · "),
                         color = p.ink3, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 12.dp))
@@ -871,12 +885,11 @@ internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose
                             if (hearts > 0) DetailStat(hearts, if (hearts == 1) "like" else "likes")
                         }
                     }
+                    if (!sticky) {
                     HorizontalDivider(color = p.line, thickness = .5.dp)
-                    JournalPostActions(focused, model, chorus, onReply = onReply, onQuote = onQuote, large = true,
-                        reactions = reactions, foreign = rootPost == null, onReacted = { member ->
-                            remote = remote?.copy(reactions = PostReactions.toggle(remote?.reactions.orEmpty(), member.id, member.shownName))
-                        })
+                    actionRow(focused)
                     HorizontalDivider(color = p.line, thickness = .5.dp)
+                    }
                 }
             }
             if (error != null) item(key = "error") { Text(error.orEmpty(), color = p.ink2, style = MaterialTheme.typography.bodySmall,
@@ -905,7 +918,9 @@ internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose
         }
         }
         HorizontalDivider(color = p.line)
-        JournalReplyBar(replyAuthor, replyAuthors, onPickAuthor, onReply)
+        // a long read keeps comment, repost, like, save and share under the thumb (F6.12)
+        if (sticky && focused != null) Box(Modifier.fillMaxWidth().background(p.surface).navigationBarsPadding()) { actionRow(focused) }
+        else JournalReplyBar(replyAuthor, replyAuthors, onPickAuthor, onReply)
     }
 }
 

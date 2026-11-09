@@ -15,6 +15,10 @@ import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.*
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextIndent
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -74,6 +78,11 @@ internal fun RichBody(text: String, entities: String, modifier: Modifier = Modif
                         else -> null
                     }
                     if (span != null) addStyle(span, r.start, r.end)
+                    // a quote keeps a rule down its left edge (F6.12): indent its lines, draw the rule over the gap
+                    if (r.type == "blockquote" || r.type == "expandable_blockquote") {
+                        addStringAnnotation("quote", "", r.start, r.end)
+                        addStyle(ParagraphStyle(textIndent = TextIndent(14.sp, 14.sp)), r.start, r.end)
+                    }
                     if (r.type == "url" || r.type == "text_link") {
                         val link = if (r.type == "url") text.substring(r.start, r.end) else r.url.orEmpty()
                         if (link.startsWith("https://") || link.startsWith("http://") || link.startsWith("mailto:"))
@@ -95,7 +104,15 @@ internal fun RichBody(text: String, entities: String, modifier: Modifier = Modif
                 if (link != null) { if (!openOwn(link.item)) runCatching { uri.openUri(link.item) } } else plainClick()
             }
     }
-    BasicText(annotated, modifier = modifier.semantics {
+    val rule = p.accent
+    BasicText(annotated, modifier = modifier.drawBehind {
+        val l = layout ?: return@drawBehind
+        for (q in annotated.getStringAnnotations("quote", 0, annotated.length)) {
+            if (q.end <= q.start || q.end > l.layoutInput.text.length) continue
+            val top = l.getLineTop(l.getLineForOffset(q.start)); val bottom = l.getLineBottom(l.getLineForOffset(q.end - 1))
+            drawLine(rule, androidx.compose.ui.geometry.Offset(1.5.dp.toPx(), top), androidx.compose.ui.geometry.Offset(1.5.dp.toPx(), bottom), 3.dp.toPx())
+        }
+    }.semantics {
         if (onLongClick != null) {
             onClick("Message actions") { plainClick(); true }
             onLongClick("Message actions") { longClick?.invoke(); true }
