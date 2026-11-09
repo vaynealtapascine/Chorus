@@ -226,7 +226,7 @@ owner's trim instruction disagrees, trim it (flagged "F" below: Figma has it).
 
 - **F8 Stage:** (wave 7, D-144) the web now *draws* black-outs, hidden dates and a custom palette from
   stages saved on Android, but has no UI to set them, nor hide reactions / thread previews (the web
-  stage shows neither), By hand times or fake-name colours. `lib/ui/Stage.svelte` (449 lines) and `PostStage.svelte` (74) are the old panel UI: select/theme/width `<select>`s and checkboxes; no bottom tab drawer, no filters (hide reactions, thread previews, crop stepper), no redact words, no by-hand times, no Save drawer; PostStage has no replies or depth (F8.5 diverges badly).
+  stage shows neither), By hand times or fake-name colours. `lib/ui/Stage.svelte` (449 lines) and `PostStage.svelte` (74) are the old panel UI: select/theme/width `<select>`s and checkboxes; no bottom tab drawer, no filters (hide reactions, thread previews, crop stepper), no redact words, no by-hand times, no Save drawer; PostStage has no replies or depth (F8.5 diverges badly). Since D-145 a saved post stage may carry replies, depth, only-replies-from and `hide_counts`; the web shows the post alone and ignores them (wave 7 web follow-up).
 - **F3.10 Member state:** `PlaceSheet.svelte:100` has the same single-chip state as Android (no multi-select, note, clear-on-exit, who-sees).
 - **F3.6 Review:** `Reviews.svelte` uses "Keep both" buttons, not the F3.6 radio screen with Later / Save to history.
 - **F3.11:** `Home.svelte:201` repeats the long Simple hint text.

@@ -56,6 +56,7 @@
   ],
   "description": "A custom theme's bg, ink and accent become the whole palette both clients draw",
   "expect": {
+    "cropped": 2,
     "names": {},
     "palette": {
       "accent": "#8a3ffc",

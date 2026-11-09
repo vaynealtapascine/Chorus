@@ -35,7 +35,12 @@ object StagePlan {
         val manualAt: Map<String, Long> = emptyMap(),
         /** Blacked-out `[start, end)` ranges of each message's text, in UTF-16 units. */
         val blackout: Map<String, List<IntRange>> = emptyMap(),
+        /** A post's stage: hide its like and repost counts. */
+        val hideCounts: Boolean = false,
     )
+
+    /** One message, post or reply to plan, in display order. */
+    data class Item(val id: String, val authors: List<String>, val at: Long, val replyTo: String?)
 
     /** One planned row: a message ([id]) or, with [id] null, [contextIds] folded into one line. */
     data class Row(val id: String?, val selected: Boolean, val at: Long?, val replyShown: Boolean, val contextCount: Int,
@@ -43,7 +48,7 @@ object StagePlan {
     /** A custom theme's colours by name (`bg`, `surface`, `ink2`, `accent_soft`…) and whether it is dark. */
     data class Palette(val dark: Boolean, val colors: Map<String, String>)
     data class Result(val rows: List<Row>, val names: Map<String, String>, val nameColors: Map<String, String> = emptyMap(),
-        val palette: Palette? = null)
+        val palette: Palette? = null, val cropped: Int = 0)
 
     val WIDTHS = mapOf("phone" to 390, "square" to 600, "wide" to 820)
 
@@ -60,7 +65,7 @@ object StagePlan {
     }
 
     /** Save a definition that the web Stage can load without translating it. */
-    fun definition(channelId: String, settings: Settings): JSONObject {
+    fun definition(channelId: String, settings: Settings, postId: String? = null): JSONObject {
         val fakeNames = JSONObject()
         for ((id, label) in settings.fakeNames) if (label.isNotBlank())
             fakeNames.put(id, JSONObject().put("label", label.trim()).put("color", settings.fakeColors[id] ?: JSONObject.NULL))
@@ -71,7 +76,7 @@ object StagePlan {
             "start" -> JSONObject().put("mode", "start").put("start", settings.startAt)
             else -> JSONObject().put("mode", "real")
         }
-        return JSONObject().put("channel_id", channelId)
+        return JSONObject().apply { if (postId != null) put("post_id", postId) else put("channel_id", channelId) }
             .put("selected", JSONArray(settings.selected.toList()))
             .put("unselected", settings.unselected)
             .put("only_members", if (settings.onlyMembers.isEmpty()) JSONObject.NULL else JSONArray(settings.onlyMembers.toList()))
@@ -89,7 +94,7 @@ object StagePlan {
                 .put("blur_attachments", settings.blurAttachments)
                 .put("hide_header", settings.hideHeader).put("hide_reply_bars", settings.hideReplyBars)
                 .put("hide_reactions", settings.hideReactions).put("hide_thread_previews", settings.hideThreadPreviews)
-                .put("hide_dates", settings.hideDates))
+                .put("hide_dates", settings.hideDates).put("hide_counts", settings.hideCounts))
     }
 
     /** A saved view as settings, or null when it holds something Android can't draw faithfully. */
@@ -142,16 +147,22 @@ object StagePlan {
             time?.optLong("start") ?: 0L, render?.optString("theme", "auto") ?: "auto",
             render?.optBoolean("hide_reactions") == true, render?.optBoolean("hide_thread_previews") == true,
             render?.optBoolean("hide_dates") == true, render?.optString("width", "phone") ?: "phone",
-            palette.filterKeys { it in setOf("bg", "ink", "accent") }, colors, manualAt, blackout)
+            palette.filterKeys { it in setOf("bg", "ink", "accent") }, colors, manualAt, blackout,
+            render?.optBoolean("hide_counts") == true)
     }
 
     fun forMessages(messages: List<ChatMessage>, settings: Settings,
+        planner: (String, String) -> String = ::stagePlan): Result =
+        forItems(messages.map { Item(it.id, it.authors, it.occurredAt, it.replyTo) }, settings, null, planner)
+
+    /** [postId]: the post of a post's stage (F8.5), which always shows; the rest are its replies. */
+    fun forItems(list: List<Item>, settings: Settings, postId: String? = null,
         planner: (String, String) -> String = ::stagePlan): Result {
         val items = JSONArray()
-        for (message in messages) items.put(JSONObject()
-            .put("id", message.id).put("authors", JSONArray(message.authors))
-            .put("at", message.occurredAt).put("reply_to", message.replyTo ?: JSONObject.NULL))
-        val definition = definition("", settings)
+        for (item in list) items.put(JSONObject()
+            .put("id", item.id).put("authors", JSONArray(item.authors))
+            .put("at", item.at).put("reply_to", item.replyTo ?: JSONObject.NULL))
+        val definition = definition("", settings, postId)
         val plan = JSONObject(planner(items.toString(), definition.toString()))
         val rows = plan.getJSONArray("rows")
         val resultRows = (0 until rows.length()).map { n ->
@@ -170,6 +181,6 @@ object StagePlan {
         return Result(resultRows, resultNames.keys().asSequence().associateWith { resultNames.getJSONObject(it).getString("label") },
             resultNames.keys().asSequence().mapNotNull { id ->
                 resultNames.getJSONObject(id).let { n -> n.optString("color").takeIf { !n.isNull("color") && it.isNotBlank() } }?.let { id to it }
-            }.toMap(), palette)
+            }.toMap(), palette, plan.optInt("cropped", 0))
     }
 }

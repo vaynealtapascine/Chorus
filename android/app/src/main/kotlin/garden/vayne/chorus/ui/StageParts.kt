@@ -551,13 +551,13 @@ internal fun StageSaveDrawer(initialName: String, saved: List<StageSavedRow>, bu
 
 /** A thin bar and a quiet line in place of messages folded away (F8.3 "Nairon · 1 message"). */
 @Composable
-internal fun StageContextRow(names: List<String>, count: Int, what: String = "message") {
+internal fun StageContextRow(names: List<String>, count: Int, what: String = "message", many: String = what + "s") {
     val p = LocalChorusPalette.current
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.width(3.dp).height(18.dp).background(p.line))
         Spacer(Modifier.width(8.dp))
         val who = names.distinct().let { if (it.size > 2) it.take(2) + "…" else it }.joinToString(", ")
-        Text(listOf(who, countLabel(count, what)).filter { it.isNotBlank() }.joinToString(" · "), color = p.ink3, fontSize = 12.sp,
+        Text(listOf(who, countLabel(count, what, many)).filter { it.isNotBlank() }.joinToString(" · "), color = p.ink3, fontSize = 12.sp,
             fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }

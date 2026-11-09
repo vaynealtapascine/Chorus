@@ -76,6 +76,9 @@ pub struct Definition {
     pub redact_names: bool,
     pub fake_names: BTreeMap<String, FakeName>,
     pub time: TimeOverride,
+    /// A post's stage (F8.5): this item is the post, always shown and picked; the others are its
+    /// replies, which selection, `only_members` and `reply_depth` act on.
+    pub post_id: Option<String>,
     /// Words blacked out, per item: `[start, end)` ranges in UTF-16 code units of the item's text
     /// (what Kotlin and JavaScript strings count). The plan hands them back sorted and merged.
     pub blackout: BTreeMap<String, Vec<[u32; 2]>>,
@@ -111,6 +114,9 @@ pub struct Plan {
     pub rows: Vec<Row>,
     /// member id → the name/colour to show instead of the real one (only overridden members).
     pub names: BTreeMap<String, FakeName>,
+    /// Items dropped by `reply_depth` (that `only_members` kept): "2 deeper replies hidden".
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub cropped: usize,
     /// A custom theme's whole palette (`render.theme: "custom"` with a valid `render.palette`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub palette: Option<Palette>,
@@ -163,6 +169,10 @@ pub fn custom_palette(render: &Value) -> Option<Palette> {
         on_accent: on_accent.hex(),
         bubble_out: bg.mix(accent, 0.25).hex(),
     })
+}
+
+fn is_zero(n: &usize) -> bool {
+    *n == 0
 }
 
 /// Sorted, merged, non-empty ranges.
@@ -223,6 +233,9 @@ pub fn plan(items: &[Item], def: &Definition) -> Plan {
     let fates: Vec<Fate> = items
         .iter()
         .map(|it| {
+            if def.post_id.as_deref() == Some(it.id.as_str()) {
+                return Fate::Shown(true);
+            }
             if !passes(it) || cropped(it) {
                 return Fate::Drop;
             }
@@ -300,7 +313,9 @@ pub fn plan(items: &[Item], def: &Definition) -> Plan {
     for (id, f) in &def.fake_names {
         names.insert(id.clone(), f.clone());
     }
-    Plan { rows, names, palette: custom_palette(&def.render) }
+    let anchor = def.post_id.as_deref();
+    let cropped_count = items.iter().filter(|it| anchor != Some(it.id.as_str()) && passes(it) && cropped(it)).count();
+    Plan { rows, names, cropped: cropped_count, palette: custom_palette(&def.render) }
 }
 
 #[cfg(test)]
@@ -424,6 +439,26 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(plan(&items(), &plain).palette, None);
+    }
+
+    #[test]
+    fn a_post_stays_while_its_replies_are_filtered_and_cropped() {
+        let mut v = items();
+        v[1].reply_to = Some("1".into()); // june, level 1
+        v[2].reply_to = Some("2".into()); // june, level 2
+        v[3].reply_to = Some("3".into()); // kai + rin, level 3
+        v[4].reply_to = Some("1".into()); // moss, level 1
+        let d = Definition {
+            post_id: Some("1".into()),
+            reply_depth: Some(1),
+            only_members: Some(vec!["june".into(), "moss".into()]),
+            ..Default::default()
+        };
+        let p = plan(&v, &d);
+        assert_eq!(ids(&p), ["1", "2", "5"]); // kai wrote the post, yet it stays
+        assert_eq!(p.cropped, 1); // 3 was cropped; 4 was filtered out first
+        let picked = Definition { selected: vec!["5".into()], unselected: Unselected::Hidden, ..d };
+        assert_eq!(ids(&plan(&v, &picked)), ["1", "5"]);
     }
 
     #[test]

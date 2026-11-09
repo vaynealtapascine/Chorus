@@ -116,7 +116,10 @@ data class JournalPost(
 
 data class MemberList(val id: String, val name: String, val description: String?, val memberIds: Set<String>)
 data class SavedFeed(val id: String, val name: String, val description: String?, val query: String, val visibility: String, val audience: Audience = Audience(visibility))
-data class SavedStage(val id: String, val name: String, val channelId: String, val definition: JSONObject)
+data class SavedStage(val id: String, val name: String, val channelId: String, val definition: JSONObject) {
+    /** A post's stage (F8.5) names its post instead of a channel. */
+    val postId: String get() = definition.optString("post_id")
+}
 data class FrontSpan(val memberId: String, val startAt: Long, val endAt: Long?)
 data class FrontInterval(val id: String, val subjectType: String, val subjectId: String,
     val level: String, val isPrimary: Boolean, val startAt: Long, val endAt: Long?)

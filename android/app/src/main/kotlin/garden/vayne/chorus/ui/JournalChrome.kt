@@ -124,6 +124,7 @@ private fun overflowIcon(text: String): Int? = when {
     text.startsWith("Mute") || text.startsWith("Unmute") -> R.drawable.ic_bell_off
     text.startsWith("Share") -> R.drawable.ic_share
     text.startsWith("Report") -> R.drawable.ic_format_eye_off
+    text.startsWith("Stage") -> R.drawable.ic_camera
     else -> null
 }
 

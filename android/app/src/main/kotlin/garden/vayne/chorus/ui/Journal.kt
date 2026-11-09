@@ -95,7 +95,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     /** A profile to open: our member's id, or "<account> <member>" for another account's (from Chat). */
     externalOpenProfile: String? = null,
     onExternalProfileConsumed: () -> Unit = {}, onSearch: (String) -> Unit = {},
-    onMessage: ((String, String) -> Unit)? = null) {
+    onMessage: ((String, String) -> Unit)? = null, onStageCapture: (Boolean) -> Unit = {}) {
     val owner = chorus.editorOwner
     val account = chorus.device?.accountId
     if (owner.isBlank() || account == null) return
@@ -123,7 +123,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
         JournalLoaded(chorus, model, session, externalReplyPost, onExternalReplyConsumed,
             externalOpenPost, onExternalOpenConsumed, sharedDraft, onShareConsumed,
             externalNewEntry, onExternalNewEntryConsumed, active, onFocusedRoute,
-            externalOpenProfile, onExternalProfileConsumed, onSearch, onMessage)
+            externalOpenProfile, onExternalProfileConsumed, onSearch, onMessage, onStageCapture)
     }
 }
 
@@ -134,7 +134,7 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
     onExternalOpenConsumed: () -> Unit, sharedDraft: SharedDraft?, onShareConsumed: () -> Unit,
     externalNewEntry: Long?, onExternalNewEntryConsumed: () -> Unit, active: Boolean,
     onFocusedRoute: (Boolean) -> Unit, externalOpenProfile: String?, onExternalProfileConsumed: () -> Unit, onSearch: (String) -> Unit,
-    onMessage: ((String, String) -> Unit)?) {
+    onMessage: ((String, String) -> Unit)?, onStageCapture: (Boolean) -> Unit) {
     val draftState by session.state.collectAsState()
     fun <T> field(get: (garden.vayne.chorus.data.JournalDraft) -> T,
         set: garden.vayne.chorus.data.JournalDraft.(T) -> garden.vayne.chorus.data.JournalDraft) =
@@ -301,6 +301,18 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
     // read before the list measures an inserted post, so it says where the reader was
     val atTop by remember { androidx.compose.runtime.derivedStateOf {
         feedListState.firstVisibleItemIndex == 0 && feedListState.firstVisibleItemScrollOffset < 48 } }
+    // a post's stage (F8.5) covers the Journal, as a chat's covers the chat
+    var stagingPost by rememberSaveable { mutableStateOf<String?>(null) }
+    var stageCapturing by remember { mutableStateOf(false) }
+    LaunchedEffect(stageCapturing) { onStageCapture(stageCapturing) }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { onStageCapture(false) } }
+    val stagedPost = stagingPost?.let { id -> model.posts.find { it.id == id } }
+    if (stagedPost != null) {
+        androidx.compose.runtime.SideEffect { if (active) onFocusedRoute(true) }
+        BackHandler(active) { if (stageCapturing) stageCapturing = false else stagingPost = null }
+        PostStage(chorus, model, stagedPost, stageCapturing, { stageCapturing = it }) { stageCapturing = false; stagingPost = null }
+        return
+    }
     val route = when {
         editing -> "write"
         profileId != null -> "profile:$profileId"
@@ -310,6 +322,7 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
     }
     androidx.compose.runtime.SideEffect { if (active) onFocusedRoute(editing || profileId != null || friendProfile != null || threadPostId != null) }
     val threadDepth = if (threadPostId != null) 1 + threadStack.size else 0
+    androidx.compose.runtime.CompositionLocalProvider(LocalStagePost provides { id: String -> stagingPost = id }) {
     ChorusScene(route, if (editing) maxOf(2, threadDepth + 1) else if (profileId != null || friendProfile != null) maxOf(1, threadDepth + 1)
         else if (threadPostId != null) threadDepth else if (section != "timeline") 1 else 0) { shown ->
     if (shown.startsWith("friend:")) {
@@ -645,7 +658,11 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
         }
     }
     }
+    }
 }
+
+/** Opens a post's stage from its ⋯ menu; only the Journal provides it. */
+internal val LocalStagePost = androidx.compose.runtime.staticCompositionLocalOf<((String) -> Unit)?> { null }
 
 /** Who hears about this post (D-127): as usual, a random 5–60 minutes later, or nobody. Covers the
  * post alerts friends asked for and, for a reply, the author it answers. */
@@ -746,7 +763,8 @@ private fun JournalPostCardBody(post: JournalPost, model: Model, chorus: Chorus,
             JournalSocial.shareText(post.title, post.cw, post.text).takeIf { it.isNotBlank() }?.let { text ->
                 "Copy text" to { clipboard.setText(androidx.compose.ui.text.AnnotatedString(text)) }
             },
-            ("Change audience" to { audienceOpen = true }).takeIf { JournalSocial.canEditAudience(post, model, chorus.device?.accountId) }) + extraMenu)
+            ("Change audience" to { audienceOpen = true }).takeIf { JournalSocial.canEditAudience(post, model, chorus.device?.accountId) },
+            LocalStagePost.current?.takeIf { post.repostOf == null }?.let { stage -> "Stage…" to { stage(post.id) } }) + extraMenu)
     }, onClick = open) {
         // in a feed, a reply says whom it answers (tap to read that); a thread already shows it above
         if (post.replyTo != null && !full && !inThread) {

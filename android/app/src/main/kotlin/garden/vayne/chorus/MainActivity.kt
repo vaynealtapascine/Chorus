@@ -522,7 +522,8 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                         externalNewEntry = journalNewEntry, onExternalNewEntryConsumed = { journalNewEntry = null },
                         active = shownTab == activeTab, onFocusedRoute = { journalFocused = it },
                         onSearch = { searchSection=it; searchOpen=true },
-                        onMessage = { space, channel -> chatSpace = space; chatChannel = channel; chatMessage = null; chatSearchHit = null; tab = Tab.Chat })
+                        onMessage = { space, channel -> chatSpace = space; chatChannel = channel; chatMessage = null; chatSearchHit = null; tab = Tab.Chat },
+                        onStageCapture = { chatStageCapture = it })
                     Tab.People -> FriendsScreen(chorus, model,
                         onOpenChat = { spaceId -> chatSpace = spaceId; chatChannel = null; chatSearchHit = null; tab = Tab.Chat },
                         onReplyPost = { postId -> journalReplyPost = postId; tab = Tab.Journal },

@@ -1,0 +1,89 @@
+{
+  "args": [
+    [
+      {
+        "at": 1000,
+        "authors": [
+          "fox"
+        ],
+        "id": "post",
+        "reply_to": null
+      },
+      {
+        "at": 2000,
+        "authors": [
+          "kit"
+        ],
+        "id": "r1",
+        "reply_to": "post"
+      },
+      {
+        "at": 3000,
+        "authors": [
+          "fox"
+        ],
+        "id": "r2",
+        "reply_to": "r1"
+      },
+      {
+        "at": 4000,
+        "authors": [
+          "kit"
+        ],
+        "id": "r3",
+        "reply_to": "r2"
+      },
+      {
+        "at": 5000,
+        "authors": [
+          "juniper"
+        ],
+        "id": "r4",
+        "reply_to": "post"
+      }
+    ],
+    {
+      "only_members": [
+        "kit",
+        "fox"
+      ],
+      "post_id": "post",
+      "render": {
+        "hide_counts": true,
+        "style": "card"
+      },
+      "reply_depth": 2,
+      "selected": [],
+      "unselected": "visible"
+    }
+  ],
+  "description": "A post's stage: the post always shows; its replies are cropped to two levels (the third counts as cropped) and kept to Kit and Foxglove",
+  "expect": {
+    "cropped": 1,
+    "names": {},
+    "rows": [
+      {
+        "at": 1000,
+        "id": "post",
+        "kind": "item",
+        "reply_shown": false,
+        "selected": true
+      },
+      {
+        "at": 2000,
+        "id": "r1",
+        "kind": "item",
+        "reply_shown": true,
+        "selected": true
+      },
+      {
+        "at": 3000,
+        "id": "r2",
+        "kind": "item",
+        "reply_shown": true,
+        "selected": true
+      }
+    ]
+  },
+  "fn": "stage_plan"
+}

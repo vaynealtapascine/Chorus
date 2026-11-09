@@ -100,6 +100,30 @@ class StagePlanTest {
         assertEquals("#102030", plan.palette?.colors?.get("bg"))
     }
 
+    @Test fun aPostStageNamesItsPostAndReadsTheCroppedCount() {
+        val settings = StagePlan.Settings(replyDepth = 2, hideCounts = true, style = "card")
+        val saved = StagePlan.definition("", settings, "post")
+        assertEquals("post", saved.getString("post_id"))
+        assertFalse(saved.has("channel_id"))
+        assertEquals(true, saved.getJSONObject("render").getBoolean("hide_counts"))
+        assertEquals(settings, StagePlan.supported(saved))
+        assertEquals("post", SavedStage("s", "Card", "", saved).postId)
+        val plan = StagePlan.forItems(listOf(StagePlan.Item("post", listOf("fox"), 1, null), StagePlan.Item("r1", listOf("kit"), 2, "post")),
+            settings, "post") { _, definition ->
+            assertEquals("post", JSONObject(definition).getString("post_id"))
+            """{"rows":[{"kind":"item","id":"post","selected":true,"at":1,"reply_shown":false}],"names":{},"cropped":2}"""
+        }
+        assertEquals(2, plan.cropped)
+    }
+
+    @Test fun deepRepliesFlattenInReadingOrderWithTheirParents() {
+        fun reply(id: String, vararg under: JSONObject) = JSONObject().put("id", id).put("text", id).put("occurred_at", 1)
+            .put("replies", JSONArray(under.toList()))
+        val tree = JSONObject().put("replies", JSONArray(listOf(reply("a", reply("a1", reply("a11"))), reply("b"))))
+        assertEquals(listOf("post" to "a", "a" to "a1", "a1" to "a11", "post" to "b"),
+            PostThreads.flatten(tree, "post").map { (parent, r) -> parent to r.id })
+    }
+
     @Test fun modelShowsOnlyLiveSavedStages() {
         val model = Model.parse("""{"rows":{"stage":{
             "live":{"exists":true,"fields":{"name":"Quiet","definition":{"channel_id":"c","selected":[]}}},

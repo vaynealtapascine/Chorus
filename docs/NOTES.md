@@ -108,6 +108,8 @@ perf and review write-ups, are in `git show a9c3c2e:docs/NOTES.md`.
 
 - `CHORUS_FIXTURES_BLESS=1 cargo test -p chorus-core --test fixtures` rewrites *every* fixture file
   (key order and spacing), not only the new ones: revert the others before committing (2026-11-09, UI21).
+  Revert by directory: `git checkout -- fixtures/*.json` is a git glob that also reaches into
+  `fixtures/<area>/` and silently undoes the blessed new ones.
 
 - **When client code reads projection rows, build its test model from ops through `project`,
   never from hand-written rows.** 0.1.706 opened every chat as "Private chat" because the clients

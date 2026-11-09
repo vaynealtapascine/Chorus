@@ -52,6 +52,24 @@ object PostThreads {
         } }
     }
 
+    /** The replies under a post as the server nests them (`?depth=`), in reading order, each with the
+     * id of the post or reply it answers (a post's stage, F8.5). */
+    fun flatten(j: JSONObject, parent: String): List<Pair<String, ThreadReply>> {
+        val items = j.optJSONArray("replies") ?: return emptyList()
+        val out = ArrayList<Pair<String, ThreadReply>>()
+        for (i in 0 until items.length()) {
+            val item = items.optJSONObject(i) ?: continue
+            val reply = one(item) ?: continue
+            out += parent to reply
+            out += flatten(item, reply.id)
+        }
+        return out
+    }
+
+    /** Three levels of replies, the most the server sends. */
+    suspend fun loadDeep(dev: DeviceRecord, id: String): List<Pair<String, ThreadReply>> =
+        flatten(Api.call("GET", dev.base, "/posts/$id?depth=3", null, dev.session), id)
+
     /** One post object as the server sends it. */
     fun one(j: JSONObject): ThreadReply? = parse(JSONObject().put("replies", org.json.JSONArray().put(j))).firstOrNull()
 
