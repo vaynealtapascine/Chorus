@@ -146,9 +146,12 @@ internal fun Notifications(chorus: Chorus, model: Model, routes: InboxRoutes) {
                 val section = Inbox.section(item, today)
                 if (section != last) {
                     last = section
+                    // Needs you is one tinted block, its heading included (F11.1)
+                    val block = item.needsYou
                     item(key = "section:$section") {
                         Text(section, color = p.accent, style = MaterialTheme.typography.labelLarge,
-                            modifier = Modifier.fillMaxWidth().background(p.bg).padding(start = 16.dp, top = 14.dp, bottom = 6.dp))
+                            modifier = Modifier.fillMaxWidth().background(if (block) p.accentSoft.copy(alpha = .45f) else p.bg)
+                                .padding(start = 16.dp, top = 14.dp, bottom = 6.dp))
                     }
                 }
                 item(key = item.id) {
@@ -180,7 +183,9 @@ internal fun Notifications(chorus: Chorus, model: Model, routes: InboxRoutes) {
         if (follow != null) LaunchedEffect(friend) {
             follow.value = runCatching { PeopleApi.list(checkNotNull(chorus.device)).following.find { it.account.id == friend && it.status == "active" } }.getOrNull()
         }
-        MenuDrawer(true, { held = null }, item.title, listOfNotNull(categoryLabel(item), compactAgo(item.at)).joinToString(" · ")) {
+        // the kind it is ("Friends’ switches", F11.3), else its chip's name
+        val kind = item.shows?.let { k -> Inbox.SHOWS.firstOrNull { it.first == k }?.second } ?: categoryLabel(item)
+        MenuDrawer(true, { held = null }, item.title, listOfNotNull(kind, compactAgo(item.at).takeIf { !item.untimed }).joinToString(" · ")) {
             if (!item.needsYou) {
                 val isRead = read.read(item)
                 MenuRow(if (isRead) "Mark as unread" else "Mark as read", R.drawable.ic_check) {
@@ -212,12 +217,21 @@ internal fun Notifications(chorus: Chorus, model: Model, routes: InboxRoutes) {
         }
     }
 
-    // F11.4: each member keeps their own unread marks; they never leave the account
-    MenuDrawer(readAs, { readAs = false }, "Read as") {
-        for (m in model.active.filter { it.createdByAccountId == null || it.createdByAccountId == account }) {
-            val n = Inbox.unread(items, model.accountPrefs.inboxRead[m.id] ?: InboxRead(), shows)
-            MenuRow(m.shownName, subtitle = if (n > 0) "$n unread" else "caught up", selected = m.id == reader?.id,
-                leading = { ChatAvatar(m, 32.dp) }) { readAs = false; chosenReader = m.id }
+    // F11.4: each member keeps their own unread marks; they never leave the account. Who's here
+    // comes first, in the order Fronting shows them, with their layer under the name
+    if (readAs) {
+        val scene = FrontScene.build(model, model.namedFronts?.bodyId?.ifEmpty { null } ?: account.orEmpty(),
+            model.namedFronts?.let { it.entries(it.bodyId) } ?: model.current, account.orEmpty())
+        val layerOf = HashMap<String, String>()
+        val order = ArrayList<String>()
+        for (l in scene.all) for (e in l.entries) if (e.subjectType == "member" && layerOf.putIfAbsent(e.subjectId, l.name.lowercase()) == null) order += e.subjectId
+        val own = model.active.filter { it.createdByAccountId == null || it.createdByAccountId == account }
+            .sortedBy { m -> order.indexOf(m.id).let { if (it < 0) Int.MAX_VALUE else it } }
+        MenuDrawer(true, { readAs = false }, "Read as") {
+            for (m in own) {
+                val n = Inbox.unread(items, model.accountPrefs.inboxRead[m.id] ?: InboxRead(), shows)
+                ReadAsRow(m, layerOf[m.id], n, m.id == reader?.id) { readAs = false; chosenReader = m.id }
+            }
         }
     }
 
@@ -249,6 +263,25 @@ internal fun Notifications(chorus: Chorus, model: Model, routes: InboxRoutes) {
         offerBack = null
         act("Couldn’t send the request.") { PeopleApi.request(checkNotNull(chorus.device), item.accountId.orEmpty()) }
     } }
+}
+
+/** One member to read as (F11.4): face, name over their layer, the unread count at the right in the accent. */
+@Composable
+private fun ReadAsRow(m: Member, layer: String?, unread: Int, chosen: Boolean, onClick: () -> Unit) {
+    val p = LocalChorusPalette.current
+    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(RoundedCornerShape(12.dp)).background(if (chosen) p.accentSoft else Color.Transparent)
+        .clickable(role = androidx.compose.ui.semantics.Role.RadioButton, onClick = onClick).padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        ChatAvatar(m, 40.dp)
+        Column(Modifier.weight(1f)) {
+            Text(m.shownName, color = if (chosen) p.accent else p.ink, fontSize = 16.sp, fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Normal,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            layer?.let { Text(it, color = p.ink3, fontSize = 13.sp, maxLines = 1) }
+        }
+        Text(if (unread > 0) "$unread unread" else "caught up", color = if (unread > 0) p.accent else p.ink3, fontSize = 14.sp,
+            fontWeight = if (unread > 0) FontWeight.SemiBold else FontWeight.Normal)
+        if (chosen) Glyph(R.drawable.ic_check, p.accent, 20.dp)
+    }
 }
 
 private fun categoryLabel(item: InboxItem): String? = when (item.category) {
@@ -301,7 +334,12 @@ private fun InboxRow(item: InboxItem, unread: Boolean, model: Model, onOpen: () 
         .padding(horizontal = 16.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         KindBadge(item)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            item.actor?.let { who ->
+            // "Kit and Juniper": a face for each, overlapping (F11.1)
+            if (item.faces.size > 1) Row(horizontalArrangement = Arrangement.spacedBy((-6).dp)) {
+                item.faces.take(3).forEach { n -> Box(Modifier.clip(CircleShape).background(p.bg).padding(1.5.dp)) {
+                    Avatar(n.take(1).uppercase(), "#A09184", 24.dp, ring = false)
+                } }
+            } else item.actor?.let { who ->
                 Avatar(who.take(1).uppercase(), item.color ?: "#A09184", 24.dp, ring = false, avatarBlob = item.avatarBlob)
             }
             Text(buildAnnotatedString {

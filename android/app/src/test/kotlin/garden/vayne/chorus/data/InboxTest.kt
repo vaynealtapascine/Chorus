@@ -49,6 +49,7 @@ class InboxTest {
         val liked = Inbox.fromActivity(activity).single()
         assertEquals("Kit and Juniper liked “A quiet afternoon”", liked.title)
         assertEquals(60, liked.at)
+        assertEquals(listOf("Kit", "Juniper"), liked.faces)
         val follows = FollowList(emptyList(), listOf(FollowInfo("f", SpaceAccount("mb", "mossbank", "Mossbank", "system"), "requested")))
         val asks = Inbox.needsYou(follows, emptyList(), listOf(FrontReview("r", "a", "b")), false, { null }, 10)
         assertEquals(listOf("Mossbank wants to follow your system", "Two devices switched within a minute"), asks.map { it.title })

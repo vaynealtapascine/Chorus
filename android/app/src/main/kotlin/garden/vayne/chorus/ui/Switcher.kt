@@ -328,7 +328,11 @@ fun PlaceSheet(chorus: Chorus, model: Model, frontId: String, s: Subject, since:
                     val there = named?.entries(f.id)?.firstOrNull { it.subjectType == s.type && it.subjectId == s.id }
                     val layers = FrontScene.layers(model)
                     val following = named?.resolved?.get(f.id)?.state == "following"
-                    ToggleRow(frontName(f), there != null, subtitle = there?.let { e -> layers.firstOrNull { it.id == e.level }?.name }
+                    // a front some chat speaks from (D-080): say so when they can be picked there (F3.3)
+                    val speaker = there != null && model.channels.any { garden.vayne.chorus.data.ChatSpeaker.frontOf(model, it.id) == f.id } &&
+                        named?.resolved?.get(f.id)?.authorship?.any { it.subjectType == s.type && it.subjectId == s.id } == true
+                    ToggleRow(frontName(f), there != null, subtitle = if (speaker) "Can be picked as speaker in chat"
+                        else there?.let { e -> layers.firstOrNull { it.id == e.level }?.name }
                         ?: if (following) "Follows ${frontName(named?.fronts?.get(f.followSource))}" else "Not here", inset = 14.dp) { on ->
                         act {
                             Front.placeOne(chorus, Placement(s.type, s.id, if (on) layers.firstOrNull()?.id ?: "front" else null, there != null),

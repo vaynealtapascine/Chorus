@@ -23,8 +23,8 @@ History: this file and `docs/NOTES.md` were compacted on 2026-11-05. The full lo
 ## Now
 
 - **In progress:** UI21
-- **Owner:** claude-opus-5.5, 2026-11-09
-- **Next concrete step:** Wave 7 (audit ui21-fronting-friends-stage-notifs.md §7): slices 3-7, 9 and the member row menu done (Stage: 7948303, 9ed537b, D-144/D-145). Left: 2 deep links, 8 sheets to drawers, 10 launcher + unread widget, 11 polish; then full gate and deploy.
+- **Owner:** claude-opus-5.5, 2026-11-10
+- **Next concrete step:** Wave 7 Android slices all in (1-11; last: 28f2bcc, 0d6c777, 0316c56, e143aec + slice 11). Next: look at the new drawers, launcher and unread widget on the emulator against the 5301 demo (not seen yet), full gate with --android, deploy, then web parity (ui21-web-plan.md).
 - **Notes:** Waves 1-6 live (Android 0.1.869, 25e670e: D-136 closing time + Nudge, CHORUS wordmark). Plan: docs/handoff/ui21-plan.md; design for approved features: docs/handoff/ui21-design.md.
 
 ### SEC1: what is done and what is left
@@ -193,3 +193,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`. Entries befo
 - 2026-11-09 claude-opus-5.5 — UI23 and UI21 wave 6 so far deployed (03b4256, Android 0.1.864, server + web `index-0EYZ6R_E.js`, no migration): hold to act as several members; Journal composer and reading polish, System board (D-135), Feeds, Relationships, Lists, headings (D-134). Full gate with Android passed on ea1a81b; 03b4256 only rewrites whats-new.txt. Not seen on a phone.
 - 2026-11-09 claude-opus-5.5 — UI21 wave 6 finished and deployed (25e670e, Android 0.1.869, server + web): poll closing time and early close (D-136, D-141), Nudge our own members who haven't voted (D-143), the real CHORUS wordmark on the welcome screen (F1.1).
 - 2026-11-09 claude-opus-5.5 — UI21 wave 7 Stage slices 3-5 (not deployed): Android Stage as F8 (five tool tabs, round checks, capture pills, Save drawer, Stage… above Delete), definition additions through core with fixtures/stage (black-outs, custom palette, width, by-hand times, fake-name colours, hide reactions/thread previews/dates; D-144), and a post's stage from its ⋯ menu with nested replies, reply levels, only replies from and hide counts (D-145). Web draws black-outs/hidden dates/custom palette only.
+- 2026-11-10 claude-opus-5.5 — UI21 wave 7 finished on Android (not deployed, not seen on a device): last trims (28f2bcc); notification taps open the friend page / Notifications / Front history and review rows say "Phone says X, laptop says Y" (0d6c777); the remaining Fronting/Friends sheets are drawers, PurposeDrawer and PickChip shared (0316c56); the search launcher is the Switch drawer with layers and an Unread widget (e143aec, CLIENTS §3.4–3.5); read-as rows with layer and count, stacked faces, Needs-you block, hold-menu kind, "Can be picked as speaker in chat" (slice 11).

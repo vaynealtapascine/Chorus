@@ -30,6 +30,8 @@ data class InboxItem(
     val followId: String? = null, val needsYou: Boolean = false,
     /** [at] is only when it was read, not when it happened: no time is shown. */
     val untimed: Boolean = false,
+    /** Everyone it groups ("Kit and Juniper"), first names first, for stacked faces. */
+    val faces: List<String> = emptyList(),
 )
 
 /** A reader's read marks: everything at or before [until], and [ids] read one by one after it. */
@@ -132,7 +134,7 @@ object Inbox {
             val first = group.first()
             val verb = if (first.emoji == PostReactions.HEART) "liked" else "reacted ${first.emoji} to"
             out += InboxItem("react:$key:${group.mapNotNull { it.memberId }.sorted().joinToString(",").hashCode()}", "reaction", "friends", "likes",
-                group.maxOf { it.at }, who, "$who $verb ${about(first.target)}", postId = first.target?.id)
+                group.maxOf { it.at }, who, "$who $verb ${about(first.target)}", postId = first.target?.id, faces = names)
         }
         for (a in activity.items.filter { it.kind == "quote" || it.kind == "repost" }) {
             val post = a.post ?: continue
