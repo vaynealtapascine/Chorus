@@ -132,10 +132,11 @@ fun FaceStack(faces: List<Subject>, max: Int = 3, size: Dp = 24.dp, muted: Boole
 
 /** A settings row with a trailing switch: the whole row toggles (F3.3, F3.9). */
 @Composable
-fun ToggleRow(title: String, checked: Boolean, subtitle: String? = null, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
+fun ToggleRow(title: String, checked: Boolean, subtitle: String? = null, enabled: Boolean = true, inset: Dp = 16.dp,
+    onChange: (Boolean) -> Unit) {
     val p = LocalChorusPalette.current
     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(enabled = enabled, role = Role.Switch) { onChange(!checked) }
-        .padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically,
+        .padding(horizontal = inset, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         Column(Modifier.weight(1f)) {
             Text(title, color = if (enabled) p.ink else p.ink3, fontSize = 15.sp, lineHeight = 20.sp)

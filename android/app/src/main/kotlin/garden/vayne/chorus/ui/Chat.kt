@@ -1002,7 +1002,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 }
                 if (channel != null) MenuRow("Notifications", R.drawable.ic_bell,
                     subtitle = notifyLabel(model.accountPrefs.channelNotify(channel.id, space?.kind.orEmpty()))) { headerMenu = false; notifyOpen = true }
-                if (channel != null) MenuRow("Stage mode", R.drawable.ic_layers) {
+                if (channel != null) MenuRow("Stage…", R.drawable.ic_camera) {
                     headerMenu = false; stageSelection = emptyList(); staging = true
                 }
                 if (space?.kind == "internal" && !model.isPerson) {
@@ -2050,7 +2050,7 @@ internal fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors:
                     catch (e: Exception) { historyError = e.message ?: "Could not load edit history." }
                 }
             })
-            if (held == null) put("stage", Triple(R.drawable.ic_layers, "Select in stage mode") { close(); onStage() })
+            if (held == null) put("stage", Triple(R.drawable.ic_camera, "Stage…") { close(); onStage() })
             if (held == null && unseenBy.isNotEmpty()) put("unseen", Triple(R.drawable.ic_members, "Not seen by…") { showUnseen = !showUnseen; close() })
         }
         val layout = ChatActions.layout(rows.keys)

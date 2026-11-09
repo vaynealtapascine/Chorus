@@ -24,7 +24,9 @@ object StagePlan {
         val theme: String = "auto",
     )
 
-    data class Row(val id: String?, val selected: Boolean, val at: Long?, val replyShown: Boolean, val contextCount: Int)
+    /** One planned row: a message ([id]) or, with [id] null, [contextIds] folded into one line. */
+    data class Row(val id: String?, val selected: Boolean, val at: Long?, val replyShown: Boolean, val contextCount: Int,
+        val contextIds: List<String> = emptyList())
     data class Result(val rows: List<Row>, val names: Map<String, String>)
 
     /** A saved selection must not be captured while some picked rows are outside the loaded window. */
@@ -111,7 +113,8 @@ object StagePlan {
         val rows = plan.getJSONArray("rows")
         val resultRows = (0 until rows.length()).map { n ->
             val row = rows.getJSONObject(n)
-            if (row.getString("kind") == "context") Row(null, false, null, false, row.getInt("count"))
+            if (row.getString("kind") == "context") Row(null, false, null, false, row.getInt("count"),
+                row.optJSONArray("ids")?.let { a -> (0 until a.length()).map(a::getString) }.orEmpty())
             else Row(row.getString("id"), row.getBoolean("selected"),
                 row.optLong("at").takeUnless { row.isNull("at") }, row.getBoolean("reply_shown"), 0)
         }

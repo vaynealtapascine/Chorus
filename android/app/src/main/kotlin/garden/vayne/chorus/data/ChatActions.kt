@@ -2,11 +2,11 @@ package garden.vayne.chorus.data
 
 /**
  * Which message actions show first (Figma F5.6: Reply, Reply in thread, Copy text, Pin, Forward,
- * Edit, Select, Delete) and which wait behind More, each in a fixed order.
+ * Edit, Select, Delete; F8.1 puts Stage… above Delete) and which wait behind More, each in a fixed order.
  */
 object ChatActions {
-    val PRIMARY = listOf("reply", "thread", "copy", "pin", "forward", "edit", "select", "delete")
-    val MORE = listOf("private", "reply_in", "quote", "link", "history", "stage", "unseen")
+    val PRIMARY = listOf("reply", "thread", "copy", "pin", "forward", "edit", "select", "stage", "delete")
+    val MORE = listOf("private", "reply_in", "quote", "link", "history", "unseen")
 
     data class Layout(val primary: List<String>, val more: List<String>)
 

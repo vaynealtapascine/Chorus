@@ -1,35 +1,34 @@
 package garden.vayne.chorus.ui
 
 import android.app.Activity
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -38,321 +37,339 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import garden.vayne.chorus.data.Blobs
+import garden.vayne.chorus.data.ChatAttachment
 import garden.vayne.chorus.data.ChatChannel
 import garden.vayne.chorus.data.ChatMessage
-import garden.vayne.chorus.data.ChatAttachment
+import garden.vayne.chorus.data.ChatPresentation
 import garden.vayne.chorus.data.Chorus
-import garden.vayne.chorus.data.Blobs
 import garden.vayne.chorus.data.ForeignAuthor
 import garden.vayne.chorus.data.Model
+import garden.vayne.chorus.data.SavedStage
 import garden.vayne.chorus.data.StagePlan
+import garden.vayne.chorus.designsystem.ChorusPalette
+import garden.vayne.chorus.designsystem.LocalChorusDark
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import garden.vayne.chorus.designsystem.R
 import garden.vayne.chorus.designsystem.Tokens
 import java.text.DateFormat
-import java.util.Calendar
 import java.util.Date
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
-/** Screenshot view over already visible channel messages. All changes here are render-only. */
+/** The palette a stage draws its preview in: its own theme, or the app's. */
 @Composable
-internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<ChatMessage>, model: Model,
-    foreignAuthors: Map<String, ForeignAuthor>, capturing: Boolean,
-    hasOlder: Boolean, loadingOlder: Boolean, onLoadOlder: () -> Unit, onCapture: (Boolean) -> Unit,
-    onClose: () -> Unit, initialSelected: List<String> = emptyList()) {
-    val hostPalette = LocalChorusPalette.current
-    var selected by rememberSaveable(channel.id) { mutableStateOf(initialSelected) }
-    var unselected by rememberSaveable(channel.id) { mutableStateOf("context") }
-    var advanced by rememberSaveable(channel.id) { mutableStateOf(false) }
-    var redactNames by rememberSaveable(channel.id) { mutableStateOf(false) }
-    var timeMode by rememberSaveable(channel.id) { mutableStateOf("real") }
-    var shiftText by rememberSaveable(channel.id) { mutableStateOf("") }
-    var startAt by rememberSaveable(channel.id) { mutableStateOf(System.currentTimeMillis()) }
-    var fakeNames by rememberSaveable(channel.id) { mutableStateOf<Map<String, String>>(emptyMap()) }
-    var onlyMembers by rememberSaveable(channel.id) { mutableStateOf<List<String>>(emptyList()) }
-    var replyDepth by rememberSaveable(channel.id) { mutableStateOf<Int?>(null) }
-    var blurAttachments by rememberSaveable(channel.id) { mutableStateOf(false) }
-    var hideHeader by rememberSaveable(channel.id) { mutableStateOf(false) }
-    var hideReplyBars by rememberSaveable(channel.id) { mutableStateOf(false) }
-    var style by rememberSaveable(channel.id) { mutableStateOf("chorus") }
-    var theme by rememberSaveable(channel.id) { mutableStateOf("auto") }
-    var blurAvatars by rememberSaveable(channel.id) { mutableStateOf(false) }
-    var saveName by rememberSaveable(channel.id) { mutableStateOf("") }
-    var busy by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    val actions = rememberCoroutineScope()
-    var pillVisible by remember { mutableStateOf(true) }
-    val p = when (theme) { "light" -> Tokens.Light; "dark" -> Tokens.Dark; else -> hostPalette }
+internal fun stagePalette(s: StagePlan.Settings): Pair<ChorusPalette, Boolean> {
+    val host = LocalChorusPalette.current
+    val hostDark = LocalChorusDark.current
+    return when (s.theme) {
+        "light" -> Tokens.Light to false
+        "dark" -> Tokens.Dark to true
+        else -> host to hostDark
+    }
+}
+
+/** Hides the status bar while capturing, and the capture pills' two-second fade. */
+@Composable
+internal fun rememberCapturePills(capturing: Boolean): Pair<Boolean, () -> Unit> {
     val activity = LocalContext.current as? Activity
     DisposableEffect(activity, capturing) {
         val bars = activity?.let { WindowInsetsControllerCompat(it.window, it.window.decorView) }
         if (capturing) bars?.hide(WindowInsetsCompat.Type.statusBars())
         onDispose { if (capturing) bars?.show(WindowInsetsCompat.Type.statusBars()) }
     }
-    LaunchedEffect(capturing) {
-        if (capturing) {
-            pillVisible = true
-            delay(2_000)
-            pillVisible = false
-        }
+    var shown by remember { mutableIntStateOf(0) }
+    var visible by remember { mutableStateOf(true) }
+    LaunchedEffect(capturing, shown) {
+        if (capturing) { visible = true; delay(2_000); visible = false }
     }
-    val settings = StagePlan.Settings(selected.toSet(), if (capturing) unselected else "visible",
-        redactNames, fakeNames, timeMode,
-        shiftText.toIntOrNull() ?: 0, onlyMembers.toSet(), replyDepth, blurAttachments, hideHeader, hideReplyBars,
-        style, blurAvatars, startAt, theme)
-    val plan = remember(messages, settings) { StagePlan.forMessages(messages, settings) }
-    val byId = remember(messages) { messages.associateBy { it.id } }
-    val missingSelected = remember(messages, selected) { StagePlan.missingSelected(selected.toSet(), messages) }
-    val authorIds = remember(messages) { messages.flatMap { it.authors }.distinct() }
-    val saved = model.savedStages.filter { it.channelId == channel.id }
+    return visible to { shown++ }
+}
 
-    CompositionLocalProvider(LocalChorusPalette provides p) {
-    Column(Modifier.fillMaxSize().background(p.bg).then(if (capturing) Modifier.statusBarsPadding() else Modifier)) {
-        if (!capturing) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = onClose) { Text("Back") }
-                Text("Stage · #${channel.name}", color = p.ink, fontWeight = FontWeight.SemiBold)
-                TextButton(enabled = missingSelected.isEmpty(), onClick = { onCapture(true) }) { Text("Capture") }
-            }
-            if (selected.isNotEmpty()) Text("${selected.size} of ${messages.size} picked", color = p.ink2, fontSize = 13.sp,
-                modifier = Modifier.padding(horizontal = 16.dp))
-            if (missingSelected.isNotEmpty()) Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                verticalAlignment = Alignment.CenterVertically) {
-                TextButton(enabled = !loadingOlder && hasOlder, onClick = onLoadOlder, modifier = Modifier.weight(1f)) {
-                    Text(if (loadingOlder) "Loading…" else "Load older (${missingSelected.size})", color = p.warn)
-                }
-                TextButton(onClick = { selected = selected.filterNot { it in missingSelected } }) { Text("Clear") }
-            }
-            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                JournalChoice("Fold", unselected == "context") { unselected = "context" }
-                JournalChoice("Hide", unselected == "hidden") { unselected = "hidden" }
-                JournalChoice("Show", unselected == "visible") { unselected = "visible" }
-                TextButton(onClick = { advanced = !advanced }) { Text(if (advanced) "Less" else "Advanced") }
-            }
-            if (advanced) Column(Modifier.fillMaxWidth().heightIn(max = 220.dp).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                LazyRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    items(listOf("chorus" to "Chorus", "discord" to "Discord-ish", "bubbles" to "Bubbles", "card" to "Card",
-                        "transcript" to "Transcript", "minimal" to "Minimal")) { (value, label) ->
-                        JournalChoice(label, style == value) { style = value }
-                    }
-                }
-                LazyRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    items(listOf("auto" to "Auto colors", "light" to "Light", "dark" to "Dark")) { (value, label) ->
-                        JournalChoice(label, theme == value) { theme = value }
-                    }
-                }
-                JournalChoice("Hide real names", redactNames) { redactNames = !redactNames }
-                LazyRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    items(listOf("real" to "Real times", "hide" to "Hide times", "shift" to "Shift", "start" to "Start at")) { (value, label) ->
-                        JournalChoice(label, timeMode == value) { timeMode = value }
-                    }
-                }
-                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    JournalChoice("Conceal avatars", blurAvatars) { blurAvatars = !blurAvatars }
-                    JournalChoice("Conceal attachments", blurAttachments) { blurAttachments = !blurAttachments }
-                }
-                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    JournalChoice("Hide channel name", hideHeader) { hideHeader = !hideHeader }
-                    JournalChoice("Hide reply bars", hideReplyBars) { hideReplyBars = !hideReplyBars }
-                }
-                if (timeMode == "shift") ChorusField(shiftText,
-                    { shiftText = it.filter { c -> c.isDigit() || c == '-' }.take(7) },
-                    label = { Text("Shift times by minutes") }, singleLine = true,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
-                if (timeMode == "start") {
-                    var pickingStart by remember { mutableStateOf(false) }
-                    FormCard(Modifier.padding(horizontal = 16.dp)) {
-                        FormValueRow("First shown time", DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(startAt)),
-                            R.drawable.ic_clock) { pickingStart = true }
-                    }
-                    if (pickingStart) DateTimeDrawer(startAt, { startAt = it; pickingStart = false }, { pickingStart = false }, "First shown time")
-                }
-                for (id in authorIds) {
-                    val realName = model.member(id)?.shownName ?: foreignAuthors[id]?.name ?: "Someone"
-                    JournalChoice("Only $realName", id in onlyMembers) {
-                        onlyMembers = if (id in onlyMembers) onlyMembers - id else onlyMembers + id
-                    }
-                    ChorusField(fakeNames[id].orEmpty(), { value ->
-                        fakeNames = fakeNames.toMutableMap().apply {
-                            if (value.isBlank()) remove(id) else put(id, value)
+/** Screenshot view over already visible channel messages (F8.2–F8.9). All changes here are render-only. */
+@Composable
+internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<ChatMessage>, model: Model,
+    foreignAuthors: Map<String, ForeignAuthor>, capturing: Boolean,
+    hasOlder: Boolean, loadingOlder: Boolean, onLoadOlder: () -> Unit, onCapture: (Boolean) -> Unit,
+    onClose: () -> Unit, initialSelected: List<String> = emptyList()) {
+    val host = LocalChorusPalette.current
+    val hostDark = LocalChorusDark.current
+    var s by rememberSaveable(channel.id, stateSaver = StageSaver) {
+        mutableStateOf(StagePlan.Settings(selected = initialSelected.toSet()))
+    }
+    var tab by rememberSaveable(channel.id) { mutableStateOf(StageTab.Select) }
+    var saving by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val actions = rememberCoroutineScope()
+    val (pillsVisible, showPills) = rememberCapturePills(capturing)
+    val (p, dark) = stagePalette(s)
+
+    // picking shows every message, the unpicked dimmed; the other tools show what Capture will
+    val picking = !capturing && tab == StageTab.Select
+    val planned = if (picking && s.selected.isNotEmpty()) s.copy(unselected = "visible") else s
+    val plan = remember(messages, planned) { StagePlan.forMessages(messages, planned) }
+    val byId = remember(messages) { messages.associateBy { it.id } }
+    val missingSelected = remember(messages, s.selected) { StagePlan.missingSelected(s.selected, messages) }
+    val authors = remember(messages, model, foreignAuthors) {
+        messages.flatMap { it.authors }.distinct().map { stageAuthor(it, model, foreignAuthors) }
+    }
+    val authorById = remember(authors) { authors.associateBy { it.id } }
+    val account = chorus.device?.accountId.orEmpty()
+    val aligned = remember(model) {
+        ChatPresentation.aligned(model, model.current.filter { it.subjectType == "member" }.map { it.subjectId })
+    }
+    val saved = model.savedStages.filter { it.channelId == channel.id }
+    val shown = plan.rows.count { it.id != null }
+    val picked = s.selected.count { it in byId }
+    val subtitle = "#${channel.name} · " + when (tab) {
+        StageTab.Select, StageTab.Filters ->
+            if (s.selected.isEmpty()) countLabel(messages.size, "message") else "$picked of ${messages.size} picked"
+        StageTab.Style -> "${stageStyleLabel(s.style)} · phone width"
+        StageTab.Redact -> if (stageRedacted(s)) "redacted" else countLabel(shown, "message")
+        StageTab.Names -> if (s.fakeNames.isNotEmpty()) countLabel(s.fakeNames.size, "name") + " changed" else countLabel(shown, "message")
+    }
+    val list = rememberLazyListState()
+    // open at the message Stage started from, else at the newest
+    LaunchedEffect(channel.id, messages.isNotEmpty()) {
+        if (messages.isEmpty()) return@LaunchedEffect
+        val at = initialSelected.firstOrNull()?.let { id -> plan.rows.indexOfFirst { it.id == id } }?.takeIf { it >= 0 }
+        list.scrollToItem((at ?: plan.rows.lastIndex).coerceAtLeast(0) + (if (s.hideHeader) 0 else 1) + (if (hasOlder) 1 else 0))
+    }
+
+    Column(Modifier.fillMaxSize().background(p.bg)) {
+        if (!capturing) StageBar(subtitle, onClose, { error = null; saving = true }, { onCapture(true) }, missingSelected.isEmpty())
+        Box(Modifier.weight(1f).fillMaxWidth().then(if (capturing) Modifier.statusBarsPadding() else Modifier),
+            contentAlignment = Alignment.TopCenter) {
+            CompositionLocalProvider(LocalChorusPalette provides p, LocalChorusDark provides dark) {
+                if (messages.isEmpty()) EmptyState(R.drawable.ic_chat, "No messages")
+                LazyColumn(Modifier.widthIn(max = 390.dp).fillMaxSize().padding(horizontal = 12.dp), state = list,
+                    verticalArrangement = Arrangement.spacedBy(if (s.style == "discord") 2.dp else if (s.style == "card") 12.dp else 8.dp)) {
+                    if (!capturing && hasOlder) item(key = "older") {
+                        Box(Modifier.fillMaxWidth().padding(top = 8.dp), contentAlignment = Alignment.Center) {
+                            StageChip(if (loadingOlder) "Loading…" else if (missingSelected.isEmpty()) "Load older"
+                                else "Load older (${missingSelected.size})") { if (!loadingOlder) onLoadOlder() }
                         }
-                    }, label = { Text("Show $realName as (optional)") }, singleLine = true,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
-                }
-                LazyRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    items(listOf(null to "All replies", 0 to "No replies", 1 to "Direct", 2 to "2 deep")) { (depth, label) ->
-                        JournalChoice(label, replyDepth == depth) { replyDepth = depth }
                     }
-                }
-            }
-            if (saved.isNotEmpty()) LazyRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                items(saved, key = { it.id }) { stage ->
-                    val supported = StagePlan.supported(stage.definition)
-                    TextButton(enabled = !busy && supported != null, onClick = {
-                        val loaded = supported ?: return@TextButton
-                        selected = loaded.selected.toList(); unselected = loaded.unselected
-                        redactNames = loaded.redactNames; fakeNames = loaded.fakeNames
-                        timeMode = loaded.timeMode
-                        shiftText = if (loaded.timeMode == "shift") loaded.shiftMinutes.toString() else ""
-                        startAt = if (loaded.timeMode == "start") loaded.startAt else System.currentTimeMillis()
-                        onlyMembers = loaded.onlyMembers.toList(); replyDepth = loaded.replyDepth
-                        blurAttachments = loaded.blurAttachments
-                        hideHeader = loaded.hideHeader; hideReplyBars = loaded.hideReplyBars
-                        style = loaded.style
-                        theme = loaded.theme
-                        blurAvatars = loaded.blurAvatars
-                        error = null
-                    }) { Text(if (supported == null) "${stage.name} · web view" else stage.name) }
-                    if (advanced) TextButton(enabled = !busy, onClick = {
-                        busy = true; error = null
-                        actions.launch {
-                            try { chorus.create("stage.delete", stage.id, JSONObject()) }
-                            catch (e: Exception) { error = e.message ?: "Could not delete this stage." }
-                            finally { busy = false }
+                    if (!s.hideHeader) item(key = "channel-header") {
+                        val firstAt = plan.rows.firstOrNull { it.id != null }?.at
+                        Row(Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Glyph(R.drawable.ic_hash, p.ink3, 20.dp)
+                            Text(channel.name, color = p.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                            if (firstAt != null) Text(DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(firstAt)), color = p.ink3, fontSize = 12.sp)
                         }
-                    }) { Text("Remove") }
-                }
-            }
-            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                ChorusField(saveName, { saveName = it }, label = { Text("Name this stage") },
-                    singleLine = true, modifier = Modifier.weight(1f), enabled = !busy)
-                TextButton(enabled = !busy && saveName.isNotBlank(), onClick = {
-                    val name = saveName.trim()
-                    val definition = StagePlan.definition(channel.id, settings.copy(unselected = unselected))
-                    busy = true; error = null
-                    actions.launch {
-                        try {
-                            chorus.create("stage.save", chorus.newId(), JSONObject().put("name", name).put("definition", definition))
-                            saveName = ""
-                        } catch (e: Exception) { error = e.message ?: "Could not save this stage." }
-                        finally { busy = false }
                     }
-                }) { Text("Save") }
-            }
-            if (error != null) Text(error.orEmpty(), color = p.danger, modifier = Modifier.padding(horizontal = 16.dp))
-        }
-        if (messages.isEmpty()) EmptyState(R.drawable.ic_chat, "No messages")
-        if (!capturing && hasOlder) TextButton(enabled = !loadingOlder, onClick = onLoadOlder,
-            modifier = Modifier.padding(horizontal = 12.dp)) {
-            Text(if (loadingOlder) "Loading…" else "Load older")
-        }
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-            LazyColumn(Modifier.widthIn(max = 390.dp).fillMaxSize().padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(if (style == "discord") 0.dp else if (style == "card") 12.dp else 8.dp)) {
-                if (!hideHeader) item(key = "channel-header") {
-                    val firstAt = plan.rows.firstOrNull { it.id != null }?.at
-                    val date = firstAt?.let { " · ${DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(it))}" }.orEmpty()
-                    Text("#${channel.name}$date", color = p.ink2, fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp))
-                }
-                itemsIndexed(plan.rows, key = { index, row -> row.id ?: "context:$index" }) { _, row ->
-                    if (row.id == null) {
-                        Text("${row.contextCount} ${if (row.contextCount == 1) "message" else "messages"}", color = p.ink3, fontSize = 13.sp,
-                            modifier = Modifier.fillMaxWidth().background(p.surface).padding(12.dp))
-                    } else {
+                    itemsIndexed(plan.rows, key = { index, row -> row.id ?: "context:$index" }) { _, row ->
+                        if (row.id == null) {
+                            StageContextRow(row.contextIds.flatMap { byId[it]?.authors.orEmpty() }.map { id ->
+                                plan.names[id] ?: authorById[id]?.name ?: "Someone"
+                            }, row.contextCount)
+                            return@itemsIndexed
+                        }
                         val message = byId[row.id] ?: return@itemsIndexed
-                        var revealed by rememberSaveable(message.id) { mutableStateOf(false) }
-                        val names = message.authors.map { id -> plan.names[id] ?: model.member(id)?.shownName
-                            ?: foreignAuthors[id]?.name ?: "Someone" }.joinToString(" & ")
-                        val pickMark = if (!capturing && message.id in selected) "✓ " else ""
-                        val mine = message.accountId == chorus.device?.accountId
-                        val pad = when (style) {
-                            "transcript" -> 4.dp
-                            "discord" -> 6.dp
-                            "minimal" -> 8.dp
-                            "card" -> 16.dp
-                            else -> 12.dp
-                        }
-                        Box(Modifier.fillMaxWidth(), contentAlignment = if (style == "bubbles" && mine)
-                            Alignment.CenterEnd else Alignment.CenterStart) {
-                        Column((if (style == "bubbles") Modifier.widthIn(max = 320.dp) else Modifier.fillMaxWidth())
-                            .then(if (style == "card") Modifier.border(1.dp, p.line, RoundedCornerShape(14.dp)) else Modifier)
-                            .then(if (style == "bubbles") Modifier.background(if (mine) p.accentSoft else p.surface2,
-                                RoundedCornerShape(18.dp))
-                                else if (style == "card") Modifier.background(p.surface, RoundedCornerShape(14.dp))
-                                else Modifier.background(if (style == "transcript" || style == "discord") p.bg else p.surface))
-                            .clickable(enabled = !capturing) {
-                            selected = if (message.id in selected) selected - message.id else selected + message.id
-                        }.padding(pad),
-                            verticalArrangement = Arrangement.spacedBy(if (style == "transcript" || style == "discord") 1.dp else 4.dp)) {
-                            if (style in setOf("chorus", "discord", "bubbles", "card")) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                val lead = message.authors.firstOrNull()
-                                val member = lead?.let { model.member(it) ?: foreignAuthors[it]?.member }
-                                val concealed = blurAvatars || (lead != null && lead in plan.names)
-                                Avatar(if (concealed) "•" else member?.glyph ?: "?",
-                                    if (concealed) "#A09184" else member?.color ?: "#A09184",
-                                    if (style == "card") 44.dp else 32.dp,
-                                    avatarBlob = if (concealed) null else member?.avatarBlob, ring = style != "discord")
-                                Text("$pickMark$names", color = p.ink, fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier.weight(1f).padding(start = 8.dp))
-                                if (row.at != null) Text(DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(row.at)),
-                                    color = p.ink3, fontSize = 11.sp)
+                        val on = message.id in s.selected
+                        Row(Modifier.fillMaxWidth().then(if (picking) Modifier.toggleable(on, role = Role.Checkbox) {
+                                s = s.copy(selected = if (on) s.selected - message.id else s.selected + message.id)
+                            } else Modifier).alpha(if (!capturing && !row.selected) .45f else 1f),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            if (picking) { StageCheck(on); Spacer(Modifier.width(8.dp)) }
+                            Box(Modifier.weight(1f)) {
+                                StageMessage(chorus, message, row, plan, s, authorById,
+                                    ChatPresentation.own(message, account, aligned), byId[message.replyTo])
                             }
-                            if (style == "transcript" && message.cw != null)
-                                Text("$pickMark$names:", color = p.ink, fontWeight = FontWeight.SemiBold)
-                            val parent = message.replyTo?.let(byId::get)
-                            if (row.replyShown && !hideReplyBars && parent != null)
-                                Text(StagePlan.replyPreview(parent, plan.names) { id ->
-                                    model.member(id)?.shownName ?: foreignAuthors[id]?.name ?: "Someone"
-                                }, color = p.ink3, fontSize = 11.sp, maxLines = 1)
-                            if (message.cw != null) Text("Content warning: ${message.cw} · ${if (revealed) "Hide" else "Show"}",
-                                color = p.accent, modifier = Modifier.clickable { revealed = !revealed })
-                            if (message.cw == null || revealed) {
-                                Text(when (style) {
-                                    "transcript" -> "${if (message.cw == null) "$pickMark$names: " else ""}${message.text}"
-                                    "minimal" -> "$pickMark${message.text}"
-                                    else -> message.text
-                                }, color = p.ink)
-                                for (attachment in message.attachments) StageAttachment(chorus, attachment, blurAttachments)
-                            }
-                        }
                         }
                     }
+                    item(key = "end") { Spacer(Modifier.height(16.dp)) }
                 }
+                if (capturing) StageCapturePills(pillsVisible, showPills) { onCapture(false) }
             }
-            if (capturing && !pillVisible) Box(Modifier.fillMaxSize().clickable { pillVisible = true })
-            if (capturing && pillVisible) Text("Done", color = p.accent,
-                modifier = Modifier.align(Alignment.TopEnd).padding(16.dp).background(p.surface)
-                    .clickable { onCapture(false) }.padding(horizontal = 16.dp, vertical = 8.dp))
+        }
+        if (!capturing) {
+            StagePanel {
+                when (tab) {
+                    StageTab.Select -> {
+                        StageLabel("Messages you didn’t pick")
+                        val modes = listOf("hidden", "context", "visible")
+                        Segmented(listOf("Hidden", "Context only", "Shown"), modes.indexOf(s.unselected), accent = true) {
+                            s = s.copy(unselected = modes[it])
+                        }
+                        val only = authors.firstOrNull { it.id in aligned } ?: authors.firstOrNull()
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            StageChip("Pick all") { s = s.copy(selected = messages.mapTo(LinkedHashSet()) { it.id }) }
+                            StageChip("Pick none") { s = s.copy(selected = emptySet()) }
+                            if (only != null && authors.size > 1) StageChip("Only ${only.name}") {
+                                s = s.copy(selected = messages.filter { only.id in it.authors }.mapTo(LinkedHashSet()) { it.id })
+                            }
+                        }
+                        if (missingSelected.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (hasOlder) StageChip(if (loadingOlder) "Loading…" else "Load older (${missingSelected.size})") {
+                                if (!loadingOlder) onLoadOlder()
+                            }
+                            StageChip("Clear ${missingSelected.size}") { s = s.copy(selected = s.selected - missingSelected) }
+                        }
+                    }
+                    StageTab.Filters -> {
+                        if (authors.size > 1) {
+                            StageLabel("Only these members")
+                            StageMemberChips(authors, s.onlyMembers) { s = s.copy(onlyMembers = it) }
+                        }
+                        Column {
+                            ToggleRow("Hide reply bars", s.hideReplyBars, inset = 0.dp) { s = s.copy(hideReplyBars = it) }
+                        }
+                        StageRow("Crop reply chains") {
+                            val depth = s.replyDepth
+                            StageStepper(depth?.toString() ?: "All", "Reply levels",
+                                minus = { s = s.copy(replyDepth = if (depth == null) 2 else (depth - 1).coerceAtLeast(0)) }.takeIf { depth != 0 },
+                                plus = { s = s.copy(replyDepth = depth?.let { if (it >= 9) null else it + 1 }) }.takeIf { depth != null })
+                        }
+                    }
+                    StageTab.Style -> StageStylePanel(s, hostDark) { s = it }
+                    StageTab.Redact -> StageRedactPanel(s, { s = it })
+                    StageTab.Names -> StageNamesPanel(s, authors, plan.rows.firstOrNull { it.id != null }?.id?.let(byId::get)?.occurredAt) { s = it }
+                }
+                if (error != null && !saving) Text(error.orEmpty(), color = host.danger, fontSize = 13.sp)
+            }
+            StageTabs(tab) { tab = it }
         }
     }
+    if (saving) {
+        fun summary(stage: SavedStage): String {
+            val loaded = StagePlan.supported(stage.definition) ?: return "Made on the web"
+            return listOfNotNull("#${channel.name}",
+                countLabel(loaded.selected.size.takeIf { it > 0 } ?: messages.size, "message"),
+                stageStyleLabel(loaded.style),
+                "names changed".takeIf { loaded.fakeNames.isNotEmpty() }, "redacted".takeIf { stageRedacted(loaded) }).joinToString(" · ")
+        }
+        StageSaveDrawer(saved.firstOrNull { StagePlan.supported(it.definition) == s }?.name.orEmpty(),
+            saved.map { StageSavedRow(it, R.drawable.ic_message, summary(it), StagePlan.supported(it.definition) != null) },
+            busy, error, onSave = { name ->
+                val id = saved.firstOrNull { it.name.equals(name, ignoreCase = true) }?.id ?: chorus.newId()
+                busy = true; error = null
+                actions.launch {
+                    try {
+                        chorus.create("stage.save", id, JSONObject().put("name", name).put("definition", StagePlan.definition(channel.id, s)))
+                        saving = false
+                    } catch (e: Exception) { error = e.message ?: "Could not save this stage." }
+                    finally { busy = false }
+                }
+            }, onOpen = { stage ->
+                StagePlan.supported(stage.definition)?.let { s = it }
+                saving = false
+            }, onDelete = { stage ->
+                busy = true; error = null
+                actions.launch {
+                    try { chorus.create("stage.delete", stage.id, JSONObject()) }
+                    catch (e: Exception) { error = e.message ?: "Could not delete this stage." }
+                    finally { busy = false }
+                }
+            }, onDismiss = { saving = false })
+    }
+}
+
+/** One message as the chosen preset draws it. */
+@Composable
+private fun StageMessage(chorus: Chorus, message: ChatMessage, row: StagePlan.Row, plan: StagePlan.Result,
+    s: StagePlan.Settings, authors: Map<String, StageAuthor>, mine: Boolean, parent: ChatMessage?) {
+    val p = LocalChorusPalette.current
+    var revealed by rememberSaveable(message.id) { mutableStateOf(false) }
+    val lead = message.authors.firstOrNull()
+    val names = message.authors.map { plan.names[it] ?: authors[it]?.name ?: "Someone" }.joinToString(" & ").ifBlank { "Someone" }
+    val concealed = s.blurAvatars || (lead != null && lead in plan.names)
+    val author = lead?.let(authors::get)
+    val nameColor = if (lead != null && lead in plan.names) p.ink2 else author?.let { tonesOf(it.color).name } ?: p.ink
+    val time = row.at?.let { DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(it)) }
+
+    @Composable fun Face(size: Dp) = Avatar(if (concealed) names.removePrefix("Member ").take(1).uppercase() else author?.glyph ?: "?",
+        if (concealed) "#A09184" else author?.color ?: "#A09184", size,
+        avatarBlob = if (concealed) null else author?.avatarBlob, ring = false)
+
+    @Composable fun NameLine() = Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(names, color = nameColor, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        if (time != null) Text(time, color = p.ink3, fontSize = 11.sp)
+    }
+
+    @Composable fun Body(prefix: String = "") {
+        if (row.replyShown && !s.hideReplyBars && parent != null)
+            Text(StagePlan.replyPreview(parent, plan.names) { id -> authors[id]?.name ?: "Someone" },
+                color = p.ink3, fontSize = 11.sp, maxLines = 1)
+        if (message.cw != null) Text("Content warning: ${message.cw} · ${if (revealed) "Hide" else "Show"}",
+            color = p.accent, fontSize = 14.sp, modifier = Modifier.clickable { revealed = !revealed })
+        if (message.cw == null || revealed) {
+            if (prefix.isNotEmpty() || message.text.isNotBlank()) Text(prefix + message.text, color = p.ink, fontSize = 15.sp, lineHeight = 21.sp)
+            for (attachment in message.attachments) StageAttachment(chorus, attachment, s.blurAttachments)
+        }
+    }
+
+    when (s.style) {
+        "chorus", "bubbles" -> {
+            val bubble = RoundedCornerShape(16.dp)
+            if (mine) Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+                Column(Modifier.widthIn(max = 300.dp).background(if (s.style == "bubbles") p.accent.copy(alpha = .9f) else p.bubbleOut, bubble)
+                    .padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    if (s.style == "chorus") NameLine()
+                    CompositionLocalProvider(LocalChorusPalette provides if (s.style == "bubbles") p.copy(ink = p.onAccent, ink3 = p.onAccent.copy(alpha = .7f)) else p) { Body() }
+                }
+            } else Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (s.style == "chorus") Face(32.dp)
+                Column(Modifier.widthIn(max = 300.dp).background(p.surface2, bubble).padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    if (s.style == "chorus") NameLine()
+                    Body()
+                }
+            }
+        }
+        "discord" -> Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Face(36.dp)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) { NameLine(); Body() }
+        }
+        "card" -> Column(Modifier.fillMaxWidth().background(p.surface, RoundedCornerShape(14.dp))
+            .border(1.dp, p.line, RoundedCornerShape(14.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) { Face(44.dp); NameLine() }
+            Body()
+        }
+        "transcript" -> Column(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+            Body(if (message.cw == null) "$names: " else "")
+            if (message.cw != null) Text("$names:", color = p.ink, fontWeight = FontWeight.SemiBold)
+        }
+        else -> Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+            Box(Modifier.width(3.dp).height(40.dp).background(nameColor))
+            Column(Modifier.weight(1f).padding(start = 10.dp), verticalArrangement = Arrangement.spacedBy(1.dp)) { NameLine(); Body() }
+        }
     }
 }
 
 /** Stage never reveals a spoiler; conceal mode uses a solid card on Android 10 too. */
 @Composable
-private fun StageAttachment(chorus: Chorus, attachment: ChatAttachment, conceal: Boolean) {
+internal fun StageAttachment(chorus: Chorus, attachment: ChatAttachment, conceal: Boolean) {
     val p = LocalChorusPalette.current
     if (attachment.spoiler || conceal) {
         Text(if (attachment.spoiler) "Spoiler attachment" else "Attachment concealed", color = p.ink2,
-            fontSize = 12.sp, modifier = Modifier.fillMaxWidth().background(p.surface2).padding(12.dp))
+            fontSize = 12.sp, modifier = Modifier.fillMaxWidth().background(p.surface3, RoundedCornerShape(8.dp)).padding(12.dp))
         return
     }
-    Text("📎 ${attachment.filename}", color = p.ink2, fontSize = 12.sp)
-    if (!attachment.mime.startsWith("image/")) return
+    if (!attachment.mime.startsWith("image/")) { Text("📎 ${attachment.filename}", color = p.ink2, fontSize = 12.sp); return }
     val ctx = LocalContext.current
     val hash = attachment.thumbHash ?: attachment.blobHash
     val device = chorus.device
     val bitmap by produceState<android.graphics.Bitmap?>(null, hash, device?.session) {
         value = withContext(Dispatchers.IO) { Blobs.image(ctx.applicationContext, hash, device) }
     }
-    if (bitmap == null) Text("Image unavailable offline or still loading.", color = p.ink3, fontSize = 12.sp)
+    if (bitmap == null) Box(Modifier.fillMaxWidth().height(120.dp).background(p.surface3, RoundedCornerShape(8.dp)))
     else Image(bitmap!!.asImageBitmap(), contentDescription = attachment.altText.ifBlank { attachment.filename },
         contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth().height(200.dp))
 }
