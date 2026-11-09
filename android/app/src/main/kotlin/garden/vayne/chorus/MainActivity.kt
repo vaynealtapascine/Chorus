@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -50,7 +51,6 @@ import garden.vayne.chorus.ui.MoreScreen
 import garden.vayne.chorus.ui.FrontsScreen
 import garden.vayne.chorus.ui.LayersDisplayScreen
 import garden.vayne.chorus.ui.Switcher
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -426,8 +426,9 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
             // search draws its own bar too: the field is the top bar (F5.9)
             val chatOwnChrome = frontingChrome || searchOpen && !settingsOpen && !insightsOpen && sharedDraft == null || (settingsOpen || insightsOpen) && !searchOpen && sharedDraft == null ||
                 activeTab in listOf(Tab.Home, Tab.Chat, Tab.Journal, Tab.Notifications, Tab.People, Tab.Members, Tab.More) && !searchOpen && !settingsOpen && !insightsOpen && !frontsOpen && sharedDraft == null
-            if (chatOwnChrome && !chatStageCapture) Box(Modifier.fillMaxWidth().background(p.surface).statusBarsPadding())
-            if (!chatStageCapture && !chatOwnChrome) Row(
+            // the share chooser draws its own bar too
+            if ((chatOwnChrome || sharedDraft != null) && !chatStageCapture) Box(Modifier.fillMaxWidth().background(p.surface).statusBarsPadding())
+            if (!chatStageCapture && !chatOwnChrome && sharedDraft == null) Row(
                 Modifier.fillMaxWidth().background(p.surface).statusBarsPadding().padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -592,33 +593,36 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
 private fun ShareChooser(draft: SharedDraft, model: Model, accountId: String?, onCancel: () -> Unit,
     onPost: () -> Unit, onChannel: (ChatChannel) -> Unit) {
     val p = LocalChorusPalette.current
-    Column(Modifier.fillMaxSize().background(p.bg).padding(horizontal = 20.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically) {
-            Text("Share into Chorus", color = p.ink, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-            TextButton(onClick = onCancel) { Text("Cancel") }
+    @Composable fun Target(label: String, sub: String?, icon: Int, onClick: () -> Unit) {
+        Row(Modifier.fillMaxWidth().clickable(onClick = onClick).heightIn(min = 56.dp).padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Box(Modifier.size(36.dp).background(p.accentSoft, androidx.compose.foundation.shape.CircleShape), contentAlignment = Alignment.Center) {
+                garden.vayne.chorus.ui.Glyph(icon, p.accent, 18.dp)
+            }
+            Column(Modifier.weight(1f)) {
+                Text(label, color = p.ink, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+                sub?.let { Text(it, color = p.ink3, fontSize = 13.sp, maxLines = 1) }
+            }
         }
-        Text(listOfNotNull("Text".takeIf { draft.text.isNotBlank() },
-            "${draft.uris.size} file${if (draft.uris.size == 1) "" else "s"}".takeIf { draft.uris.isNotEmpty() })
-            .joinToString(" · "), color = p.ink2, modifier = Modifier.padding(bottom = 12.dp))
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    }
+    Column(Modifier.fillMaxSize().background(p.bg)) {
+        // F5.20's forward list: where this goes, no sentence
+        garden.vayne.chorus.ui.SubpageBar("Share into Chorus", listOfNotNull("Text".takeIf { draft.text.isNotBlank() },
+            "${draft.uris.size} file${if (draft.uris.size == 1) "" else "s"}".takeIf { draft.uris.isNotEmpty() }).joinToString(" · ").ifEmpty { null }, onCancel)
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (model.active.any { it.createdByAccountId == null || it.createdByAccountId == accountId }) item {
-                Text("Post as…", color = p.accent, fontSize = 16.sp,
-                    modifier = Modifier.fillMaxWidth().background(p.surface, androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
-                        .clickable(onClick = onPost).padding(16.dp))
+                garden.vayne.chorus.ui.FormCard { Target("Journal", "Post or entry", garden.vayne.chorus.designsystem.R.drawable.ic_book, onPost) }
             }
             if (model.channels.isNotEmpty()) item {
-                Text("Send to channel…", color = p.ink, fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(top = 10.dp, bottom = 4.dp))
-            }
-            items(model.channels, key = { it.id }) { channel ->
-                val space = model.spaces.find { it.id == channel.spaceId }
-                Text("${space?.name ?: "Chat"} · #${channel.name}", color = p.accent,
-                    modifier = Modifier.fillMaxWidth().background(p.surface, androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
-                        .clickable { onChannel(channel) }.padding(16.dp))
+                garden.vayne.chorus.ui.FormCard {
+                    model.channels.forEachIndexed { i, channel ->
+                        if (i > 0) garden.vayne.chorus.ui.FormDivider()
+                        Target("#${channel.name}", model.spaces.find { it.id == channel.spaceId }?.name ?: "Chat", garden.vayne.chorus.designsystem.R.drawable.ic_hash) { onChannel(channel) }
+                    }
+                }
             }
             if (model.active.isEmpty() && model.channels.isEmpty()) item {
-                Text("Nothing to share into yet", color = p.ink2)
+                garden.vayne.chorus.ui.EmptyState(garden.vayne.chorus.designsystem.R.drawable.ic_share, "Nothing to share into")
             }
         }
     }

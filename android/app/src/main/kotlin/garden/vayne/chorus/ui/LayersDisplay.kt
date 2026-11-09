@@ -21,9 +21,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -81,7 +79,7 @@ fun LayersDisplayScreen(chorus: Chorus, model: Model, frontId: String, onClose: 
 
     editingLayer?.let { l -> LayerEditor(chorus, model, l) { editingLayer = null } }
     if (adding) LayerEditor(chorus, model, null) { adding = false }
-    if (speakers && front != null) SpeakerPicker(chorus, model, frontId) { speakers = false }
+    if (speakers && front != null) PurposeDrawer(chorus, model, frontId, "authorship", "Suggested speakers in chat") { speakers = false }
 
     Column(Modifier.fillMaxSize().background(p.bg)) {
         SubpageBar("Layers & display", frontName(front), onClose)
@@ -152,10 +150,10 @@ fun LayersDisplayScreen(chorus: Chorus, model: Model, frontId: String, onClose: 
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ChorusField(newState, { newState = it.take(40) }, label = { Text("New state") }, singleLine = true, modifier = Modifier.weight(1f))
-                    TextButton(enabled = newState.isNotBlank(), onClick = {
+                    SmallButton("Add", primary = true, enabled = newState.isNotBlank()) {
                         val n = newState.trim(); newState = ""
                         act { chorus.create("state.create", chorus.newId(), JSONObject().put("name", n).put("icon", "?")) }
-                    }) { Text("Add") }
+                    }
                 }
             }
             Spacer(Modifier.height(24.dp))
@@ -202,7 +200,6 @@ private fun LayerRow(name: String, about: String?, style: Style, color: androidx
 }
 
 /** Add a layer, or edit one: name (the system's), description, look, colour, listed separately. */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun LayerEditor(chorus: Chorus, model: Model, layer: SceneLayer?, onClose: () -> Unit) {
     val p = LocalChorusPalette.current
@@ -216,76 +213,57 @@ private fun LayerEditor(chorus: Chorus, model: Model, layer: SceneLayer?, onClos
     var separate by remember { mutableStateOf(look?.separate ?: false) }
     var error by remember { mutableStateOf<String?>(null) }
     val swatches = listOf(null, "#42A397", "#E8776D", "#E0B560", "#B99CE8", "#6FA8DC", "#86BFA5")
-    ChorusSheet(onDismissRequest = onClose, skipPartiallyExpanded = true, containerColor = p.surface) {
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(if (layer == null) "New layer" else layer.name, color = p.ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            ChorusField(name, { name = it.take(40) }, label = { Text("Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            ChorusField(about, { about = it.take(80) }, label = { Text("Description, e.g. In control · counts as fronting") }, modifier = Modifier.fillMaxWidth())
-            Text("Look", color = p.ink2, fontSize = 13.sp)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                FilterChip(style == null, onClick = { style = null }, label = { Text("Automatic") })
-                Style.entries.forEach { s -> FilterChip(style == s, onClick = { style = s }, label = { Text(s.label) }) }
-            }
-            Text("Colour", color = p.ink2, fontSize = 13.sp)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                swatches.forEach { hex ->
-                    val c = parseHex(hex)
-                    Box(Modifier.size(32.dp).clip(CircleShape).background(c ?: p.surface2)
-                        .border(if (color == hex) 2.dp else 1.dp, if (color == hex) p.ink else p.line, CircleShape)
-                        .clickable(onClickLabel = hex ?: "Accent") { color = hex }, contentAlignment = Alignment.Center) {
-                        if (hex == null) Text("A", color = p.ink3, fontSize = 12.sp)
-                    }
-                }
-            }
-            ToggleRow("List separately", separate) { separate = it }
-            error?.let { Text(it, color = p.danger) }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                TextButton(enabled = name.isNotBlank(), onClick = {
-                    actions.launch {
-                        try {
-                            val id = layer?.id ?: chorus.newId()
-                            if (layer == null) Front.layer(chorus, id, JSONObject().put("name", name.trim()).put("level",
-                                (FrontScene.layers(model).maxOfOrNull { it.level } ?: -1) + 1))
-                            else if (name.trim() != layer.name) Front.layer(chorus, id, JSONObject().put("name", name.trim()))
-                            val text = about.trim().ifEmpty { null }?.takeIf { layer == null || it != FrontingDisplay.defaultAbout(layer.id) }
-                            chorus.create("pref.set", null, FrontingDisplay.payload(FrontingDisplay.withLayer(model.accountPrefs.frontingDisplay, id) {
-                                FrontingDisplay.LayerLook(style, text, separate, color) }))
-                            onClose()
-                        } catch (e: Exception) { error = e.message ?: "Could not save." }
-                    }
-                }) { Text("Save") }
-                if (layer != null && layer.id !in ORIGINAL) TextButton(onClick = {
-                    actions.launch { try { Front.layer(chorus, layer.id, JSONObject().put("deleted", true)); onClose() } catch (e: Exception) { error = e.message } }
-                }) { Text("Remove layer", color = p.danger) }
-                Spacer(Modifier.width(1.dp))
-            }
-            Spacer(Modifier.height(16.dp))
-        }
+    fun save() = actions.launch {
+        try {
+            val id = layer?.id ?: chorus.newId()
+            if (layer == null) Front.layer(chorus, id, JSONObject().put("name", name.trim()).put("level",
+                (FrontScene.layers(model).maxOfOrNull { it.level } ?: -1) + 1))
+            else if (name.trim() != layer.name) Front.layer(chorus, id, JSONObject().put("name", name.trim()))
+            val text = about.trim().ifEmpty { null }?.takeIf { layer == null || it != FrontingDisplay.defaultAbout(layer.id) }
+            chorus.create("pref.set", null, FrontingDisplay.payload(FrontingDisplay.withLayer(model.accountPrefs.frontingDisplay, id) {
+                FrontingDisplay.LayerLook(style, text, separate, color) }))
+            onClose()
+        } catch (e: Exception) { error = e.message ?: "Could not save." }
     }
-}
-
-/** Which layers a front suggests as chat speakers (its authorship selection, D-080). */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun SpeakerPicker(chorus: Chorus, model: Model, frontId: String, onClose: () -> Unit) {
-    val p = LocalChorusPalette.current
-    val actions = rememberCoroutineScope()
-    val front = model.namedFronts?.fronts?.get(frontId) ?: return
-    val layers = FrontScene.layers(model)
-    val sel = front.authorshipLayers
-    ChorusSheet(onDismissRequest = onClose, containerColor = p.surface) {
-        Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Suggested speakers in chat", color = p.ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            ToggleRow("Default", sel == null, "Fronting and co-conscious") { on ->
-                actions.launch { runCatching { Front.define(chorus, frontId, purposePatch("authorship", if (on) null else layers.take(2).map { it.id }.toSet())) } }
-            }
-            layers.forEach { l ->
-                val on = sel?.contains(l.id) == true
-                ToggleRow(l.name, on, enabled = sel != null) { next ->
-                    actions.launch { runCatching { Front.define(chorus, frontId, purposePatch("authorship", if (next) sel.orEmpty() + l.id else sel.orEmpty() - l.id)) } }
+    Drawer(onClose, if (layer == null) "New layer" else layer.name, footer = {
+        error?.let { Text(it, color = p.danger, fontSize = 14.sp) }
+        DrawerButton("Save", { save() }, enabled = name.isNotBlank())
+        if (layer != null && layer.id !in ORIGINAL) DrawerButton("Remove layer", {
+            actions.launch { try { Front.layer(chorus, layer.id, JSONObject().put("deleted", true)); onClose() } catch (e: Exception) { error = e.message } }
+        }, ButtonKind.Quiet)
+    }) {
+        ChorusField(name, { name = it.take(40) }, Modifier.fillMaxWidth(), label = { Text("Name") }, singleLine = true)
+        ChorusField(about, { about = it.take(80) }, Modifier.fillMaxWidth(), label = { Text("Description") }, placeholder = { Text("In control · counts as fronting") })
+        SectionLabel("Look", Modifier.padding(top = 4.dp))
+        // the look as the tiles Fronting draws (F3.9): Automatic, then each style in this colour
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            (listOf<Style?>(null) + Style.entries).forEach { s ->
+                val on = style == s
+                val ink = layerInk(s ?: Style.Dashed, parseHex(color), p)
+                Column(Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).background(if (on) p.accentSoft else cardColor())
+                    .then(if (on) Modifier.border(1.5.dp, p.accent, RoundedCornerShape(12.dp)) else Modifier)
+                    .clickable(role = Role.RadioButton) { style = s }.padding(vertical = 10.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Box(Modifier.size(32.dp, 22.dp).clip(RoundedCornerShape(6.dp))
+                        .background(if (s == null || s == Style.Plain) androidx.compose.ui.graphics.Color.Transparent else ink.fill)
+                        .layerOutline(if (s == null) p.ink3.copy(alpha = .5f) else ink.border, 6.dp, s == null || ink.dashed)) {
+                        if (s == null) Text("A", color = p.ink3, fontSize = 11.sp, modifier = Modifier.align(Alignment.Center))
+                    }
+                    Text(s?.label ?: "Auto", color = if (on) p.accent else p.ink2, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1)
                 }
             }
-            Spacer(Modifier.height(16.dp))
         }
+        SectionLabel("Colour")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            swatches.forEach { hex ->
+                val c = parseHex(hex)
+                Box(Modifier.size(32.dp).clip(CircleShape).background(c ?: cardColor())
+                    .border(if (color == hex) 2.dp else 1.dp, if (color == hex) p.ink else p.line, CircleShape)
+                    .clickable(onClickLabel = hex ?: "Accent") { color = hex }, contentAlignment = Alignment.Center) {
+                    if (hex == null) Text("A", color = p.ink3, fontSize = 12.sp)
+                }
+            }
+        }
+        FormCard { ToggleRow("List separately", separate, inset = 14.dp) { separate = it } }
     }
 }

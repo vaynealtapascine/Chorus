@@ -163,18 +163,21 @@ fun History(chorus: Chorus, model: Model, initialFront: String? = null, openRevi
     }
     acting?.let { line ->
         val row = savedFor(line)
-        ChorusSheet(onDismissRequest = { acting = null }, containerColor = p.surface) {
-            Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(line.text, color = p.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-                Text(DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(line.at)), color = p.ink3, fontSize = 13.sp)
-                row?.note?.let { Text(it, color = p.ink2, fontSize = 14.sp, modifier = Modifier.padding(top = 6.dp)) }
-                if (row == null) Text(if (configured) "Comes from ${frontName(named?.fronts?.get(front))}"
-                    else "This entry can't be edited here.", color = p.ink3, fontSize = 13.sp, modifier = Modifier.padding(vertical = 8.dp))
-                else {
-                    SheetAction("Edit time", R.drawable.ic_clock) { acting = null; editTime(row) }
-                    SheetAction("Undo this switch", R.drawable.ic_history) { acting = null; act(row.id) { Front.retract(chorus, row.id, frontId = front.takeIf { configured }) } }
-                }
-                Spacer(Modifier.height(16.dp))
+        val at = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(line.at))
+        MenuDrawer(true, { acting = null }, line.text, listOfNotNull(at, row?.note,
+            if (row == null && configured) "Comes from ${frontName(named?.fronts?.get(front))}" else null).joinToString(" · ")) {
+            MenuRow("Edit time", R.drawable.ic_clock, enabled = row != null) { acting = null; row?.let(::editTime) }
+            MenuRow("Undo this switch", R.drawable.ic_history, enabled = row != null) {
+                acting = null; row?.let { r -> act(r.id) { Front.retract(chorus, r.id, frontId = front.takeIf { configured }) } }
+            }
+        }
+    }
+    var entry by remember { mutableStateOf<SwitchRow?>(null) }
+    entry?.let { row ->
+        MenuDrawer(true, { entry = null }, DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(row.occurredAt)), row.note) {
+            if (!row.retracted) MenuRow("Edit time", R.drawable.ic_clock) { entry = null; editTime(row) }
+            MenuRow(if (row.retracted) "Redo this switch" else "Undo this switch", if (row.retracted) R.drawable.ic_restore else R.drawable.ic_history) {
+                entry = null; act(row.id) { Front.retract(chorus, row.id, redo = row.retracted, frontId = front.takeIf { configured }) }
             }
         }
     }
@@ -257,38 +260,31 @@ fun History(chorus: Chorus, model: Model, initialFront: String? = null, openRevi
                     Glyph(R.drawable.ic_chevron_down, p.ink3, 18.dp)
                 }
             }
-            if (savedOpen) saved.asReversed().take(shown).forEach { row -> item(key = "saved:${row.id}") {
-                val lead = (row.resultingFront.firstOrNull { it.isPrimary } ?: row.resultingFront.firstOrNull() ?: row.entries.firstOrNull())
-                    ?.let { model.subject(it.subjectType, it.subjectId) }
-                Row(Modifier.fillMaxWidth().background(p.surface, RoundedCornerShape(14.dp)).padding(12.dp), verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Avatar(lead?.glyph ?: "·", lead?.color ?: "#A09184", 32.dp, avatarBlob = lead?.avatarBlob, ring = false)
-                    Column(Modifier.weight(1f)) {
-                        val who = (if (row.retracted) row.entries else row.resultingFront).joinToString(" & ") { e -> "${name(e.subjectType, e.subjectId)} (${layerOf(e.level)?.name ?: e.level})" }
-                        Text(who.ifEmpty { "No one recorded" }, color = if (row.retracted) p.ink3 else p.ink, fontWeight = FontWeight.Medium,
-                            textDecoration = if (row.retracted) TextDecoration.LineThrough else null)
-                        row.note?.let { Text(it, color = p.ink2, fontSize = 12.sp) }
-                        Text(DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(row.occurredAt)) + if (row.retracted) " · undone" else "",
-                            color = p.ink3, fontSize = 12.sp)
+            if (savedOpen) item(key = "saved") {
+                FormCard {
+                    saved.asReversed().take(shown).forEachIndexed { i, row ->
+                        if (i > 0) FormDivider()
+                        val lead = (row.resultingFront.firstOrNull { it.isPrimary } ?: row.resultingFront.firstOrNull() ?: row.entries.firstOrNull())
+                            ?.let { model.subject(it.subjectType, it.subjectId) }
+                        Row(Modifier.fillMaxWidth().clickable(enabled = pending != row.id, onClickLabel = "Options") { entry = row }
+                            .padding(start = 12.dp, end = 4.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Avatar(lead?.glyph ?: "·", lead?.color ?: "#A09184", 32.dp, avatarBlob = lead?.avatarBlob, ring = false)
+                            Column(Modifier.weight(1f)) {
+                                val who = (if (row.retracted) row.entries else row.resultingFront).joinToString(" & ") { e -> "${name(e.subjectType, e.subjectId)} (${layerOf(e.level)?.name ?: e.level})" }
+                                Text(who.ifEmpty { "No one recorded" }, color = if (row.retracted) p.ink3 else p.ink, fontWeight = FontWeight.Medium,
+                                    textDecoration = if (row.retracted) TextDecoration.LineThrough else null)
+                                row.note?.let { Text(it, color = p.ink2, fontSize = 12.sp) }
+                                Text(DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(row.occurredAt)) + if (row.retracted) " · undone" else "",
+                                    color = p.ink3, fontSize = 12.sp)
+                            }
+                            Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) { Glyph(R.drawable.ic_more_vert, p.ink3, 20.dp) }
+                        }
                     }
-                    if (!row.retracted) Text("Edit time", color = p.accent, fontSize = 13.sp, modifier = Modifier.clickable(enabled = pending != row.id) { editTime(row) }.padding(6.dp))
-                    Text(if (row.retracted) "Redo" else "Undo", color = p.accent, fontSize = 13.sp, modifier = Modifier.clickable(enabled = pending != row.id) {
-                        act(row.id) { Front.retract(chorus, row.id, redo = row.retracted, frontId = front.takeIf { configured }) }
-                    }.padding(6.dp))
                 }
-            } }
+            }
             item { Spacer(Modifier.height(24.dp)) }
         }
-    }
-}
-
-@Composable
-private fun SheetAction(label: String, icon: Int, onClick: () -> Unit) {
-    val p = LocalChorusPalette.current
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Glyph(icon, p.ink2, 20.dp)
-        Text(label, color = p.ink, fontSize = 15.sp)
     }
 }
 

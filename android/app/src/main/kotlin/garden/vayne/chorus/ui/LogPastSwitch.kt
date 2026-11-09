@@ -221,18 +221,20 @@ fun PickSubjects(model: Model, account: String, taken: Set<Pair<String, String>>
         model.groups.filter { it.isSubsystem }.map { Subject("group", it.id, it.name, it.color ?: "#A09184", "◌") } +
         model.states.map { Subject("state", it.id, it.name, it.color ?: "#A39E92", it.icon ?: "?") }
     val shown = all.filter { (it.type to it.id) !in taken }.mapNotNull { s -> fuzzy(query, s.name)?.let { s to it } }.sortedBy { it.second }.map { it.first }
-    ChorusSheet(onDismissRequest = { onPick(null) }, skipPartiallyExpanded = true, containerColor = p.surface) {
-        SearchField(query, { query = it }, "Search", Modifier.padding(horizontal = 16.dp).fillMaxWidth())
-        Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp)) {
-            shown.take(100).forEach { s ->
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { onPick(s) }.padding(vertical = 8.dp, horizontal = 4.dp),
+    Drawer({ onPick(null) }, "Add someone") {
+        ChorusField(query, { query = it }, Modifier.fillMaxWidth(), singleLine = true, placeholder = { Text("Search") },
+            leadingIcon = { Glyph(R.drawable.ic_search, p.ink3, 18.dp) })
+        if (shown.isEmpty()) EmptyState(R.drawable.ic_members, "No one matches")
+        else FormCard {
+            shown.take(100).forEachIndexed { i, s ->
+                if (i > 0) FormDivider()
+                Row(Modifier.fillMaxWidth().clickable { onPick(s) }.heightIn(min = 52.dp).padding(horizontal = 14.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Avatar(s.glyph, s.color, 32.dp, avatarBlob = s.avatarBlob, ring = false)
                     Text(s.name, color = p.ink, fontSize = 15.sp, modifier = Modifier.weight(1f))
                     if (s.type != "member") Text(if (s.type == "group") "subsystem" else "state", color = p.ink3, fontSize = 12.sp)
                 }
             }
-            Spacer(Modifier.height(16.dp))
         }
     }
 }

@@ -89,22 +89,15 @@ internal fun BucketLabel(name: String, icon: String?, color: String? = null, mod
 @Composable
 internal fun CeilingControls(ceiling: JSONObject, inherited: String, enabled: Boolean, omit: Set<String> = emptySet(),
     onChange: (JSONObject) -> Unit) {
-    val p = LocalChorusPalette.current
-    var open by rememberSaveable { mutableStateOf(false) }
+    // opened from its own drawer ("More details"), so every detail shows at once
     val fields = BucketControls.fields.filter { it.key !in omit }
-    val customized = fields.count { ceiling.has(it.key) }
-    TextButton(onClick = { open = !open }, contentPadding = PaddingValues(horizontal = 0.dp)) {
-        Text((if (open) "Hide advanced notification controls" else "Advanced notification controls") +
-            if (customized > 0) " · $customized customized" else "")
-    }
-    if (open) Column {
-        Text("Delay hides when you switched as it happens; the time shown hides the exact time afterwards. " +
-            "A follower in several buckets gets the most open setting for each detail; their own setting wins.",
-            color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
-        for (f in fields) key(f.key) {
-            HorizontalDivider(Modifier.padding(vertical = 6.dp), color = p.line)
-            CeilingFieldRow(f, ceiling, inherited, enabled) { value, inherit -> onChange(BucketControls.withField(ceiling, f.key, value, inherit)) }
-        }
+    FormCard {
+        fields.forEachIndexed { i, f -> key(f.key) {
+            if (i > 0) FormDivider()
+            Box(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                CeilingFieldRow(f, ceiling, inherited, enabled) { value, inherit -> onChange(BucketControls.withField(ceiling, f.key, value, inherit)) }
+            }
+        } }
     }
 }
 
@@ -121,8 +114,8 @@ internal fun CeilingFieldRow(f: CeilingField, ceiling: JSONObject, inherited: St
             // a drawer titled with the field already says its name and hint
             Text(if (titled) f.label else if (custom) "Set here" else "Inherited", color = if (titled) p.ink else p.ink2,
                 fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-            TextButton(enabled = enabled, onClick = { if (custom) save(null, true) else save(f.default, false) }) {
-                Text(if (custom) "Use ${inherited.lowercase()}" else "Customize", fontSize = 13.sp)
+            SmallButton(if (custom) "Use ${inherited.lowercase()}" else "Customize", soft = !custom, enabled = enabled) {
+                if (custom) save(null, true) else save(f.default, false)
             }
         }
         if (titled) f.hint?.let { Text(it, color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp) }
@@ -132,13 +125,14 @@ internal fun CeilingFieldRow(f: CeilingField, ceiling: JSONObject, inherited: St
                 ChorusSwitch(value == true, { put(it) }, enabled = enabled, modifier = Modifier.semantics { contentDescription = f.label })
                 Text(if (value == true) "On" else "Off", color = p.ink2)
             }
-            "enum" -> FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                for (c in f.choices) FilterChip(value == c, { put(c) }, label = { Text(BucketControls.choiceLabel(c)) }, enabled = enabled)
+            "enum" -> FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                for (c in f.choices) PickChip(BucketControls.choiceLabel(c), value == c, enabled) { put(c) }
             }
-            "levels" -> FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            "levels" -> FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 val on = (value as? JSONArray)?.let { a -> (0 until a.length()).mapNotNull { a.opt(it) as? String } }.orEmpty()
-                for (c in f.choices) FilterChip(c in on, { put(JSONArray(f.choices.filter { x -> if (x == c) c !in on else x in on })) },
-                    label = { Text(BucketControls.choiceLabel(c)) }, enabled = enabled)
+                for (c in f.choices) PickChip(BucketControls.choiceLabel(c), c in on, enabled) {
+                    put(JSONArray(f.choices.filter { x -> if (x == c) c !in on else x in on }))
+                }
             }
             "range" -> {
                 val r = value as? JSONObject ?: JSONObject()
@@ -147,11 +141,11 @@ internal fun CeilingFieldRow(f: CeilingField, ceiling: JSONObject, inherited: St
             "time" -> {
                 val t = value as? JSONObject ?: JSONObject()
                 val mode = t.optString("mode")
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    for (c in f.choices) FilterChip(mode == c, {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    for (c in f.choices) PickChip(BucketControls.choiceLabel(c), mode == c, enabled) {
                         put(when (c) { "round" -> JSONObject().put("mode", c).put("round_min", 15); "jitter" -> JSONObject().put("mode", c).put("jitter_min", 15)
                             else -> JSONObject().put("mode", c) })
-                    }, label = { Text(BucketControls.choiceLabel(c)) }, enabled = enabled)
+                    }
                 }
                 if (mode == "round" || mode == "jitter") {
                     val k = if (mode == "round") "round_min" else "jitter_min"
@@ -195,7 +189,7 @@ private fun MinutesRange(minS: Long, maxS: Long, enabled: Boolean, save: (Long, 
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), isError = !ok)
         ChorusField(to, { to = it }, Modifier.weight(1f), enabled = enabled, singleLine = true, label = { Text("To (min)") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), isError = !ok)
-        TextButton(enabled = enabled && ok && (a != minS || b != maxS), onClick = { save(a!!, b!!) }) { Text("Save") }
+        SmallButton("Save", primary = true, enabled = enabled && ok && (a != minS || b != maxS)) { save(a!!, b!!) }
     }
 }
 
@@ -206,7 +200,7 @@ private fun WholeNumber(label: String, current: Long, min: Long, max: Long, enab
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         ChorusField(text, { text = it }, Modifier.width(140.dp), enabled = enabled, singleLine = true, label = { Text(label) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), isError = n == null)
-        TextButton(enabled = enabled && n != null && n != current, onClick = { save(n!!) }) { Text("Save") }
+        SmallButton("Save", primary = true, enabled = enabled && n != null && n != current) { save(n!!) }
     }
 }
 
@@ -233,20 +227,19 @@ internal fun MemberAnnounce(model: Model, member: Member, enabled: Boolean, save
     val chosen = (announce as? JSONObject)?.optJSONArray("buckets")?.let { a -> (0 until a.length()).mapNotNull { a.opt(it) as? String } }.orEmpty()
     fun put(value: Any) = save(JSONObject(policy.toString()).put("announce", value))
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("Who hears when ${member.shownName} fronts", color = p.ink2, fontSize = 13.sp)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            FilterChip(mode == "everyone", { put("everyone") }, enabled = enabled, label = { Text("Every follower") })
-            if (model.privacyBuckets.isNotEmpty()) FilterChip(mode == "buckets", { put(JSONObject().put("buckets", JSONArray(chosen))) },
-                enabled = enabled, label = { Text("Some buckets") })
-            FilterChip(mode == "nobody", { put("nobody") }, enabled = enabled, label = { Text("Nobody") })
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            PickChip("Every follower", mode == "everyone", enabled) { put("everyone") }
+            if (model.privacyBuckets.isNotEmpty()) PickChip("Some buckets", mode == "buckets", enabled) { put(JSONObject().put("buckets", JSONArray(chosen))) }
+            PickChip("Nobody", mode == "nobody", enabled) { put("nobody") }
         }
-        if (mode == "buckets") FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (mode == "buckets") FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             for (b in model.privacyBuckets) {
                 val on = b.id in chosen
-                FilterChip(on, { put(JSONObject().put("buckets", JSONArray(if (on) chosen - b.id else chosen + b.id))) }, enabled = enabled,
-                    label = { Text(b.name, maxLines = 1) }, leadingIcon = { BucketGlyph(b.icon, b.color) })
+                PickChip(b.name, on, enabled, leading = { BucketGlyph(b.icon, b.color, 14.dp) }) {
+                    put(JSONObject().put("buckets", JSONArray(if (on) chosen - b.id else chosen + b.id)))
+                }
             }
-            if (chosen.none { id -> model.privacyBuckets.any { it.id == id } }) Text("No bucket chosen: nobody hears.", color = p.ink3, fontSize = 12.sp)
+            if (chosen.none { id -> model.privacyBuckets.any { it.id == id } }) Text("Nobody hears", color = p.ink3, fontSize = 12.sp)
         }
     }
 }

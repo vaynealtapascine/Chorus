@@ -29,7 +29,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -73,23 +72,6 @@ import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.launch
 
-/** The sheet's header: a title, a quiet line under it and a close button (F3.2, F3.3). */
-@Composable
-private fun SheetHeader(title: String, subtitle: String?, onClose: () -> Unit, lead: (@Composable () -> Unit)? = null,
-    actions: @Composable () -> Unit = {}) {
-    val p = LocalChorusPalette.current
-    Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 6.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        lead?.invoke()
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-            Text(title, color = p.ink, fontSize = 18.sp, fontWeight = FontWeight.Bold, lineHeight = 24.sp)
-            subtitle?.let { Text(it, color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp) }
-        }
-        actions()
-        BarIcon(R.drawable.ic_close, "Close", p.ink2, onClick = onClose)
-    }
-}
-
 /**
  * Switch (Figma F3.2). Each tap places someone on the innermost layer, the next tap moves them
  * one layer outward, and past the last layer they are out again. Replace front starts empty and
@@ -115,15 +97,12 @@ fun Switcher(chorus: Chorus, model: Model, frontId: String? = null, addTo: Strin
     val placed = remember { mutableStateListOf<Entry>().also { if (addTo != null) it.addAll(current) } }
     var query by remember { mutableStateOf("") }
     var searching by remember { mutableStateOf(false) }
-    // a handover opens with the note ready for whoever comes next
-    var options by remember { mutableStateOf(handover) }
+    var options by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf("") }
     var at by remember { mutableStateOf<Long?>(null) }
     var notify by remember { mutableStateOf("default") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var pins by remember(accountId) { mutableStateOf(false) }
-    if (pins) WidgetPinsSheet(model, accountId) { pins = false }
 
     fun mode(toAdd: Boolean) {
         add = toAdd
@@ -187,19 +166,29 @@ fun Switcher(chorus: Chorus, model: Model, frontId: String? = null, addTo: Strin
             } catch (e: Exception) { error = e.message; busy = false }
         }
     }
-    var pickingTime by remember { mutableStateOf(false) }
-    fun pickTime() { pickingTime = true }
+    val stamp = at?.let { DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it)) }
 
-    ChorusSheet(onDismissRequest = onClose, skipPartiallyExpanded = true, containerColor = p.surface) {
-        SheetHeader("Switch · $frontLabel", null, onClose, actions = {
-            BarIcon(R.drawable.ic_search, if (searching) "Close search" else "Search", p.ink2) { searching = !searching; if (!searching) query = "" }
-        })
-        Box(Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 6.dp)) {
-            Segmented(listOf("Replace front", "Add to front"), if (add) 1 else 0) { mode(it == 1) }
+    Drawer(onClose, "Switch · $frontLabel", scroll = false, actions = {
+        BarIcon(R.drawable.ic_search, if (searching) "Close search" else "Search", p.ink2, 20.dp) { searching = !searching; if (!searching) query = "" }
+    }, footer = {
+        error?.let { Text(it, color = p.danger, fontSize = 14.sp) }
+        // an empty Replace is never the big button: switching everyone out is its own quiet link
+        val canSwitch = !busy && (if (add) changes.isNotEmpty() else placed.isNotEmpty())
+        if (!add && placed.isEmpty() && current.isNotEmpty()) DrawerButton("Switch everyone out of $frontLabel", ::commit, ButtonKind.Quiet, enabled = !busy)
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+            .background(if (canSwitch) p.accent else p.surface3).clickable(enabled = canSwitch, role = Role.Button) { commit() }
+            .padding(horizontal = 16.dp, vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("Switch", color = if (canSwitch) p.onAccent else p.ink3, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            if (summary.isNotEmpty()) Text(summary, color = if (canSwitch) p.onAccent else p.ink3, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        if (searching) SearchField(query, { query = it }, "Search ${subjects.size} members", Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth())
-        LazyVerticalGrid(GridCells.Fixed(4), Modifier.fillMaxWidth().heightIn(max = 360.dp).padding(horizontal = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 10.dp, bottom = 6.dp)) {
+    }) {
+        if (options) SwitchOptionsDrawer(at, { at = it }, note, { note = it }, notify, { notify = it }, showNote = !add && !handover, alerts = !add) { options = false }
+        Segmented(listOf("Replace front", "Add to front"), if (add) 1 else 0) { mode(it == 1) }
+        if (searching) ChorusField(query, { query = it }, Modifier.fillMaxWidth(), singleLine = true, placeholder = { Text("Search ${subjects.size} members") },
+            leadingIcon = { Glyph(R.drawable.ic_search, p.ink3, 18.dp) })
+        if (subjects.isEmpty()) EmptyState(R.drawable.ic_members, if (query.isBlank()) "No members yet" else "No one matches")
+        else LazyVerticalGrid(GridCells.Fixed(4), Modifier.fillMaxWidth().heightIn(max = 360.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 6.dp, bottom = 6.dp)) {
             items(subjects, key = { "${it.type}:${it.id}" }) { s ->
                 val e = placed.firstOrNull { it.subjectType == s.type && it.subjectId == s.id }
                 val layer = e?.let(layerOf)
@@ -208,47 +197,33 @@ fun Switcher(chorus: Chorus, model: Model, frontId: String? = null, addTo: Strin
                 }) { tap(s) })
             }
         }
-        if (subjects.isEmpty()) Text(if (query.isBlank()) "No members yet. Add them in Members." else "No one matches “$query”.",
-            color = p.ink3, modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
-        Column(Modifier.fillMaxWidth().border(width = 0.dp, color = Color.Transparent)) {
-            Spacer(Modifier.fillMaxWidth().height(1.dp).background(p.line))
-            Row(Modifier.fillMaxWidth().clickable { options = !options }.padding(horizontal = 20.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Glyph(R.drawable.ic_clock, p.ink2, 18.dp)
-                val stamp = at?.let { DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it)) }
-                Text(stamp?.let { "Starting $it" } ?: "Starting now", color = p.ink, fontSize = 14.sp, modifier = Modifier.weight(1f))
-                Text(if (options) "Done" else "Change", color = p.accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-            }
-            if (options) Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(at == null, onClick = { at = null }, label = { Text("Now") })
-                    FilterChip(at != null, onClick = { pickTime() }, label = { Text(if (at == null) "Earlier…" else "Change time") })
-                }
-                if (pickingTime) DateTimeDrawer(at ?: System.currentTimeMillis(), { at = it; pickingTime = false }, { pickingTime = false },
-                    "When the switch happened", latest = System.currentTimeMillis())
-                if (!add) {
-                    ChorusField(note, { note = it }, label = { Text(if (handover) "Handover note for whoever's next" else "Note (optional)") }, modifier = Modifier.fillMaxWidth())
-                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf("default" to "Usual alerts", "silent" to "Silent", "now" to "Alert now", "extra_delay" to "Delay").forEach { (value, label) ->
-                            FilterChip(notify == value, onClick = { notify = value }, label = { Text(label) })
-                        }
-                    }
-                }
-                Text("Arrange widget pins", color = p.accent, fontSize = 13.sp, modifier = Modifier.clickable { pins = true }.padding(vertical = 4.dp))
-            }
+        // a handover is for the note to whoever comes next: it stays in sight
+        if (handover && !add) ChorusField(note, { note = it }, Modifier.fillMaxWidth(), label = { Text("Handover note for whoever's next") })
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(onClickLabel = "Change when and how") { options = true }
+            .padding(horizontal = 4.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Glyph(R.drawable.ic_clock, p.ink2, 18.dp)
+            Text(stamp?.let { "Starting $it" } ?: "Starting now", color = p.ink, fontSize = 14.sp, modifier = Modifier.weight(1f))
+            Text("Change", color = p.accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
         }
-        error?.let { Text(it, color = p.danger, modifier = Modifier.padding(horizontal = 20.dp)) }
-        // an empty Replace is never the big button: switching everyone out is its own quiet link
-        val canSwitch = !busy && (if (add) changes.isNotEmpty() else placed.isNotEmpty())
-        if (!add && placed.isEmpty() && current.isNotEmpty()) Text("Switch everyone out of $frontLabel", color = p.danger, fontSize = 13.sp,
-            modifier = Modifier.padding(horizontal = 20.dp).clip(RoundedCornerShape(8.dp)).clickable(enabled = !busy) { commit() }.padding(vertical = 8.dp))
-        Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 20.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp))
-            .background(if (canSwitch) p.accent else p.surface3).clickable(enabled = canSwitch, role = Role.Button) { commit() }
-            .padding(horizontal = 16.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Switch", color = if (canSwitch) p.onAccent else p.ink3, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-            Text(summary.ifEmpty { "Tap someone to place them" }, color = if (canSwitch) p.onAccent else p.ink3,
-                fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
+    }
+}
+
+/** The switch's Change (F3.2): when it started, a note and how friends hear of it. */
+@Composable
+private fun SwitchOptionsDrawer(at: Long?, onAt: (Long?) -> Unit, note: String, onNote: (String) -> Unit, notify: String, onNotify: (String) -> Unit,
+    showNote: Boolean, alerts: Boolean, onDone: () -> Unit) {
+    var picking by remember { mutableStateOf(false) }
+    var alerting by remember { mutableStateOf(false) }
+    val kinds = listOf("default" to "Usual alerts", "silent" to "Silent", "now" to "Alert now", "extra_delay" to "Delay")
+    val stamp = at?.let { DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it)) }
+    Drawer(onDone, "Starting", footer = { DrawerButton("Done", onDone) }) {
+        if (picking) DateTimeDrawer(at ?: System.currentTimeMillis(), { onAt(it); picking = false }, { picking = false },
+            "When the switch happened", latest = System.currentTimeMillis())
+        ChoiceDrawer(alerting, "Alerts", kinds.map { it.first }, notify, { k -> kinds.first { it.first == k }.second },
+            { onNotify(it); alerting = false }, { alerting = false })
+        Segmented(listOf("Now", stamp ?: "Earlier…"), if (at == null) 0 else 1) { if (it == 0) onAt(null) else picking = true }
+        if (showNote) ChorusField(note, onNote, Modifier.fillMaxWidth(), label = { Text("Note (optional)") })
+        if (alerts) ChoiceField("Alerts", kinds.first { it.first == notify }.second) { alerting = true }
     }
 }
 
@@ -297,67 +272,55 @@ fun PlaceSheet(chorus: Chorus, model: Model, frontId: String, s: Subject, since:
     fun act(block: suspend () -> Unit) = actions.launch { try { block(); error = null } catch (e: Exception) { error = e.message ?: "Could not save." } }
     val time = DateFormat.getTimeInstance(DateFormat.SHORT)
 
-    ChorusSheet(onDismissRequest = onClose, skipPartiallyExpanded = true, containerColor = p.surface) {
-        Column(Modifier.verticalScroll(rememberScrollState())) {
-            SheetHeader(s.name, "${layerName(here?.level).lowercase()} in $front" + (if (here != null && since != null) " · since ${time.format(Date(since))}" else ""),
-                onClose, lead = { Avatar(s.glyph, s.color, 52.dp, avatarBlob = s.avatarBlob, ring = false) })
-            Text("Place in $front", color = p.accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 6.dp))
-            Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                val nested = scene.all.filter { !it.separate }
-                if (nested.isNotEmpty()) NestedChoice(nested, nested.lastIndex, choice) { choice = it }
-                ChoiceBox("Away", "not fronting in $front", choice == null) { choice = null }
-                scene.all.filter { it.separate }.forEach { l ->
-                    ChoiceBox(l.name, l.about ?: "listed separately", choice == l.id, hidden = l.hidden) { choice = l.id }
-                }
+    val same = choice == here?.level
+    fun save() {
+        if (same) onClose() else act {
+            Front.placeOne(chorus, Placement(s.type, s.id, choice, here != null),
+                if (choice == null) "${s.name} left $front" else "${s.name} is ${layerName(choice).lowercase()} in $front", target)
+            onClose()
+        }
+    }
+    Drawer(onClose, s.name, "${layerName(here?.level).lowercase()} in $front" + (if (here != null && since != null) " · since ${time.format(Date(since))}" else ""),
+        leading = { Avatar(s.glyph, s.color, 52.dp, avatarBlob = s.avatarBlob, ring = false) }, footer = {
+            error?.let { Text(it, color = p.danger, fontSize = 14.sp) }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (here != null) DrawerButton("Remove", { act { Front.placeOne(chorus, Placement(s.type, s.id, null, true), "${s.name} left $front", target); onClose() } },
+                    ButtonKind.Neutral, modifier = Modifier.weight(.35f))
+                DrawerButton(when {
+                    same && here == null -> "Keep away"
+                    same -> "Keep ${layerName(choice).lowercase()}"
+                    choice == null -> "Set away"
+                    else -> "Move to ${layerName(choice).lowercase()}"
+                }, ::save, modifier = Modifier.weight(.65f))
             }
-            if (s.type == "member") {
-                val status = model.accountPrefs.memberStatus[s.id]?.takeIf { (here != null && FrontingDisplay.statusShowing(it, since)) || !it.clearOnLeave }
-                Row(Modifier.fillMaxWidth().clickable(onClick = onState).padding(horizontal = 20.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("State", color = p.ink, fontSize = 15.sp)
-                        status?.line(model.states)?.let { Text(it, color = p.ink3, fontSize = 13.sp) }
-                    }
-                    Glyph(R.drawable.ic_chevron_right, p.ink3, 18.dp)
-                }
-            }
-            val others = named?.fronts?.values?.filter { !it.deleted && it.id != frontId }.orEmpty()
-            if (others.isNotEmpty()) {
-                Text("Also present in", color = p.accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 2.dp))
-                FrontingDisplay.ordered(others, named?.bodyId ?: accountId, model.accountPrefs.frontingDisplay).forEach { f ->
+        }) {
+        SectionLabel("Place in $front", Modifier.padding(top = 0.dp))
+        val nested = scene.all.filter { !it.separate }
+        if (nested.isNotEmpty()) NestedChoice(nested, nested.lastIndex, choice) { choice = it }
+        ChoiceBox("Away", "not fronting in $front", choice == null) { choice = null }
+        scene.all.filter { it.separate }.forEach { l ->
+            ChoiceBox(l.name, l.about ?: "listed separately", choice == l.id, hidden = l.hidden) { choice = l.id }
+        }
+        if (s.type == "member") {
+            val status = model.accountPrefs.memberStatus[s.id]?.takeIf { (here != null && FrontingDisplay.statusShowing(it, since)) || !it.clearOnLeave }
+            FormCard { FormValueRow("State", status?.line(model.states) ?: "None", onClick = onState) }
+        }
+        val others = named?.fronts?.values?.filter { !it.deleted && it.id != frontId }.orEmpty()
+        if (others.isNotEmpty()) {
+            SectionLabel("Also present in")
+            FormCard {
+                FrontingDisplay.ordered(others, named?.bodyId ?: accountId, model.accountPrefs.frontingDisplay).forEachIndexed { i, f ->
+                    if (i > 0) FormDivider()
                     val there = named?.entries(f.id)?.firstOrNull { it.subjectType == s.type && it.subjectId == s.id }
                     val layers = FrontScene.layers(model)
                     val following = named?.resolved?.get(f.id)?.state == "following"
                     ToggleRow(frontName(f), there != null, subtitle = there?.let { e -> layers.firstOrNull { it.id == e.level }?.name }
-                        ?: if (following) "Follows ${frontName(named?.fronts?.get(f.followSource))}" else "Not here") { on ->
+                        ?: if (following) "Follows ${frontName(named?.fronts?.get(f.followSource))}" else "Not here", inset = 14.dp) { on ->
                         act {
                             Front.placeOne(chorus, Placement(s.type, s.id, if (on) layers.firstOrNull()?.id ?: "front" else null, there != null),
                                 if (on) "${s.name} is in ${frontName(f)}" else "${s.name} left ${frontName(f)}", f.id)
                         }
                     }
-                }
-            }
-            error?.let { Text(it, color = p.danger, modifier = Modifier.padding(horizontal = 20.dp)) }
-            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (here != null) Box(Modifier.clip(RoundedCornerShape(14.dp)).border(1.dp, p.line, RoundedCornerShape(14.dp)).clickable {
-                    act { Front.placeOne(chorus, Placement(s.type, s.id, null, true), "${s.name} left $front", target); onClose() }
-                }.padding(horizontal = 16.dp, vertical = 12.dp)) { Text("Remove", color = p.danger, fontSize = 15.sp, fontWeight = FontWeight.SemiBold) }
-                val same = choice == here?.level
-                Box(Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).background(p.accent).clickable {
-                    if (same) onClose() else act {
-                        Front.placeOne(chorus, Placement(s.type, s.id, choice, here != null),
-                            if (choice == null) "${s.name} left $front" else "${s.name} is ${layerName(choice).lowercase()} in $front", target)
-                        onClose()
-                    }
-                }.padding(horizontal = 16.dp, vertical = 12.dp), contentAlignment = Alignment.Center) {
-                    Text(when {
-                        same && here == null -> "Keep away"
-                        same -> "Keep ${layerName(choice).lowercase()}"
-                        choice == null -> "Set away"
-                        else -> "Move to ${layerName(choice).lowercase()}"
-                    }, color = p.onAccent, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
         }
@@ -409,7 +372,7 @@ private fun ChoiceLine(title: String, about: String, on: Boolean, hidden: Boolea
     }
 }
 
-/** Arrange which members lead this device's widget (moved here from the old Home grid). */
+/** Arrange which members lead this device's widget and the switch grid: drag to order, × to unpin, tap to pin. */
 @Composable
 fun WidgetPinsSheet(model: Model, accountId: String, onClose: () -> Unit) {
     val p = LocalChorusPalette.current
@@ -417,41 +380,34 @@ fun WidgetPinsSheet(model: Model, accountId: String, onClose: () -> Unit) {
     var pins by remember(accountId) { mutableStateOf(WidgetPins.read(ctx, accountId)) }
     fun setPins(next: List<String>) { pins = next; WidgetPins.write(ctx, accountId, next) }
     val own = model.active.filter { it.createdByAccountId == null || it.createdByAccountId == accountId }
-    ChorusSheet(onDismissRequest = onClose, containerColor = p.surface) {
-        SheetHeader("Widget pins", "Pinned members lead this device's widget and the switch sheet.", onClose)
-        Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp)) {
-            val shown = pins.filter { id -> own.any { it.id == id } }
-            shown.forEachIndexed { i, id ->
-                val m = own.first { it.id == id }
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("★ ${m.shownName}", color = p.ink, modifier = Modifier.weight(1f))
-                    Text("↑", color = if (i > 0) p.accent else p.ink3, modifier = Modifier.clickable(enabled = i > 0) {
-                        val n = pins.toMutableList(); val a = n.indexOf(id); val b = n.indexOf(shown[i - 1]); n[a] = shown[i - 1]; n[b] = id; setPins(n)
-                    }.pinTarget("Move ${m.shownName} up"))
-                    Text("↓", color = if (i < shown.lastIndex) p.accent else p.ink3, modifier = Modifier.clickable(enabled = i < shown.lastIndex) {
-                        val n = pins.toMutableList(); val a = n.indexOf(id); val b = n.indexOf(shown[i + 1]); n[a] = shown[i + 1]; n[b] = id; setPins(n)
-                    }.pinTarget("Move ${m.shownName} down"))
-                    Text("Remove", color = p.accent, modifier = Modifier.clickable { setPins(pins - id) }.pinTarget("Unpin ${m.shownName}"))
+    val shown = pins.mapNotNull { id -> own.firstOrNull { it.id == id } }
+    val rest = own.filter { it.id !in pins }
+    // the drag handles need the drawer not to scroll (NOTES: Android); the unpinned list scrolls itself
+    Drawer(onClose, "Widget pins", scroll = false, footer = { DrawerButton("Done", onClose) }) {
+        if (shown.isNotEmpty()) FormCard {
+            ReorderColumn(shown, { it.id }, { next -> setPins(next.map { it.id } + pins.filter { id -> shown.none { it.id == id } }) }) { m, handle ->
+                Row(Modifier.fillMaxWidth().background(cardColor()).heightIn(min = 52.dp).padding(start = 6.dp, end = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(handle.size(36.dp), contentAlignment = Alignment.Center) { Glyph(R.drawable.ic_grip, p.ink3, 18.dp) }
+                    Avatar(m.glyph, m.color, 32.dp, avatarBlob = m.avatarBlob, ring = false)
+                    Text(m.shownName, color = p.ink, fontSize = 15.sp, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    BarIcon(R.drawable.ic_close, "Unpin ${m.shownName}", p.ink3, 18.dp) { setPins(pins - m.id) }
                 }
             }
-            Text("Tap to pin", color = p.ink3, fontSize = 12.sp, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
-            own.filter { it.id !in pins }.forEach { m ->
-                Row(Modifier.fillMaxWidth().clickable { setPins(pins + m.id) }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Avatar(m.glyph, m.color, 28.dp, avatarBlob = m.avatarBlob, ring = false)
-                    Text(m.shownName, color = p.ink)
+        }
+        if (rest.isNotEmpty()) FormCard(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
+            rest.forEachIndexed { i, m ->
+                if (i > 0) FormDivider()
+                Row(Modifier.fillMaxWidth().clickable(onClickLabel = "Pin ${m.shownName}") { setPins(pins + m.id) }.heightIn(min = 52.dp)
+                    .padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Avatar(m.glyph, m.color, 32.dp, avatarBlob = m.avatarBlob, ring = false)
+                    Text(m.shownName, color = p.ink2, fontSize = 15.sp, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Glyph(R.drawable.ic_plus, p.accent, 18.dp)
                 }
             }
-            Spacer(Modifier.height(16.dp))
         }
     }
 }
-
-/** A pin-arranging control: at least 48 dp square, its glyph centred, read out by `label`. */
-private fun Modifier.pinTarget(label: String): Modifier = this
-    .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
-    .wrapContentSize()
-    .semantics { contentDescription = label }
 
 /** Strict local wall-time parse; user_time itself travels to core for time correction. */
 fun parseSwitchTime(input: String): Long? {

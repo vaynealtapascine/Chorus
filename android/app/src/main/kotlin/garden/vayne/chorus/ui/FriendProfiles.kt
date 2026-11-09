@@ -110,16 +110,14 @@ internal fun FriendProfiles(chorus: Chorus, model: garden.vayne.chorus.data.Mode
             })
         return
     }
-    Column(Modifier.fillMaxSize().background(p.bg).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        TextButton(onClick = ::back, contentPadding = PaddingValues(0.dp)) {
-            Text("‹ ${if (memberId != null && memberId != initialMember) shownAccount else if (initialMember != null) "Back" else "Friends"}")
-        }
+    Column(Modifier.fillMaxSize().background(p.bg)) {
+      SubpageBar(shownAccount, list?.takeIf { it.isNotEmpty() }?.let { "${it.size} ${if (it.size == 1) "member" else "members"}" }, ::back)
+      Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         error?.let { Text(it, color = p.danger) }
         run {
-            Text(shownAccount, color = p.ink, style = MaterialTheme.typography.headlineSmall)
             val shared = list
             when {
-                shared == null && error == null -> Text("Loading…", color = p.ink3)
+                shared == null && error == null -> LinearProgressIndicator(Modifier.fillMaxWidth(), color = p.accent, trackColor = p.surface3)
                 shared != null && shared.isEmpty() -> EmptyState(garden.vayne.chorus.designsystem.R.drawable.ic_members, "No members shared")
                 // rows as their Members list shows them (D-100): banner, pronouns and role pills they share
                 shared != null -> for (m in shared) Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(p.surface)
@@ -148,6 +146,7 @@ internal fun FriendProfiles(chorus: Chorus, model: garden.vayne.chorus.data.Mode
                 }
             }
         }
+      }
     }
 }
 
@@ -169,9 +168,10 @@ private fun FriendMemberProfile(chorus: Chorus, model: garden.vayne.chorus.data.
     }
     Column(Modifier.fillMaxSize().background(p.bg).verticalScroll(rememberScrollState())) {
         if (m == null) {
-            TextButton(onClick = onBack, modifier = Modifier.padding(8.dp)) { Text("‹ $backLabel") }
+            SubpageBar(backLabel, null, onBack)
             error?.let { Text(it, color = p.danger, modifier = Modifier.padding(horizontal = 16.dp)) }
-            Text(if (missing) "This profile isn't shared with you." else "Loading…", color = p.ink3, modifier = Modifier.padding(16.dp))
+            if (missing) EmptyState(garden.vayne.chorus.designsystem.R.drawable.ic_eye_off, "Not shared with you")
+            else LinearProgressIndicator(Modifier.fillMaxWidth(), color = p.accent, trackColor = p.surface3)
             return@Column
         }
         val color = m.text("color") ?: "#A09184"

@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -22,10 +23,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -200,16 +198,19 @@ fun FrontsScreen(chorus: Chorus, model: Model, startNaming: Boolean = false, onN
                 }
                 if (naming) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ChorusField(newName, { newName = it }, label = { Text("Name") }, singleLine = true, modifier = Modifier.weight(1f))
-                    TextButton(onClick = { create(newName, null); newName = ""; naming = false }, enabled = newName.isNotBlank()) { Text("Add") }
+                    SmallButton("Add", primary = true, enabled = newName.isNotBlank()) { create(newName, null); newName = ""; naming = false }
                 }
             }
             val removed = all.filter { it.deleted }
             if (removed.isNotEmpty()) {
                 SectionLabel("Removed fronts")
-                removed.forEach { f ->
-                    Row(Modifier.fillMaxWidth().background(p.surface, RoundedCornerShape(14.dp)).padding(start = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(f.name, color = p.ink2, modifier = Modifier.weight(1f))
-                        TextButton(onClick = { act { Front.define(chorus, f.id, JSONObject().put("deleted", false)) } }) { Text("Restore") }
+                FormCard {
+                    removed.forEachIndexed { i, f ->
+                        if (i > 0) FormDivider()
+                        Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(f.name, color = p.ink2, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                            SmallButton("Restore") { act { Front.define(chorus, f.id, JSONObject().put("deleted", false)) } }
+                        }
                     }
                 }
             }
@@ -271,8 +272,8 @@ private fun FrontCard(model: Model, f: NamedFront, body: String, account: String
     }
 }
 
-/** One front's own settings: name, icon, blurb, following, who counts for what, removal. */
-@OptIn(ExperimentalLayoutApi::class)
+/** One front's own settings: name, icon, blurb, following, who counts for what, removal. Taps apply at
+ * once; the name and description are saved when the drawer closes. */
 @Composable
 private fun FrontEditor(chorus: Chorus, model: Model, front: NamedFront, others: List<NamedFront>, isBody: Boolean, onClose: () -> Unit) {
     val p = LocalChorusPalette.current
@@ -281,57 +282,76 @@ private fun FrontEditor(chorus: Chorus, model: Model, front: NamedFront, others:
     var name by remember(front.id, front.name) { mutableStateOf(front.name) }
     var about by remember(front.id) { mutableStateOf(display.front(front.id).about.orEmpty()) }
     var error by remember { mutableStateOf<String?>(null) }
+    var following by remember { mutableStateOf(false) }
+    var purpose by remember { mutableStateOf<Pair<String, String>?>(null) }
     val layers = FrontScene.layers(model).map { it.id to it.name }
     fun act(block: suspend () -> Unit) = actions.launch { try { block(); error = null } catch (e: Exception) { error = e.message ?: "Could not save." } }
     fun define(patch: JSONObject) = act { Front.define(chorus, front.id, patch) }
     fun look(f: (FrontingDisplay.FrontView) -> FrontingDisplay.FrontView) =
         act { chorus.create("pref.set", null, FrontingDisplay.payload(FrontingDisplay.withFront(model.accountPrefs.frontingDisplay, front.id, f))) }
-    ChorusSheet(onDismissRequest = onClose, skipPartiallyExpanded = true, containerColor = p.surface) {
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(frontName(front), color = p.ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ChorusField(name, { name = it }, label = { Text("Name") }, singleLine = true, modifier = Modifier.weight(1f))
-                if (name.isNotBlank() && name.trim() != front.name) TextButton(onClick = { define(JSONObject().put("name", name.trim())) }) { Text("Save") }
-            }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ChorusField(about, { about = it.take(140) }, label = { Text("Description") }, modifier = Modifier.weight(1f))
-                if (about.trim() != display.front(front.id).about.orEmpty()) TextButton(onClick = { look { it.copy(about = about.trim().ifEmpty { null }) } }) { Text("Save") }
-            }
-            Text("Icon", color = p.ink2, fontSize = 13.sp)
-            val icon = FrontingDisplay.icon(front.id, front.name, model.namedFronts?.bodyId ?: front.id, display)
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                FrontingDisplay.ICONS.forEach { k ->
-                    Box(Modifier.size(40.dp).clip(CircleShape).background(if (k == icon) p.accentSoft else p.surface2)
-                        .then(if (k == icon) Modifier.border(1.dp, p.accent, CircleShape) else Modifier)
-                        .clickable(onClickLabel = k) { look { it.copy(icon = k) } }, contentAlignment = Alignment.Center) {
-                        Glyph(frontIconRes(k), if (k == icon) p.accent else p.ink2, 18.dp, k)
-                    }
+    fun close() {
+        if (name.isNotBlank() && name.trim() != front.name) define(JSONObject().put("name", name.trim()))
+        if (about.trim() != display.front(front.id).about.orEmpty()) look { it.copy(about = about.trim().ifEmpty { null }) }
+        onClose()
+    }
+    Drawer(::close, frontName(front), footer = {
+        error?.let { Text(it, color = p.danger, fontSize = 14.sp) }
+        DrawerButton("Done", ::close)
+        if (!isBody) DrawerButton("Remove ${frontName(front)}", { define(JSONObject().put("deleted", true)); onClose() }, ButtonKind.Quiet)
+    }) {
+        ChoiceDrawer(following, "Follows", listOf<NamedFront?>(null) + others, others.firstOrNull { it.id == front.followSource },
+            { it?.let(::frontName) ?: "Nothing" }, { o -> following = false; define(JSONObject().put("follow_source", o?.id ?: JSONObject.NULL)) },
+            { following = false })
+        purpose?.let { (key, label) -> PurposeDrawer(chorus, model, front.id, key, label) { purpose = null } }
+        ChorusField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("Name") }, singleLine = true)
+        ChorusField(about, { about = it.take(140) }, Modifier.fillMaxWidth(), label = { Text("Description") })
+        SectionLabel("Icon", Modifier.padding(top = 4.dp))
+        val icon = FrontingDisplay.icon(front.id, front.name, model.namedFronts?.bodyId ?: front.id, display)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            FrontingDisplay.ICONS.forEach { k ->
+                Box(Modifier.size(40.dp).clip(CircleShape).background(if (k == icon) p.accentSoft else cardColor())
+                    .then(if (k == icon) Modifier.border(1.dp, p.accent, CircleShape) else Modifier)
+                    .clickable(onClickLabel = k) { look { it.copy(icon = k) } }, contentAlignment = Alignment.Center) {
+                    Glyph(frontIconRes(k), if (k == icon) p.accent else p.ink2, 18.dp, k)
                 }
             }
-            Text("Follows", color = p.ink2, fontSize = 13.sp)
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                FilterChip(front.followSource == null, onClick = { define(JSONObject().put("follow_source", JSONObject.NULL)) }, label = { Text("Nothing") })
-                others.forEach { o -> FilterChip(front.followSource == o.id, onClick = { define(JSONObject().put("follow_source", o.id)) }, label = { Text(frontName(o)) }) }
+        }
+        FormCard {
+            FormValueRow("Follows", others.firstOrNull { it.id == front.followSource }?.let(::frontName) ?: "Nothing") { following = true }
+            if (model.namedFronts?.resolved?.get(front.id)?.state == "overridden") {
+                FormDivider()
+                FormValueRow("Changed by hand", "Resume following") { act { Front.resume(chorus, front.id) } }
             }
-            if (model.namedFronts?.resolved?.get(front.id)?.state == "overridden")
-                TextButton(onClick = { act { Front.resume(chorus, front.id) } }) { Text("Resume following") }
-            Text("Who counts for what", color = p.accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp))
-            PURPOSES.forEach { (key, label) ->
-                val sel = selectionOf(front, key)
-                Column(Modifier.fillMaxWidth().border(1.dp, p.line, RoundedCornerShape(12.dp)).padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(label, color = p.ink, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        FilterChip(sel == null, onClick = { define(purposePatch(key, if (sel == null) emptySet() else null)) }, label = { Text("Default") })
-                        layers.forEach { (id, layerName) ->
-                            val on = sel?.contains(id) == true
-                            FilterChip(on, onClick = { val now = sel.orEmpty(); define(purposePatch(key, if (on) now - id else now + id)) }, label = { Text(layerName) })
-                        }
-                    }
+        }
+        SectionLabel("Who counts for what")
+        FormCard {
+            PURPOSES.forEachIndexed { i, (key, label) ->
+                if (i > 0) FormDivider()
+                FormValueRow(label, purposeSummary(selectionOf(front, key), layers)) { purpose = key to label }
+            }
+        }
+    }
+}
+
+/** Which layers count for one of a front's purposes (D-080, D-085): Default, or the layers picked. */
+@Composable
+internal fun PurposeDrawer(chorus: Chorus, model: Model, frontId: String, purpose: String, title: String, onClose: () -> Unit) {
+    val actions = rememberCoroutineScope()
+    val front = model.namedFronts?.fronts?.get(frontId) ?: return
+    val layers = FrontScene.layers(model)
+    val sel = selectionOf(front, purpose)
+    fun set(next: Set<String>?) = actions.launch { runCatching { Front.define(chorus, frontId, purposePatch(purpose, next)) } }
+    Drawer(onClose, title, footer = { DrawerButton("Done", onClose) }) {
+        FormCard {
+            ToggleRow("Default", sel == null, purposeSummary(null, layers.map { it.id to it.name }), inset = 14.dp) { on ->
+                set(if (on) null else layers.take(2).map { it.id }.toSet())
+            }
+            layers.forEach { l ->
+                FormDivider()
+                ToggleRow(l.name, sel?.contains(l.id) == true, enabled = sel != null, inset = 14.dp) { next ->
+                    set(if (next) sel.orEmpty() + l.id else sel.orEmpty() - l.id)
                 }
             }
-            error?.let { Text(it, color = p.danger) }
-            if (!isBody) OutlinedButton(onClick = { define(JSONObject().put("deleted", true)); onClose() }) { Text("Remove ${frontName(front)}", color = p.danger) }
-            Spacer(Modifier.height(20.dp))
         }
     }
 }

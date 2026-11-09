@@ -103,10 +103,12 @@ internal fun cardColor(): Color {
 /**
  * A drawer: [title] (with [subtitle] and a [leading] face) over [content], which scrolls; [footer]
  * stays below it (the main button). [dismissible] false keeps it open while something is saving.
+ * [actions] are icons beside the close button (F3.2's search).
  */
 @Composable
 internal fun Drawer(onDismiss: () -> Unit, title: String? = null, subtitle: String? = null,
     leading: (@Composable () -> Unit)? = null, dismissible: Boolean = true, scroll: Boolean = true,
+    actions: (@Composable () -> Unit)? = null,
     footer: (@Composable ColumnScope.() -> Unit)? = null, content: @Composable ColumnScope.() -> Unit) {
     val p = LocalChorusPalette.current
     val depth = LocalDrawerDepth.current
@@ -120,7 +122,7 @@ internal fun Drawer(onDismiss: () -> Unit, title: String? = null, subtitle: Stri
         InspectionDialogContent {
             run {
                 Column(Modifier.fillMaxWidth().heightIn(max = tallest).imePadding()) {
-                    if (title != null) DrawerHeader(title, subtitle, leading, if (dismissible) onDismiss else null)
+                    if (title != null) DrawerHeader(title, subtitle, leading, if (dismissible) onDismiss else null, actions)
                     Column(Modifier.weight(1f, fill = false).then(if (scroll) Modifier.verticalScroll(rememberScrollState()) else Modifier)
                         .padding(horizontal = 16.dp).padding(bottom = if (footer == null) 20.dp else 8.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp), content = content)
@@ -133,7 +135,8 @@ internal fun Drawer(onDismiss: () -> Unit, title: String? = null, subtitle: Stri
 }
 
 @Composable
-private fun DrawerHeader(title: String, subtitle: String?, leading: (@Composable () -> Unit)?, onClose: (() -> Unit)?) {
+private fun DrawerHeader(title: String, subtitle: String?, leading: (@Composable () -> Unit)?, onClose: (() -> Unit)?,
+    actions: (@Composable () -> Unit)? = null) {
     val p = LocalChorusPalette.current
     Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -143,6 +146,7 @@ private fun DrawerHeader(title: String, subtitle: String?, leading: (@Composable
                 maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.semantics { heading() })
             subtitle?.let { Text(it, color = p.ink3, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 2, overflow = TextOverflow.Ellipsis) }
         }
+        actions?.invoke()
         if (onClose != null) BarIcon(R.drawable.ic_close, "Close", p.ink2, 20.dp, onClose)
     }
 }
@@ -470,6 +474,18 @@ internal fun ChoiceField(label: String, value: String, modifier: Modifier = Modi
             Text(value, color = if (enabled) p.ink else p.ink3, fontSize = 15.sp, lineHeight = 21.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Glyph(R.drawable.ic_chevron_down, p.ink3, 18.dp)
+    }
+}
+
+/** A chip that's on (accent, with a check) or off (F7.12 member and layer chips, F3.10 states); [leading] is an icon or face. */
+@Composable
+internal fun PickChip(label: String, on: Boolean, enabled: Boolean = true, leading: (@Composable () -> Unit)? = null, onClick: () -> Unit) {
+    val p = LocalChorusPalette.current
+    Row(Modifier.clip(RoundedCornerShape(16.dp)).background(if (on) p.accentSoft else fieldFill())
+        .clickable(enabled = enabled, role = Role.Checkbox, onClick = onClick).semantics { selected = on }
+        .padding(horizontal = 12.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+        if (on) Glyph(R.drawable.ic_check, if (enabled) p.accent else p.ink3, 14.dp) else leading?.invoke()
+        Text(label, color = if (!enabled) p.ink3 else if (on) p.accent else p.ink2, fontSize = 14.sp, lineHeight = 19.sp, fontWeight = FontWeight.Medium, maxLines = 1)
     }
 }
 

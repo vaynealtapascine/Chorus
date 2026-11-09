@@ -318,12 +318,10 @@ private fun InboxRow(item: InboxItem, unread: Boolean, model: Model, onOpen: () 
                         .padding(horizontal = 12.dp, vertical = 8.dp))
             }
             if (onAccept != null || onDecline != null || onReview != null) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                onAccept?.let { Button(onClick = it, colors = ButtonDefaults.buttonColors(containerColor = p.accent, contentColor = p.onAccent),
-                    contentPadding = PaddingValues(horizontal = 16.dp), modifier = Modifier.heightIn(min = 36.dp)) {
-                    Text(if (item.kind == "follow_request" && !model.isPerson) "Accept…" else if (item.kind == "alert_ask") "Allow" else "Accept") } }
-                onDecline?.let { TextButton(onClick = it, modifier = Modifier.heightIn(min = 36.dp)) { Text("Decline", color = p.ink) } }
-                onReview?.let { Button(onClick = it, colors = ButtonDefaults.buttonColors(containerColor = p.accent, contentColor = p.onAccent),
-                    contentPadding = PaddingValues(horizontal = 16.dp), modifier = Modifier.heightIn(min = 36.dp)) { Text("Review") } }
+                onAccept?.let { SmallButton(if (item.kind == "follow_request" && !model.isPerson) "Accept…" else if (item.kind == "alert_ask") "Allow" else "Accept",
+                    primary = true, onClick = it) }
+                onDecline?.let { SmallButton("Decline", onClick = it) }
+                onReview?.let { SmallButton("Review", primary = true, onClick = it) }
             }
         }
         Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {

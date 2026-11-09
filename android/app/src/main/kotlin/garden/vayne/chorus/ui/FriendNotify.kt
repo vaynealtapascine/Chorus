@@ -98,7 +98,7 @@ internal fun FriendNotifyPage(chorus: Chorus, model: Model, f: FollowInfo, cache
                         for (m in members) {
                             val id = m.optString("id")
                             val chosen = picked == null || id in picked
-                            PrefChip(shownMember(m), chosen, on) {
+                            PickChip(shownMember(m), chosen, on) {
                                 save(Friends.withSubject(prefs, id, members.map { it.optString("id") }))
                             }
                         }
@@ -108,7 +108,7 @@ internal fun FriendNotifyPage(chorus: Chorus, model: Model, f: FollowInfo, cache
                 val levels = Friends.levels(prefs)
                 FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     for ((id, label) in listOf("front" to "Front", "cocon" to "Co-conscious", "present" to "Present"))
-                        PrefChip(label, id in levels, on) { save(Friends.withLevel(prefs, id)) }
+                        PickChip(label, id in levels, on) { save(Friends.withLevel(prefs, id)) }
                 }
                 ToggleRow("Switch-outs", Friends.switchOuts(prefs), "When someone stops fronting", on) { save(Friends.withSwitchOuts(prefs, it)) }
                 SectionLabel("How they arrive", Modifier.padding(horizontal = 12.dp))
@@ -169,18 +169,6 @@ internal fun FriendNotifyPage(chorus: Chorus, model: Model, f: FollowInfo, cache
         }) {
             ChorusField(at, { at = it.take(5) }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Time (HH:MM)") }, isError = !Friends.CLOCK.matches(at))
         }
-    }
-}
-
-/** A chip that's on (accent, with a check) or off (F7.12 member and layer chips). */
-@Composable
-private fun PrefChip(label: String, on: Boolean, enabled: Boolean, onClick: () -> Unit) {
-    val p = LocalChorusPalette.current
-    Row(Modifier.clip(RoundedCornerShape(16.dp)).background(if (on) p.accentSoft else p.surface2)
-        .clickable(enabled = enabled, role = Role.Checkbox, onClick = onClick).semantics { selected = on }
-        .padding(horizontal = 12.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-        if (on) Glyph(R.drawable.ic_check, if (enabled) p.accent else p.ink3, 14.dp)
-        Text(label, color = if (!enabled) p.ink3 else if (on) p.accent else p.ink2, fontSize = 14.sp, lineHeight = 19.sp, fontWeight = FontWeight.Medium)
     }
 }
 
