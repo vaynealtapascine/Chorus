@@ -7,11 +7,15 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.AccountPrefs
@@ -24,6 +28,7 @@ import garden.vayne.chorus.data.PeopleApi
 import garden.vayne.chorus.data.Push
 import garden.vayne.chorus.data.QuietHours
 import garden.vayne.chorus.data.QuietWindow
+import garden.vayne.chorus.data.Rings
 import garden.vayne.chorus.data.Status
 import garden.vayne.chorus.data.Words
 import garden.vayne.chorus.data.cap
@@ -119,10 +124,6 @@ private fun AdvancedPage(model: Model, saver: PrefSaver) {
     if (!model.isPerson) {
         SectionLabel("Notifications")
         FormCard {
-            ToggleRow("Ping my other devices when the front changes", prefs.chatEnabled("own_switch"), enabled = on) {
-                saver.save("notify_chat", prefs.withChatKind("own_switch", it))
-            }
-            FormDivider()
             ToggleRow("Reply as the mentioned member", prefs.chatEnabled("reply_as_mentioned"), enabled = on) {
                 saver.save("notify_chat", prefs.withChatKind("reply_as_mentioned", it))
             }
@@ -148,6 +149,12 @@ private fun NotificationsPage(chorus: Chorus, model: Model, saver: PrefSaver) {
     var followBusy by remember { mutableStateOf(false) }
     var followError by remember { mutableStateOf<String?>(null) }
     var quiet by remember { mutableStateOf(false) }
+    var troubleshoot by remember { mutableStateOf(false) }
+    var rings by remember { mutableStateOf(Rings.KINDS.associate { it.key to Rings.isOn(ctx, it.key) }) }
+    fun systemSettings() = runCatching {
+        ctx.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+            .putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
     LaunchedEffect(chorus, connStatus) {
         osOn = NotificationManagerCompat.from(ctx).areNotificationsEnabled()
         push = runCatching { Push.status(ctx, chorus) }.getOrNull()
@@ -172,45 +179,53 @@ private fun NotificationsPage(chorus: Chorus, model: Model, saver: PrefSaver) {
             finally { followBusy = false }
         }
     }
-    FormCard(Modifier.padding(top = 16.dp)) {
-        FormValueRow("Android notifications", if (osOn) "On" else "Off") {
-            runCatching {
-                ctx.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                    .putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            }
-        }
-        push?.let { st ->
-            FormDivider()
-            val how = when (st.delivery) {
-                "fcm" -> "Instant"
-                "distributor" -> st.distributor?.let { Push.distributorLabel(ctx, it) } ?: "UnifiedPush"
-                else -> "Every few minutes"
-            }
-            // the choice between Firebase and a UnifiedPush app exists only where both do (Advanced)
-            if (st.fcmConfigured && st.distributors.isNotEmpty()) FormValueRow("How this phone gets them", how, enabled = !pushBusy) { choosingDelivery = true }
-            else FormInfoRow("How this phone gets them", how)
-        }
-        FormDivider()
-        NavRow(if (pushBusy) "Sending…" else "Send a test", enabled = !pushBusy, chevron = false, subtitle = pushNote) {
-            pushBusy = true; pushNote = null
-            scope.launch {
-                try {
-                    osOn = NotificationManagerCompat.from(ctx).areNotificationsEnabled()
-                    pushNote = Push.sendTest(ctx)
-                    push = runCatching { Push.status(ctx, chorus) }.getOrNull()
-                } finally { pushBusy = false }
-            }
+    val how = push?.let { st ->
+        when (st.delivery) {
+            "fcm" -> "Instant"
+            "distributor" -> st.distributor?.let { Push.distributorLabel(ctx, it) } ?: "UnifiedPush"
+            else -> "Every few minutes"
         }
     }
-    SectionLabel("What rings")
+    val last = Rings.lastShown(ctx)?.let { "last one ${Rings.ago(it, System.currentTimeMillis())}" }
+    fun sendTest() {
+        pushBusy = true; pushNote = null
+        scope.launch {
+            try {
+                osOn = NotificationManagerCompat.from(ctx).areNotificationsEnabled()
+                pushNote = Push.sendTest(ctx)
+                push = runCatching { Push.status(ctx, chorus) }.getOrNull()
+            } finally { pushBusy = false }
+        }
+    }
+    Column(Modifier.padding(top = 16.dp).fillMaxWidth().background(cardColor(), RoundedCornerShape(16.dp)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            val tint = if (osOn) p.ok else p.warn
+            Box(Modifier.size(40.dp).background(tint.copy(alpha = .16f), CircleShape), contentAlignment = Alignment.Center) {
+                Glyph(if (osOn) R.drawable.ic_bell else R.drawable.ic_bell_off, tint, 20.dp)
+            }
+            Column(Modifier.weight(1f)) {
+                Text(if (osOn) "Notifications are on" else "Notifications are off", color = p.ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                listOfNotNull(how, last).joinToString(" · ").ifEmpty { null }?.let { Text(it, color = p.ink3, fontSize = 13.sp, lineHeight = 17.sp) }
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (osOn) SmallButton(if (pushBusy) "Sending…" else "Send a test", enabled = !pushBusy, onClick = ::sendTest)
+            else SmallButton("Turn on", primary = true, onClick = { systemSettings() })
+            SmallButton("Troubleshoot", onClick = { troubleshoot = true })
+        }
+        pushNote?.let { Text(it, color = p.ink2, fontSize = 13.sp, lineHeight = 17.sp) }
+    }
+    SectionLabel("This phone rings for")
     FormCard {
-        ToggleRow("Mentions", prefs.chatEnabled("mention"), enabled = !saver.busy) { saver.save("notify_chat", prefs.withChatKind("mention", it)) }
-        FormDivider()
-        ToggleRow("Direct messages", prefs.chatEnabled("dm"), enabled = !saver.busy) { saver.save("notify_chat", prefs.withChatKind("dm", it)) }
-        FormDivider()
-        ToggleRow("Replies", prefs.chatEnabled("reply"), enabled = !saver.busy) { saver.save("notify_chat", prefs.withChatKind("reply", it)) }
-        FormDivider()
-        ToggleRow("Poll nudges", prefs.chatEnabled("poll_nudge"), enabled = !saver.busy) { saver.save("notify_chat", prefs.withChatKind("poll_nudge", it)) }
+        Rings.KINDS.filter { !(model.isPerson && it.key == "own_switch") }.forEachIndexed { i, k ->
+            if (i > 0) FormDivider()
+            val allowed = !k.account || prefs.chatEnabled(k.key)
+            ToggleRow(k.label, rings[k.key] == true && allowed, enabled = !saver.busy) { on ->
+                Rings.set(ctx, k.key, on); rings = rings + (k.key to on)
+                // switched off for the whole account elsewhere: turning it on here means it
+                if (on && !allowed) saver.save("notify_chat", prefs.withChatKind(k.key, true))
+            }
+        }
     }
     if (active.isNotEmpty()) {
         SectionLabel("Friends")
@@ -228,6 +243,23 @@ private fun NotificationsPage(chorus: Chorus, model: Model, saver: PrefSaver) {
         }, { choosingDelivery = false })
     }
     if (quiet) QuietHoursDrawer(window, onDismiss = { quiet = false }) { next -> quiet = false; saveQuiet(next) }
+    if (troubleshoot) Drawer({ troubleshoot = false }, "Troubleshoot") {
+        FormCard {
+            FormValueRow("Android notifications", if (osOn) "On" else "Off") { systemSettings() }
+            push?.let { st ->
+                FormDivider()
+                // the choice between Firebase and a UnifiedPush app exists only where both do
+                if (st.fcmConfigured && st.distributors.isNotEmpty()) FormValueRow("How this phone gets them", how.orEmpty(), enabled = !pushBusy) { choosingDelivery = true }
+                else FormInfoRow("How this phone gets them", how.orEmpty())
+            }
+            FormDivider()
+            val power = ctx.getSystemService(android.os.PowerManager::class.java)
+            val free = power?.isIgnoringBatteryOptimizations(ctx.packageName) == true
+            FormValueRow("Battery", if (free) "Unrestricted" else "Optimised") {
+                runCatching { ctx.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            }
+        }
+    }
 }
 
 /** Quiet hours for friends' switches: From and Until in the time drawer (D-124), or off. */

@@ -411,9 +411,9 @@ object Push {
 
     private fun ensureChannels(ctx: Context) {
         val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
-        nm.createNotificationChannel(NotificationChannel(CHANNEL_SWITCHES, "Switches", NotificationManager.IMPORTANCE_DEFAULT))
-        nm.createNotificationChannel(NotificationChannel(CHANNEL_MESSAGES, "Mentions, replies and DMs", NotificationManager.IMPORTANCE_HIGH))
-        nm.createNotificationChannel(NotificationChannel(CHANNEL_POSTS, "Post alerts", NotificationManager.IMPORTANCE_DEFAULT))
+        nm.createNotificationChannel(NotificationChannel(CHANNEL_MESSAGES, "Chat messages", NotificationManager.IMPORTANCE_HIGH))
+        for (k in Rings.KINDS) nm.createNotificationChannel(NotificationChannel(k.channel, k.label,
+            if (k.urgent) NotificationManager.IMPORTANCE_HIGH else NotificationManager.IMPORTANCE_DEFAULT))
     }
 
     internal fun showAsync(ctx: Context, p: JSONObject, done: () -> Unit = {}) {
@@ -429,9 +429,12 @@ object Push {
             scope.launch { runCatching { NotifyCheck.onTickle(ctx) } }
             return
         }
+        // this phone doesn't ring for this kind (F7.13)
+        Rings.keyOf(p)?.let { if (!Rings.isOn(ctx, it)) return }
         ensureChannels(ctx)
+        Rings.noteShown(ctx, System.currentTimeMillis())
         val isMessage = kind == "message"
-        val highPriority = isMessage || kind == "test" || kind == "poll"
+        val highPriority = isMessage || kind == "test"
         val time = p.optJSONObject("time")
         val at = time?.optLong("at", 0L)?.takeIf { it > 0 && time.optString("precision") != "none" }
         val nm = ctx.getSystemService(NotificationManager::class.java)
@@ -474,7 +477,7 @@ object Push {
             existing?.messages?.takeLast(5)?.forEach { style.addMessage(it) }
             style.addMessage(p.optString("text"), at ?: System.currentTimeMillis(), sender)
 
-            val builder = NotificationCompat.Builder(ctx, CHANNEL_MESSAGES)
+            val builder = NotificationCompat.Builder(ctx, Rings.channelOf(p) ?: CHANNEL_MESSAGES)
                 .setSmallIcon(garden.vayne.chorus.R.drawable.ic_stat_chorus)
                 .setColor(NotificationIcons.BRAND_COLOR)
                 .setContentTitle(p.optString("title", "Chorus"))
@@ -492,7 +495,7 @@ object Push {
             noteId to builder.build()
         } else {
             // post alerts (D-106): one per post, opening it; requests and answers open Friends;
-            // a nudge to vote (D-136) rings as its post's alert or in its chat's channel
+            // a nudge to vote (D-136) opens its post or chat
             val pollPost = p.optString("post_id").takeIf { kind == "poll" && it.isNotEmpty() }
             val alert = kind == "post" || kind == "alert" || pollPost != null
             val key = when (kind) {
@@ -516,7 +519,7 @@ object Push {
                 tap,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
-            val builder = NotificationCompat.Builder(ctx, if (alert) CHANNEL_POSTS else if (highPriority) CHANNEL_MESSAGES else CHANNEL_SWITCHES)
+            val builder = NotificationCompat.Builder(ctx, Rings.channelOf(p) ?: if (alert) CHANNEL_POSTS else if (highPriority) CHANNEL_MESSAGES else CHANNEL_SWITCHES)
                 .setSmallIcon(garden.vayne.chorus.R.drawable.ic_stat_chorus)
                 .setColor(NotificationIcons.BRAND_COLOR)
                 .setContentTitle(p.optString("title", "Chorus"))
