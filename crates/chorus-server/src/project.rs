@@ -1260,6 +1260,28 @@ fn special(conn: &Connection, o: &Op) -> anyhow::Result<()> {
             .execute(params![o.entity().unwrap_or(""), o.time(), o.hlc.to_string()])?;
             Ok(())
         }
+        // LWW per (poll, account, member): the latest nudge of each member (D-136)
+        "poll.nudge" => {
+            let by = o.payload.get("by_member_id").and_then(Value::as_str);
+            for member in o.payload.get("member_ids").and_then(Value::as_array).into_iter().flatten() {
+                conn.prepare_cached(
+                    "INSERT INTO poll_nudge (poll_id, account_id, member_id, nudged_at, by_member_id, hlc)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                     ON CONFLICT(poll_id, account_id, member_id) DO UPDATE SET nudged_at = excluded.nudged_at,
+                       by_member_id = excluded.by_member_id, hlc = excluded.hlc
+                     WHERE excluded.hlc > poll_nudge.hlc",
+                )?
+                .execute(params![
+                    o.entity().unwrap_or(""),
+                    o.account_id.as_deref().unwrap_or(""),
+                    member.as_str().unwrap_or(""),
+                    o.time(),
+                    by,
+                    o.hlc.to_string()
+                ])?;
+            }
+            Ok(())
+        }
         "pref.set" => lww_keyed(
             conn,
             o,
@@ -1483,6 +1505,7 @@ pub(crate) const DERIVED: &[&str] = &[
     "poll_vote",
     "poll_tally",
     "poll_close",
+    "poll_nudge",
     "switch",
     "front_interval",
     "front_daily",

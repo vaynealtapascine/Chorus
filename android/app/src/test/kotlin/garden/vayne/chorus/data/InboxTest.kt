@@ -15,6 +15,7 @@ class InboxTest {
         {"id":"s1","kind":"switch","text":"Kit is steering","delivered_at":300,"account":{"id":"j","display_name":"The Junipers"}},
         {"id":"o1","kind":"own_switch","title":"Fox is fronting","delivered_at":250},
         {"id":"r1","kind":"post_reply","title":"Ash replied to your post","text":"lovely","delivered_at":200,"post_id":"reply","sender":{"name":"Ash"}},
+        {"id":"n1","kind":"poll_nudge","title":"Kai nudged Rin","text":"Dinner?","delivered_at":150,"message_id":"m9","channel_id":"c9","sender":{"name":"Kai"}},
         {"id":"x","kind":"something_new","delivered_at":100},
         {"id":"d1","kind":"dm","title":"Kit","text":"hi","delivered_at":90,"channel_id":"c"},
         {"id":"g1","kind":"message","title":"#general","text":"hello","delivered_at":80,"channel_id":"c"},
@@ -22,7 +23,9 @@ class InboxTest {
 
     @Test fun notificationsBecomeRowsInTheirChips() {
         val rows = Inbox.fromNotifications(notes)
-        assertEquals(listOf("m1", "s1", "o1", "r1"), rows.map { it.id })
+        assertEquals(listOf("m1", "s1", "o1", "r1", "n1"), rows.map { it.id })
+        assertEquals("Kai nudged Rin", rows[4].title)
+        assertEquals("c9", rows[4].channelId)
         val mention = rows[0]
         assertEquals("Amarynthe mentioned you", mention.title)
         assertEquals("@Fox could you check?", mention.quote)
@@ -35,7 +38,7 @@ class InboxTest {
         // own switches start hidden; turning them on shows them
         assertFalse(Inbox.visible(rows, "all", null).any { it.id == "o1" })
         assertTrue(Inbox.visible(rows, "all", JSONObject().put("own_switches", true)).any { it.id == "o1" })
-        assertEquals(listOf("m1", "r1"), Inbox.visible(rows, "mentions", null).map { it.id })
+        assertEquals(listOf("m1", "r1", "n1"), Inbox.visible(rows, "mentions", null).map { it.id })
         assertFalse(Inbox.chips(true).any { it.first == "system" })
     }
 
@@ -57,10 +60,10 @@ class InboxTest {
     @Test fun readMarksMoveForwardAndBackOnePostAtATime() {
         val rows = Inbox.fromNotifications(notes)
         val none = InboxRead()
-        assertEquals(3, Inbox.unread(rows, none, null))
+        assertEquals(4, Inbox.unread(rows, none, null))
         val one = none.mark(rows[0])
         assertTrue(one.read(rows[0]))
-        assertEquals(2, Inbox.unread(rows, one, null))
+        assertEquals(3, Inbox.unread(rows, one, null))
         // everything up to 400 read, then the mention unread again: the others keep their marks
         val all = InboxRead(400)
         val back = all.unmark(rows[0], rows)

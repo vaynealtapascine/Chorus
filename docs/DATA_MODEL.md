@@ -212,6 +212,7 @@ Merge column: **LWW-F** = field-level last-writer-wins by HLC · **SET** = LWW e
 | `attachment.set` | `{alt_text?, is_spoiler?}` | LWW-F |
 | `post.create` | `{kind: note or entry, authors, title?, text, entities, mood?, tags?, cw?, visibility, reply_to?, quote?, repost_of?, attachments?, poll?, alerts?}` (`alerts`: `none` · `delayed`, D-127; read from the op at live ingest, not stored) | APP |
 | `message.poll_tally` / `post.poll_tally` | `{channel_id?, counts:{option_id: n}, voters}` — server-derived only, in the parent's scope; never pushed by devices; no voter identities (D-086) | LWW per poll |
+| `poll.nudge` | `{member_ids:[1–30 member_id], by_member_id?}` — entity = the poll's parent; in the **nudger's** `account:` scope; LWW per (poll, member) on `nudged_at` (D-136, D-143, POLLS.md) |
 | `message.poll_close` / `post.poll_close` | `{channel_id}` (message) / `{}` (post) — the parent's author closes its poll early, in the parent's scope; no reopen (D-136, D-141). `poll.closes_at` (ms) on `message.send`/`post.create` is the planned close; votes the server receives at or after the earlier of the two are refused and the last tally is final. Table `poll_close (poll_id, closed_at, hlc)` (migration 0022) | earliest `occurred_at` wins (not LWW) |
 | `post.edit` / `post.delete` / `post.set_visibility` | | APP / LWW-F |
 | `draft.set` / `draft.delete` | composer drafts (per channel or post), synced | LWW-F |

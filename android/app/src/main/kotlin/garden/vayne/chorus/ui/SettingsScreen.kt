@@ -209,6 +209,8 @@ private fun NotificationsPage(chorus: Chorus, model: Model, saver: PrefSaver) {
         ToggleRow("Direct messages", prefs.chatEnabled("dm"), enabled = !saver.busy) { saver.save("notify_chat", prefs.withChatKind("dm", it)) }
         FormDivider()
         ToggleRow("Replies", prefs.chatEnabled("reply"), enabled = !saver.busy) { saver.save("notify_chat", prefs.withChatKind("reply", it)) }
+        FormDivider()
+        ToggleRow("Poll nudges", prefs.chatEnabled("poll_nudge"), enabled = !saver.busy) { saver.save("notify_chat", prefs.withChatKind("poll_nudge", it)) }
     }
     if (active.isNotEmpty()) {
         SectionLabel("Friends")

@@ -123,6 +123,40 @@ impl W {
     }
 }
 
+impl W {
+    fn nudge(&mut self, who: &str, poll: &str, members: Value, by: Option<&str>) -> Option<AckError> {
+        let mut payload = json!({"member_ids": members});
+        if let Some(by) = by {
+            payload["by_member_id"] = json!(by);
+        }
+        self.push(who, "poll.nudge", &format!("account:{who}"), poll, payload)
+    }
+
+    /// The nudge notifications queued for `account`.
+    fn nudges(&self, account: &str) -> Vec<Value> {
+        let mut st = self
+            .c
+            .prepare("SELECT payload FROM notification WHERE recipient_account_id = ?1 AND kind = 'poll_nudge' ORDER BY created_at")
+            .unwrap();
+        st.query_map([account], |r| r.get::<_, String>(0))
+            .unwrap()
+            .map(|s| serde_json::from_str(&s.unwrap()).unwrap())
+            .collect()
+    }
+
+    fn message_poll(&mut self, author: &str, by: &str, id: &str) {
+        let space = self.space.clone();
+        let poll: Value = serde_json::from_str(POLL).unwrap();
+        self.ok(
+            author,
+            "message.send",
+            &space,
+            id,
+            json!({"channel_id": GENERAL, "authors": [by], "text": "What about dinner?", "entities": [], "poll": poll}),
+        );
+    }
+}
+
 const POLL: &str = r#"{"question": "Dinner?", "options": [{"id": "a", "text": "Soup"}, {"id": "b", "text": "Rice"}]}"#;
 
 #[test]
@@ -387,4 +421,130 @@ fn only_the_author_closes_a_poll_early_where_it_was_posted() {
     assert_eq!(w.push(&a, "message.poll_close", &space, &msg, json!({})).unwrap().code, "bad_request");
     w.ok(&a, "message.poll_close", &space, &msg, json!({"channel_id": GENERAL}));
     assert_eq!(w.vote(&b, &msg, &june, json!(["a"])).unwrap().code, "forbidden");
+}
+
+#[test]
+fn a_nudge_tells_our_own_members_who_have_not_voted_and_nobody_else() {
+    let mut w = W::new();
+    let (a, b) = (w.a.clone(), w.b.clone());
+    let kai = w.member(&a, 40, "Kai");
+    let rin = w.member(&a, 41, "Rin");
+    let ash = w.member(&a, 42, "Ash");
+    let june = w.member(&b, 43, "June");
+    let msg = new_id(NOW as u64, [50; 10]);
+    w.message_poll(&a, &kai, &msg);
+    w.voted(&a, &msg, &ash, json!(["a"]));
+
+    // Ash has voted, so the nudge rings only for Rin, and not on the device that sent it
+    assert_eq!(w.nudge(&a, &msg, json!([rin, ash]), Some(&kai)), None);
+    let sent = w.nudges(&a);
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0]["title"], "Kai nudged Rin");
+    assert_eq!(sent[0]["text"], "Dinner?");
+    assert_eq!(sent[0]["t"], "poll");
+    assert_eq!(sent[0]["message_id"], json!(msg));
+    assert_eq!(sent[0]["channel_id"], GENERAL);
+    assert_eq!(sent[0]["from_device"], "d");
+
+    // when everyone named has voted nothing rings, though the nudge is recorded
+    w.c.execute("UPDATE poll_nudge SET nudged_at = 0", []).unwrap();
+    assert_eq!(w.nudge(&a, &msg, json!([ash]), None), None);
+    assert_eq!(w.nudges(&a).len(), 1);
+
+    // refused: another account's member, as either end of the nudge
+    assert_eq!(w.nudge(&a, &msg, json!([june]), Some(&kai)).unwrap().code, "forbidden");
+    assert_eq!(w.nudge(&a, &msg, json!([kai]), Some(&june)).unwrap().code, "forbidden");
+    // an archived member can't be reminded
+    w.ok(&a, "member.archive", &format!("account:{a}"), &kai, json!({}));
+    assert_eq!(w.nudge(&a, &msg, json!([kai]), None).unwrap().code, "forbidden");
+    // nothing about it reaches the other account
+    assert!(w.nudges(&b).is_empty());
+    assert!(!w.others_see(&b).contains("poll.nudge"));
+    let outside: i64 = w
+        .c
+        .query_row("SELECT count(*) FROM op WHERE kind = 'poll.nudge' AND scope != 'account:' || account_id", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(outside, 0);
+}
+
+#[test]
+fn nudges_wait_four_hours_per_member_and_thirty_an_hour() {
+    let mut w = W::new();
+    let a = w.a.clone();
+    let kai = w.member(&a, 40, "Kai");
+    let rin = w.member(&a, 41, "Rin");
+    let msg = new_id(NOW as u64, [50; 10]);
+    w.message_poll(&a, &kai, &msg);
+    assert_eq!(w.nudge(&a, &msg, json!([rin]), None), None);
+    let again = w.nudge(&a, &msg, json!([rin]), None).unwrap();
+    assert_eq!(again.code, "nudge_cooldown");
+    assert!(again.retry && again.retry_after_ms.unwrap() > 3 * 3_600_000, "{again:?}");
+    // the same member on another poll is a different question
+    let other = new_id(NOW as u64, [51; 10]);
+    w.message_poll(&a, &kai, &other);
+    assert_eq!(w.nudge(&a, &other, json!([rin]), None), None);
+
+    // four hours on, it goes through
+    w.c.execute("UPDATE poll_nudge SET nudged_at = nudged_at - ?1", [chorus_core::poll::NUDGE_COOLDOWN_MS]).unwrap();
+    assert_eq!(w.nudge(&a, &msg, json!([rin]), None), None);
+
+    // the account's hourly cap counts members, whatever the poll
+    w.c.execute("UPDATE poll_nudge SET nudged_at = nudged_at - ?1", [chorus_core::poll::NUDGE_COOLDOWN_MS]).unwrap();
+    let many: Vec<String> = (0..30).map(|i| w.member(&a, 100 + i, "Someone")).collect();
+    assert_eq!(w.nudge(&a, &msg, json!(many), None), None);
+    let over = w.nudge(&a, &other, json!([rin]), None).unwrap();
+    assert_eq!(over.code, "rate_limited");
+    assert!(over.retry && over.retry_after_ms.unwrap() <= 3_600_000, "{over:?}");
+}
+
+#[test]
+fn nudges_follow_the_members_rules_and_stop_when_the_poll_closes() {
+    let mut w = W::new();
+    let (a, b) = (w.a.clone(), w.b.clone());
+    let scope = format!("account:{a}");
+    let kai = w.member(&a, 40, "Kai");
+    let rin = w.member(&a, 41, "Rin");
+    let ash = w.member(&a, 42, "Ash");
+    let june = w.member(&b, 43, "June");
+    let msg = new_id(NOW as u64, [50; 10]);
+    w.message_poll(&a, &kai, &msg);
+
+    // a member's "never" for mentions also covers nudges; "fronting" needs them here
+    for (n, member, rule) in [(60u8, &rin, "never"), (61, &ash, "fronting")] {
+        let p = new_id(NOW as u64, [n; 10]);
+        let key = format!("notify_member:{member}");
+        w.ok(&a, "pref.set", &scope, &p, json!({"device": "", "key": key, "value": {"mentions": rule}}));
+    }
+    assert_eq!(w.nudge(&a, &msg, json!([rin, ash]), Some(&kai)), None);
+    assert!(w.nudges(&a).is_empty());
+
+    // nudges can be turned off altogether
+    w.c.execute("UPDATE poll_nudge SET nudged_at = 0", []).unwrap();
+    let p = new_id(NOW as u64, [62; 10]);
+    w.ok(&a, "pref.set", &scope, &p, json!({"device": "", "key": "notify_chat", "value": {"poll_nudge": false}}));
+    assert_eq!(w.nudge(&a, &msg, json!([kai]), None), None);
+    assert!(w.nudges(&a).is_empty());
+
+    // a poll the server hasn't seen waits for it; one the account can't read is refused
+    let early = w.nudge(&a, &new_id(NOW as u64, [63; 10]), json!([kai]), None).unwrap();
+    assert!(early.retry, "{early:?}");
+    let private = new_id(NOW as u64, [64; 10]);
+    let poll: Value = serde_json::from_str(POLL).unwrap();
+    w.ok(
+        &b,
+        "post.create",
+        &format!("account:{b}"),
+        &private,
+        json!({"authors": [june], "text": "?", "entities": [],
+        "kind": "note", "visibility": {"mode": "private"}, "poll": poll}),
+    );
+    assert_eq!(w.nudge(&a, &private, json!([kai]), None).unwrap().code, "forbidden");
+
+    // closed: no more nudges
+    w.c.execute("UPDATE poll_nudge SET nudged_at = 0", []).unwrap();
+    let space = w.space.clone();
+    w.ok(&a, "message.poll_close", &space, &msg, json!({"channel_id": GENERAL}));
+    assert_eq!(w.nudge(&a, &msg, json!([kai]), None).unwrap().code, "forbidden");
 }

@@ -267,6 +267,7 @@ follower surface to its `surfaces` closure. A mutation that reveals one minute e
 | Private chat (D-098) | on while that member is fronting | The member's DM rule; the title says whose it is. |
 | Reply to a post / message | on | |
 | Reactions | off | |
+| Nudged to vote on a poll (`poll_nudge`, D-136) | on | Our own members only; each named member's mentions rule; never the device that sent it. Off with `notify_chat.poll_nudge`. |
 | Channel messages | per channel: all · mentions · none | Default: internal channels "mentions", shared spaces "mentions", DMs "all". |
 | Review card | on | Concurrent switches need a look (SYNC.md §5.7). |
 | Follow request | on | |

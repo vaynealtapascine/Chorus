@@ -73,6 +73,10 @@ object NotifyCheck {
         "post", "post_reply" -> JSONObject().put("t", "post").put("id", i.optString("id"))
             .put("title", i.text("title") ?: "Chorus").put("text", i.optString("text"))
             .put("post_id", i.optString("post_id")).put("account_id", i.optString("account_id"))
+        // a nudge to vote (D-136): opens the post, or the chat the poll is in
+        "poll_nudge" -> JSONObject().put("t", "poll").put("id", i.optString("id"))
+            .put("title", i.text("title") ?: "Chorus").put("text", i.optString("text"))
+            .apply { for (key in listOf("post_id", "message_id", "channel_id")) i.text(key)?.let { put(key, it) } }
         "alert_request", "alert_accepted" -> JSONObject().put("t", "alert").put("id", i.optString("id"))
             .put("kind", i.optString("kind")).put("title", i.text("title") ?: "Chorus").put("text", i.optString("text"))
             .put("member_id", i.optString("member_id")).put("account_id", i.optString("account_id"))

@@ -1,0 +1,81 @@
+{
+  "description": "D-136: one row per (poll, member); the later nudge wins whatever order they arrive in",
+  "fn": "project",
+  "args": [
+    [
+      {
+        "id": "0192f8c2-0000-7000-8000-000000000024",
+        "kind": "poll.nudge",
+        "v": 1,
+        "scope": "account:0192f8c2-0000-7000-8000-0000000000a1",
+        "entity_id": "0192f8c2-0000-7000-8000-0000000000e1",
+        "hlc": "000000004e20-0000-00000024",
+        "device_at": 20000,
+        "payload": {
+          "member_ids": [
+            "m1"
+          ]
+        },
+        "occurred_at": 20000
+      },
+      {
+        "id": "0192f8c2-0000-7000-8000-000000000023",
+        "kind": "poll.nudge",
+        "v": 1,
+        "scope": "account:0192f8c2-0000-7000-8000-0000000000a1",
+        "entity_id": "0192f8c2-0000-7000-8000-0000000000e1",
+        "hlc": "000000002710-0000-00000023",
+        "device_at": 10000,
+        "payload": {
+          "member_ids": [
+            "m1",
+            "m2"
+          ]
+        },
+        "occurred_at": 10000
+      },
+      {
+        "id": "0192f8c2-0000-7000-8000-000000000025",
+        "kind": "poll.nudge",
+        "v": 1,
+        "scope": "account:0192f8c2-0000-7000-8000-0000000000a1",
+        "entity_id": "0192f8c2-0000-7000-8000-0000000000e2",
+        "hlc": "000000003a98-0000-00000025",
+        "device_at": 15000,
+        "payload": {
+          "member_ids": [
+            "m1"
+          ]
+        },
+        "occurred_at": 15000
+      }
+    ]
+  ],
+  "expect": {
+    "fronts": {},
+    "opaque": 0,
+    "rows": {
+      "poll_nudge": {
+        "0192f8c2-0000-7000-8000-0000000000e1|m1": {
+          "exists": true,
+          "fields": {
+            "nudged_at": 20000
+          }
+        },
+        "0192f8c2-0000-7000-8000-0000000000e1|m2": {
+          "exists": true,
+          "fields": {
+            "nudged_at": 10000
+          }
+        },
+        "0192f8c2-0000-7000-8000-0000000000e2|m1": {
+          "exists": true,
+          "fields": {
+            "nudged_at": 15000
+          }
+        }
+      }
+    },
+    "sets": {}
+  }
+}

@@ -121,6 +121,7 @@
     <label><input type="checkbox" checked={kinds.mention !== false} onchange={(e) => chatKind('mention', e.currentTarget.checked)} /> Mentions</label>
     <label><input type="checkbox" checked={kinds.dm !== false} onchange={(e) => chatKind('dm', e.currentTarget.checked)} /> Direct messages</label>
     <label><input type="checkbox" checked={kinds.reply !== false} onchange={(e) => chatKind('reply', e.currentTarget.checked)} /> Replies</label>
+    <label><input type="checkbox" checked={kinds.poll_nudge !== false} onchange={(e) => chatKind('poll_nudge', e.currentTarget.checked)} /> Poll nudges</label>
     {#if active.length}
       <form class="quiet" onsubmit={(e) => { e.preventDefault(); void saveQuiet({ from: quietFrom, to: quietTo }); }}>
         <span>Quiet hours for people you follow</span>

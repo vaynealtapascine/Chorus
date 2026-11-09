@@ -84,6 +84,17 @@ their own clock for display only. REST post rows and message search results carr
 "Closes in …" / "Closed" under the card, and "Close poll" for the author; web: a closing time in
 the post composer and the closed state (no early close yet).
 
+**Nudge (D-136, D-143).** `poll.nudge {member_ids: [1–30 of ours], by_member_id?}`, entity = the
+parent, in the nudger's `account:` scope, so it never leaves the account; one LWW register per
+`(poll, member)` on `nudged_at`. The server refuses it unless the parent is readable by the
+account, still open, and every id is an own, live, unarchived member. A member nudged on this poll
+in the last 4 hours holds the whole op (`later`, `nudge_cooldown`, with the wait), and so does
+going past 30 members an hour per account (`later`, `rate_limited`). Members who have voted
+stay silent. It rings as one `poll_nudge` notification on the account's other devices, naming
+those still to vote under each member's mentions rule ("Kai nudged Rin"), off with
+`notify_chat.poll_nudge`. Android: Nudge beside each of our members who hasn't voted on the F6.10
+votes list, "Nudged" for the 4 hours after; web lists and opens the notification.
+
 Message tallies follow the message's channel visibility because they carry `channel_id` and use
 the same space-scope delivery filter as the message.
 
@@ -151,3 +162,6 @@ is reloaded; they do not subscribe to the foreign account's private op scope.
    `poll_close` (migration 0022), server refusal and the final tally, REST `poll_closed_at`,
    fixtures (`definition_closes_at*`, `closed_at_earliest`, `project_close_earliest*`,
    `validate_close_*`), `tests/polls.rs`; both clients as above.
+5. **Nudge (D-136, D-143) done (2026-11-09).** `poll::nudged`, `poll.nudge`, `poll_nudge`
+   (migration 0022), `polls::nudge_denied`, `activity::poll_nudge`, fixtures (`validate_nudge*`,
+   `project_nudge_lww`), `tests/polls.rs`; clients as above.

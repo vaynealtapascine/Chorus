@@ -3,8 +3,8 @@
 //! system's own internal space: mentions of a member (or `@front`) and member DMs, each under that
 //! member's rule, pushed to the account's *other* devices only.
 //!
-//! Also, if asked for, the account's own switches made on another device; and post alerts
-//! (`post_alerts.rs`, D-106).
+//! Also, if asked for, the account's own switches made on another device; post alerts
+//! (`post_alerts.rs`, D-106); and nudges to vote on a poll (D-136).
 //!
 //! Queued on live ingest of `message.send` and `front.*` (never on rebuild), delivered by the
 //! notifier loop within seconds, as an inbox row plus an encrypted push. In a shared space the
@@ -212,6 +212,9 @@ pub fn on_op(conn: &Connection, o: &Op, now: i64) -> anyhow::Result<()> {
     {
         return crate::post_alerts::on_post(conn, id, crate::post_alerts::Alerts::of(&o.payload), now);
     }
+    if o.kind == "poll.nudge" {
+        return poll_nudge(conn, o, author, now);
+    }
     if o.kind != "message.send" {
         return Ok(());
     }
@@ -303,6 +306,87 @@ pub fn on_op(conn: &Connection, o: &Op, now: i64) -> anyhow::Result<()> {
         }
     }
     queue(conn, o, why, &meta, now)
+}
+
+/// Our own members nudged to vote (D-136): one notification for the account's other devices, naming
+/// those who haven't voted and whose mentions rule lets it ring. Nobody outside the account hears.
+fn poll_nudge(conn: &Connection, o: &Op, author: &str, now: i64) -> anyhow::Result<()> {
+    let Some(poll) = o.entity_id.as_deref() else { return Ok(()) };
+    if !kind_wanted(conn, author, "poll_nudge")? {
+        return Ok(());
+    }
+    let message: Option<(String, String, String, String)> = conn
+        .prepare_cached(
+            "SELECT m.poll, m.text, m.channel_id, c.space_id FROM message m JOIN channel c ON c.id = m.channel_id
+             WHERE m.id = ?1 AND m.poll IS NOT NULL",
+        )?
+        .query_row([poll], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+        .optional()?;
+    let (definition, body) = match &message {
+        Some((definition, body, ..)) => (definition.clone(), body.clone()),
+        None => {
+            let post: Option<(String, String)> = conn
+                .prepare_cached("SELECT poll, text FROM post WHERE id = ?1 AND poll IS NOT NULL")?
+                .query_row([poll], |r| Ok((r.get(0)?, r.get(1)?)))
+                .optional()?;
+            let Some(post) = post else { return Ok(()) };
+            post
+        }
+    };
+    let channel = message.as_ref().map_or("", |m| m.2.as_str());
+    let front = fronting(conn, author, channel, now)?;
+    let mut voted = conn.prepare_cached(
+        "SELECT EXISTS(SELECT 1 FROM poll_vote WHERE poll_id = ?1 AND account_id = ?2 AND member_id = ?3
+           AND json_array_length(choices) > 0)",
+    )?;
+    let mut names = Vec::new();
+    for member in o.payload.get("member_ids").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str)
+    {
+        let rings = match member_rule(conn, author, member, "mentions")?.as_str() {
+            "always" => true,
+            "fronting" => front.iter().any(|f| f == member),
+            _ => false,
+        };
+        if rings && !voted.query_row(params![poll, author, member], |r| r.get::<_, bool>(0))? {
+            names.push(name_of(conn, member)?.unwrap_or_else(|| "Someone".into()));
+        }
+    }
+    let whom = match names.as_slice() {
+        [] => return Ok(()),
+        [one] => one.clone(),
+        [a, b] => format!("{a} and {b}"),
+        [a, rest @ ..] => format!("{a} and {} others", rest.len()),
+    };
+    let by = o.payload.get("by_member_id").and_then(Value::as_str);
+    let who = by.map(|m| name_of(conn, m)).transpose()?.flatten().unwrap_or_else(|| "Someone".into());
+    let card = by.map(|m| author_card(conn, m)).transpose()?.unwrap_or_default();
+    let question = serde_json::from_str::<Value>(&definition)
+        .ok()
+        .and_then(|d| d.get("question").and_then(Value::as_str).map(String::from))
+        .filter(|q| !q.trim().is_empty())
+        .unwrap_or(body);
+    let mut payload = json!({
+        "t": "poll", "kind": "poll_nudge", "title": format!("{who} nudged {whom}"),
+        "text": question.chars().take(120).collect::<String>(), "sender": sender_of(&who, &card),
+    });
+    match &message {
+        Some((.., channel, space)) => {
+            payload["message_id"] = json!(poll);
+            payload["channel_id"] = json!(channel);
+            payload["scope"] = json!(format!("space:{space}"));
+        }
+        None => payload["post_id"] = json!(poll),
+    }
+    if let Some(d) = &o.device_id {
+        payload["from_device"] = json!(d);
+    }
+    let id = chorus_core::id::new_id(now as u64, rand::random());
+    conn.execute(
+        "INSERT INTO notification (id, recipient_account_id, kind, source_op_id, payload, created_at, due_at)
+         VALUES (?1, ?2, 'poll_nudge', ?3, ?4, ?5, ?5)",
+        params![id, author, o.id, serde_json::to_string(&payload)?, now],
+    )?;
+    Ok(())
 }
 
 /// Steady fallback disc palette matching `web/src/lib/chat-list.ts` (`discColor`).
@@ -687,6 +771,21 @@ fn own_switch_text(conn: &Connection, account: &str, p: &Value) -> anyhow::Resul
     Ok(Some((title, text)))
 }
 
+/// The `sender` of a notification: a name and what to draw for them.
+fn sender_of(name: &str, card: &AuthorCard) -> Value {
+    let mut sender = json!({"name": name});
+    if let Some(g) = &card.glyph {
+        sender["glyph"] = json!(g);
+    }
+    if let Some(c) = &card.color {
+        sender["color"] = json!(c);
+    }
+    if let Some(a) = &card.avatar_blob {
+        sender["avatar_blob"] = json!(a);
+    }
+    sender
+}
+
 fn queue(
     conn: &Connection,
     o: &Op,
@@ -710,16 +809,7 @@ fn queue(
         Some(m) => author_card(conn, m)?,
         None => AuthorCard::default(),
     };
-    let mut sender = json!({"name": who});
-    if let Some(g) = &first_author.glyph {
-        sender["glyph"] = json!(g);
-    }
-    if let Some(c) = &first_author.color {
-        sender["color"] = json!(c);
-    }
-    if let Some(a) = &first_author.avatar_blob {
-        sender["avatar_blob"] = json!(a);
-    }
+    let sender = sender_of(&who, &first_author);
     let text: String = p.get("text").and_then(Value::as_str).unwrap_or_default().chars().take(280).collect();
     for (recipient, kind) in why {
         let (title, chat) =
@@ -775,7 +865,7 @@ fn queue(
 pub fn process_due(conn: &Connection, now: i64) -> anyhow::Result<Vec<push::Outbound>> {
     let mut st = conn.prepare_cached(
         "SELECT id, recipient_account_id, payload FROM notification
-         WHERE kind IN ('mention', 'dm', 'reply', 'message', 'member_dm', 'own_switch', 'post', 'post_reply', 'alert_request', 'alert_accepted')
+         WHERE kind IN ('mention', 'dm', 'reply', 'message', 'member_dm', 'own_switch', 'post', 'post_reply', 'poll_nudge', 'alert_request', 'alert_accepted')
            AND delivered_at IS NULL AND cancelled_at IS NULL AND due_at <= ?1
          ORDER BY due_at, id LIMIT 500",
     )?;

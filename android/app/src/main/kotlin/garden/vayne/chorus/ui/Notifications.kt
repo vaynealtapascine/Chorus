@@ -273,6 +273,7 @@ private fun KindBadge(item: InboxItem) {
     val (icon, glyph, tint) = when (item.kind) {
         "mention" -> Triple(null, "@", p.accent)
         "reply", "post_reply" -> Triple(R.drawable.ic_reply, null, p.accent)
+        "poll_nudge" -> Triple(R.drawable.ic_poll, null, p.accent)
         "dm", "message", "member_dm" -> Triple(R.drawable.ic_message, null, p.accent)
         "switch", "own_switch" -> Triple(R.drawable.ic_switch_arrows, null, p.accent)
         "reaction" -> Triple(R.drawable.ic_heart, null, p.danger)

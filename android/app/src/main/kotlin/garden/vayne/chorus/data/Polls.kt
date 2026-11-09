@@ -21,6 +21,8 @@ data class PollState(
     val votes: Map<String, List<String>> = emptyMap(),
     /** The author's early closes (`*.poll_close`, D-136): parent → when. */
     val closes: Map<String, Long> = emptyMap(),
+    /** When each of our members was last nudged to vote: `<parent>|<member>` → ms (D-136). */
+    val nudges: Map<String, Long> = emptyMap(),
 ) {
     /** When [poll] on [parentId] stops taking votes: its closing time or the early close, whichever is first. */
     fun closedAt(parentId: String, poll: Poll): Long? = listOfNotNull(poll.closesAt, closes[parentId]).minOrNull()
@@ -62,19 +64,31 @@ object Polls {
     fun parseRow(row: JSONObject): Poll? =
         parse(row.optJSONObject("poll"), row.optLong("poll_closed_at").takeIf { it > 0 && !row.isNull("poll_closed_at") })
 
-    /** "Closed", "Closes in 40 min", "Closes in 3 h", "Closes in 2 days"; null for a poll without a close. */
-    fun closing(closedAt: Long?, now: Long): String? {
+    /** "Closed", "Closes in 40 min", "Closes in 3 h", or from a day out the time itself ("Closes Fri 18:00", F6.10);
+     * null for a poll without a close. */
+    fun closing(closedAt: Long?, now: Long, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): String? {
         val at = closedAt ?: return null
         val left = at - now
         if (left <= 0) return "Closed"
         val minutes = (left + 59_999) / 60_000
-        val hours = minutes / 60; val days = hours / 24
+        val hours = minutes / 60
         return when {
             minutes < 60 -> "Closes in $minutes min"
             hours < 24 -> "Closes in $hours h"
-            else -> "Closes in $days ${if (days == 1L) "day" else "days"}"
+            else -> "Closes ${closingTime(at, now, zone)}"
         }
     }
+
+    /** How soon a member can be nudged again on the same poll (core `poll::NUDGE_COOLDOWN_MS`). */
+    private const val NUDGE_COOLDOWN_MS = 4 * 3_600_000L
+
+    /** Whether [member] was nudged on this poll too recently to nudge again. */
+    fun nudged(state: PollState, parentId: String, member: String, now: Long): Boolean =
+        state.nudges["$parentId|$member"]?.let { now - it < NUDGE_COOLDOWN_MS } == true
+
+    /** The `poll.nudge` payload (D-136): who to remind and which of ours is asking. */
+    fun nudgePayload(members: List<String>, by: String?): JSONObject =
+        JSONObject().put("member_ids", org.json.JSONArray(members)).apply { if (by != null) put("by_member_id", by) }
 
     /** The composer's closing-time value: "Fri 18:00" this week, else "14 Nov, 18:00". */
     fun closingTime(at: Long, now: Long, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): String {
@@ -99,7 +113,8 @@ object Polls {
             id to List(a.length()) { a.getString(it) }
         }
         val closes = rows(p, "poll_close").mapNotNull { (id, f) -> f.optLong("closed_at").takeIf { it > 0 }?.let { id to it } }.toMap()
-        return PollState(polls, tallies, votes, closes)
+        val nudges = rows(p, "poll_nudge").mapNotNull { (id, f) -> f.optLong("nudged_at").takeIf { it > 0 }?.let { id to it } }.toMap()
+        return PollState(polls, tallies, votes, closes, nudges)
     }
 
     /** An option's share of the voters, as the whole percent a poll card shows. */

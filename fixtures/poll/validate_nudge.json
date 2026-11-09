@@ -1,0 +1,23 @@
+{
+  "description": "D-136: a nudge names our members in the account scope; who nudged is optional",
+  "fn": "validate_op",
+  "args": [
+    {
+      "id": "0192f8c2-0000-7000-8000-000000000021",
+      "kind": "poll.nudge",
+      "v": 1,
+      "scope": "account:0192f8c2-0000-7000-8000-0000000000a1",
+      "entity_id": "0192f8c2-0000-7000-8000-0000000000e1",
+      "hlc": "0000000003e8-0000-00000021",
+      "device_at": 1000,
+      "payload": {
+        "member_ids": [
+          "m1",
+          "m2"
+        ],
+        "by_member_id": "m3"
+      }
+    }
+  ],
+  "expect": "known"
+}

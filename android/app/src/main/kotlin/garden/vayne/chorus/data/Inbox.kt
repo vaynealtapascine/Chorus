@@ -97,6 +97,9 @@ object Inbox {
                 "post_reply" -> InboxItem(id, kind, "mentions", "mentions", at, who, title, quote = text,
                     color = sender?.text("color"), avatarBlob = sender?.text("avatar_blob"), postId = n.text("post_id"),
                     accountId = n.text("account_id"))
+                "poll_nudge" -> InboxItem(id, kind, "mentions", "mentions", at, who, title, quote = text,
+                    color = sender?.text("color"), avatarBlob = sender?.text("avatar_blob"), postId = n.text("post_id"),
+                    channelId = n.text("channel_id"), messageId = n.text("message_id"))
                 "post" -> InboxItem(id, kind, "friends", "posts", at, who, title, detail = text, color = sender?.text("color"),
                     avatarBlob = sender?.text("avatar_blob"), postId = n.text("post_id"), accountId = n.text("account_id"))
                 "switch" -> {

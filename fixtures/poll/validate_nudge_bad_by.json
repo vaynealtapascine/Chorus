@@ -1,0 +1,24 @@
+{
+  "description": "D-136: a nudge of a by_member_id that is not text is invalid",
+  "fn": "validate_op",
+  "args": [
+    {
+      "id": "0192f8c2-0000-7000-8000-000000000022",
+      "kind": "poll.nudge",
+      "v": 1,
+      "scope": "account:0192f8c2-0000-7000-8000-0000000000a1",
+      "entity_id": "0192f8c2-0000-7000-8000-0000000000e1",
+      "hlc": "0000000003e8-0000-00000022",
+      "device_at": 1000,
+      "payload": {
+        "member_ids": [
+          "m1"
+        ],
+        "by_member_id": 7
+      }
+    }
+  ],
+  "expect": {
+    "error": true
+  }
+}

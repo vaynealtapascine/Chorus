@@ -370,6 +370,13 @@ fn special(p: &mut Projection, o: &Op, payload: &Map<String, Value>, reads: &mut
             }
             row.exists = true;
         }
+        // LWW per (poll, member): when each of our members was last reminded to vote (D-136)
+        "poll.nudge" => {
+            for member in payload.get("member_ids").and_then(Value::as_array).into_iter().flatten() {
+                let id = format!("{entity}|{}", member.as_str().unwrap_or_default());
+                set_fields(p, "poll_nudge", &id, o.hlc, &one("nudged_at", Value::from(o.time()))).exists = true;
+            }
+        }
         "front.review_resolve" => {
             if let Some((id, resolution)) = front::review_resolution(o) {
                 set_fields(p, "front_review", id, o.hlc, &one("resolution", Value::String(resolution.into())));

@@ -8,6 +8,7 @@ const notes = [
   { id: 's1', kind: 'switch', text: 'Kit is steering', delivered_at: 300, account: { id: 'j', display_name: 'The Junipers' } },
   { id: 'o1', kind: 'own_switch', title: 'Fox is fronting', delivered_at: 250 },
   { id: 'r1', kind: 'post_reply', title: 'Ash replied to your post', text: 'lovely', delivered_at: 200, post_id: 'reply', sender: { name: 'Ash' } },
+  { id: 'n1', kind: 'poll_nudge', title: 'Kai nudged Rin', text: 'Dinner?', delivered_at: 150, message_id: 'm9', channel_id: 'c9', sender: { name: 'Kai' } },
   { id: 'x', kind: 'something_new', delivered_at: 100 },
   // plain messages are pushed, not listed
   { id: 'd1', kind: 'dm', title: 'Kit', text: 'hi', delivered_at: 90, channel_id: 'c' },
@@ -18,7 +19,8 @@ const notes = [
 describe('inbox', () => {
   it('turns notifications into rows in their chips', () => {
     const rows = fromNotifications(notes);
-    expect(rows.map((r) => r.id)).toEqual(['m1', 's1', 'o1', 'r1']);
+    expect(rows.map((r) => r.id)).toEqual(['m1', 's1', 'o1', 'r1', 'n1']);
+    expect(rows[4]).toMatchObject({ title: 'Kai nudged Rin', channelId: 'c9', category: 'mentions' });
     expect(rows[0]).toMatchObject({ title: 'Amarynthe mentioned you', quote: '@Fox could you check?', category: 'mentions', messageId: 'msg' });
     expect(rows[1]).toMatchObject({ title: 'The Junipers: Kit is steering', category: 'friends' });
     expect(rows[2].category).toBe('system');
@@ -26,7 +28,7 @@ describe('inbox', () => {
     // own switches start hidden; turning them on shows them
     expect(visible(rows, 'all', null).some((r) => r.id === 'o1')).toBe(false);
     expect(visible(rows, 'all', { own_switches: true }).some((r) => r.id === 'o1')).toBe(true);
-    expect(visible(rows, 'mentions', null).map((r) => r.id)).toEqual(['m1', 'r1']);
+    expect(visible(rows, 'mentions', null).map((r) => r.id)).toEqual(['m1', 'r1', 'n1']);
     expect(chips(true).some(([id]) => id === 'system')).toBe(false);
   });
 
@@ -48,10 +50,10 @@ describe('inbox', () => {
   it('moves read marks forward and back one row at a time', () => {
     const rows = fromNotifications(notes);
     const none = { until: 0, ids: [] };
-    expect(unread(rows, none, null)).toBe(3);
+    expect(unread(rows, none, null)).toBe(4);
     const one = mark(none, rows[0]);
     expect(isRead(one, rows[0])).toBe(true);
-    expect(unread(rows, one, null)).toBe(2);
+    expect(unread(rows, one, null)).toBe(3);
     const back = unmark({ until: 400, ids: [] }, rows[0], rows);
     expect(isRead(back, rows[0])).toBe(false);
     expect(isRead(back, rows[1]) && isRead(back, rows[3])).toBe(true);

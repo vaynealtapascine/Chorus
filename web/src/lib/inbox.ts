@@ -78,6 +78,8 @@ export function fromNotifications(items: unknown[] | null | undefined): InboxIte
       case 'dm': case 'message': case 'member_dm': break;
       case 'post_reply': out.push({ id, kind, category: 'mentions', shows: 'mentions', at, actor: who, title, quote: body, ...look,
         postId: text(n, 'post_id'), accountId: text(n, 'account_id') }); break;
+      case 'poll_nudge': out.push({ id, kind, category: 'mentions', shows: 'mentions', at, actor: who, title, quote: body, ...look,
+        postId: text(n, 'post_id'), channelId: text(n, 'channel_id'), messageId: text(n, 'message_id') }); break;
       case 'post': out.push({ id, kind, category: 'friends', shows: 'posts', at, actor: who, title, detail: body, ...look,
         postId: text(n, 'post_id'), accountId: text(n, 'account_id') }); break;
       case 'switch': {

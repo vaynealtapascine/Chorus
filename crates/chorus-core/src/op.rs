@@ -341,6 +341,8 @@ pub static CATALOGUE: &[KindSpec] = &[
     // D-136: the parent's author closes a poll early, in the parent's scope; there is no reopen
     k!("message.poll_close", "poll_close", Space, Special),
     k!("post.poll_close", "poll_close", Account, Special),
+    // D-136: our own members reminded to vote, private to the account like a vote
+    k!("poll.nudge", "poll_nudge", Account, Special),
     k!("reltype.set", "relationship_type", Account, Set, RELTYPE_FIELDS),
     k!("reltype.delete", "relationship_type", Account, Delete),
     k!("relationship.set", "relationship", Account, Set, REL_FIELDS),
@@ -599,6 +601,15 @@ fn payload_shape(op: &Op) -> Result<(), OpError> {
             if op.kind == "message.poll_close" {
                 nonempty("channel_id")?;
             }
+        }
+        "poll.nudge" => {
+            if op.entity_id.is_none() {
+                return Err(OpError::MissingEntity);
+            }
+            if crate::poll::nudged(p.get("member_ids").unwrap_or(&Value::Null)).is_none() {
+                return bad("member_ids must be 1 to 30 different member ids");
+            }
+            typed("by_member_id", Value::is_string, "text")?;
         }
         "field.define" | "field.set_def" => one_of("type", FIELD_TYPES, false)?,
         "member.create" | "member.set" => {

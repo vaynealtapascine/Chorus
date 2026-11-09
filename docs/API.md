@@ -276,7 +276,8 @@ GET  /follows/{id}/view                      what that follower sees of you righ
 DELETE /follows/{id}                         unfollow (follower) or remove (target)
 GET  /notifications?after=<ms>             delivered notifications, newest first (100); `after` keeps
                                             only newer ones, and pings caused by the calling device's
-                                            own writes are left out (D-096: phones without push poll it)
+                                            own writes are left out (D-096: phones without push poll it);
+                                            `poll_nudge` (D-136) has `post_id`, or `message_id` + `channel_id`
 GET  /insights/{chart}?from=&to=           dashboard data (same numbers as the views)
 ```
 

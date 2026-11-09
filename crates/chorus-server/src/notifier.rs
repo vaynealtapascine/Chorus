@@ -875,7 +875,7 @@ pub fn list_for(
     let mut items = switch_items(conn, follower, after, limit)?;
     let mut st = conn.prepare_cached(
         "SELECT id, kind, payload, delivered_at FROM notification
-         WHERE recipient_account_id = ?1 AND kind IN ('mention', 'dm', 'reply', 'message', 'member_dm', 'own_switch', 'export_ready', 'post', 'post_reply', 'alert_request', 'alert_accepted') AND delivered_at > ?3
+         WHERE recipient_account_id = ?1 AND kind IN ('mention', 'dm', 'reply', 'message', 'member_dm', 'own_switch', 'export_ready', 'post', 'post_reply', 'poll_nudge', 'alert_request', 'alert_accepted') AND delivered_at > ?3
          ORDER BY delivered_at DESC, id DESC LIMIT ?2",
     )?;
     let rows = st.query_map(params![follower, limit, after], |r| {

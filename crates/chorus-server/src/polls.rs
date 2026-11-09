@@ -6,6 +6,7 @@ use std::collections::HashMap;
 
 use chorus_core::op::Op;
 use chorus_core::poll::{self, Poll};
+use chorus_core::sync::AckResult;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
 
@@ -120,6 +121,60 @@ pub fn close_denied(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<O
     let channel = o.payload.get("channel_id").and_then(Value::as_str);
     if parent.scope != o.scope || (parent.channel.is_some() && parent.channel.as_deref() != channel) {
         return Ok(Some(("a poll closes where it was posted".into(), false)));
+    }
+    Ok(None)
+}
+
+/// Why a live `poll.nudge` is refused (D-136): it names our own live members, on an open poll our
+/// account can read, each not nudged here in the last 4 hours and within the account's hourly cap.
+/// The two limits say when to come back. A member who has voted isn't refused: the nudge just
+/// doesn't ring for them (`activity.rs`).
+pub fn nudge_denied(conn: &Connection, author: &str, o: &Op, now: i64) -> anyhow::Result<Option<AckResult>> {
+    if o.kind != "poll.nudge" {
+        return Ok(None);
+    }
+    let refuse = |why: &str| Ok(Some(AckResult::err(o.id.clone(), "forbidden", why.into(), false)));
+    let later = |code: &str, why: &str, wait: i64| Ok(Some(AckResult::later(o.id.clone(), code, why.into(), wait)));
+    let id = o.entity().unwrap_or_default();
+    let Some(parent) = parent(conn, id)? else {
+        return later("unknown_parent", "that poll isn't here yet", 30_000);
+    };
+    if !can_read(conn, author, id, &parent)? {
+        return refuse("you can't nudge on a poll you can't read");
+    }
+    if closed(&parent, now) {
+        return refuse("this poll has closed");
+    }
+    let members = poll::nudged(o.payload.get("member_ids").unwrap_or(&Value::Null)).unwrap_or_default();
+    let by = o.payload.get("by_member_id").and_then(Value::as_str);
+    let mut own = conn.prepare_cached(
+        "SELECT EXISTS(SELECT 1 FROM member WHERE id = ?1 AND account_id = ?2 AND deleted_at IS NULL AND archived_at IS NULL)",
+    )?;
+    for member in members.iter().map(String::as_str).chain(by) {
+        if !own.query_row(params![member, author], |r| r.get::<_, bool>(0))? {
+            return refuse("a nudge is from and to your own members");
+        }
+    }
+    let mut last = conn
+        .prepare_cached("SELECT nudged_at FROM poll_nudge WHERE poll_id = ?1 AND account_id = ?2 AND member_id = ?3")?;
+    let mut wait = 0;
+    for member in &members {
+        let at: Option<i64> = last.query_row(params![id, author, member], |r| r.get(0)).optional()?;
+        wait = at.map_or(wait, |t| wait.max(t + poll::NUDGE_COOLDOWN_MS - now));
+    }
+    if wait > 0 {
+        return later("nudge_cooldown", "already nudged a little while ago", wait);
+    }
+    const HOUR: i64 = 3_600_000;
+    let recent: Vec<i64> = conn
+        .prepare_cached("SELECT nudged_at FROM poll_nudge WHERE account_id = ?1 AND nudged_at > ?2 ORDER BY nudged_at")?
+        .query_map(params![author, now - HOUR], |r| r.get(0))?
+        .collect::<Result<_, _>>()?;
+    // one nudge never names more than the cap, so `over` is at most `recent.len()`
+    let over = (recent.len() + members.len()).saturating_sub(poll::NUDGES_PER_HOUR);
+    if over > 0 {
+        // when enough of the hour's nudges have aged out for this one to fit
+        return later("rate_limited", "too many nudges this hour", recent[over - 1] + HOUR - now);
     }
     Ok(None)
 }

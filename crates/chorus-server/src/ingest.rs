@@ -168,6 +168,10 @@ pub fn accept(
         };
         return Ok((ack, None));
     }
+    // a nudge names our own members on an open poll, and not too often (D-136)
+    if !preserved && let Some(ack) = crate::polls::nudge_denied(conn, &author, &o, now)? {
+        return Ok((ack, None));
+    }
     // Poll totals are derived by the server from account-private votes (D-086); a device that
     // pushed one could publish made-up totals.
     if matches!(o.kind.as_str(), "message.poll_tally" | "post.poll_tally") && s.device_id != SERVER_DEVICE {

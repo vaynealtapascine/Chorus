@@ -20,6 +20,7 @@ invalid definitions, immutable poll edits, ordinary text edits, vote shape and a
 separate `<poll>|<member>` registers, replacement, withdrawal, full-HLC ordering, duplicate
 delivery, and independent latest message/post tallies (including replacement by zero counts).
 `project_close_earliest*.json` pin that the earliest early close wins in either order, whatever the HLCs (D-136).
+`validate_nudge*.json` pin the shape of `poll.nudge`; `project_nudge_lww.json` pins one row per (poll, member), latest wins.
 
 The TypeScript and Kotlin clients use the Rust wasm/UniFFI core for validation and projection;
 they do not reimplement these poll algorithms. Their poll helpers decode projected rows,

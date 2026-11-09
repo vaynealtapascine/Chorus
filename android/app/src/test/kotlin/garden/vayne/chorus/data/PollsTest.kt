@@ -2,6 +2,7 @@ package garden.vayne.chorus.data
 
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -64,6 +65,21 @@ class PollsTest {
         assertEquals("""{"member_id":"kai","choices":[]}""", Polls.votePayload("kai", emptyList()).toString())
     }
 
+    /** D-136: a member nudged in the last 4 hours can't be nudged again; other polls and members can. */
+    @Test fun nudgesWaitFourHoursPerMemberAndPoll() {
+        val p = JSONObject().put("rows", JSONObject().put("poll_nudge", JSONObject().put("p|a", row("""{"nudged_at":1000}"""))))
+        val state = Polls.fromProjection(p)
+        val fourHours = 4 * 3_600_000L
+        assertTrue(Polls.nudged(state, "p", "a", 1000 + fourHours - 1))
+        assertFalse(Polls.nudged(state, "p", "a", 1000 + fourHours))
+        assertFalse(Polls.nudged(state, "p", "b", 1000))
+        assertFalse(Polls.nudged(state, "q", "a", 1000))
+        val payload = Polls.nudgePayload(listOf("a", "b"), "c")
+        assertEquals(2, payload.getJSONArray("member_ids").length())
+        assertEquals("c", payload.getString("by_member_id"))
+        assertFalse(Polls.nudgePayload(listOf("a"), null).has("by_member_id"))
+    }
+
     /** D-136: a closing time rides in the definition; the author's early close comes from the
      * projection or a REST row; the earlier one wins. */
     @Test fun closingTimesAndEarlyCloses() {
@@ -84,7 +100,7 @@ class PollsTest {
         assertEquals("Closed", Polls.closing(5000, 5000))
         assertEquals("Closes in 1 min", Polls.closing(65_000, 30_000))
         assertEquals("Closes in 3 h", Polls.closing(3 * 3_600_000L + 60_000, 0))
-        assertEquals("Closes in 1 day", Polls.closing(30 * 3_600_000L, 0))
+        assertEquals("Closes Fri 06:00", Polls.closing(30 * 3_600_000L, 0, java.time.ZoneOffset.UTC))
 
         val now = 1_000_000L
         val draft = Polls.draft(listOf("Soup", "Rice"), false, closesAt = now + 60_000, now = now).getOrThrow()

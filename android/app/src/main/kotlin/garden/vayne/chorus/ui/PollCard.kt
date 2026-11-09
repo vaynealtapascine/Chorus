@@ -135,7 +135,8 @@ fun PollCard(chorus: Chorus, model: Model, parentId: String, member: String?,
         // tapping a chosen option again takes the vote back (Polls.toggled)
         val line = if (internal && ours.size > 1) "${Polls.voted(model.polls, parentId, ours)} of ${ours.size} voted"
             else tally?.let { "${it.voters} ${if (it.voters == 1L) "vote" else "votes"}" }
-        val foot = listOfNotNull(line, Polls.closing(closedAt, now)).joinToString(" · ")
+        val closing = Polls.closing(closedAt, now)
+        val foot = if (line != null && closing != null) "$line · ${closing.replaceFirstChar { it.lowercase() }}" else line ?: closing.orEmpty()
         if (foot.isNotEmpty() || (onClose != null && !closed)) Row(verticalAlignment = Alignment.CenterVertically) {
             Text(foot, color = p.ink3, fontSize = 12.sp, modifier = Modifier.weight(1f))
             if (onClose != null && !closed) Text("Close poll", color = p.accent, fontSize = 12.sp, fontWeight = FontWeight.Medium,
@@ -164,6 +165,9 @@ internal fun PollVotes(model: Model, chorus: Chorus, parentId: String, poll: Pol
     val account = chorus.device?.accountId
     val ours = model.active.filter { it.createdByAccountId == null || it.createdByAccountId == account }
     if (ours.size < 2) return
+    val actions = rememberCoroutineScope()
+    val now = System.currentTimeMillis()
+    val open = model.polls.closedAt(parentId, poll).let { it == null || now < it }
     Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
         Text("Votes", color = p.accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
         for ((member, choices) in Polls.votesOf(model.polls, parentId, ours)) {
@@ -177,6 +181,14 @@ internal fun PollVotes(model: Model, chorus: Chorus, parentId: String, poll: Pol
                 }
                 if (member.id == voter) Text("You", color = p.accent, fontSize = 13.sp, fontWeight = FontWeight.Medium,
                     modifier = Modifier.clip(CircleShape).background(p.accentSoft).padding(horizontal = 12.dp, vertical = 5.dp))
+                else if (choices.isEmpty() && open) {
+                    val nudged = Polls.nudged(model.polls, parentId, member.id, now)
+                    Text(if (nudged) "Nudged" else "Nudge", color = if (nudged) p.ink3 else p.accent, fontSize = 13.sp, fontWeight = FontWeight.Medium,
+                        modifier = Modifier.clip(CircleShape).border(1.dp, p.line, CircleShape)
+                            .clickable(enabled = !nudged, role = Role.Button, onClickLabel = "Nudge ${member.shownName}") {
+                                actions.launch { runCatching { chorus.create("poll.nudge", parentId, Polls.nudgePayload(listOf(member.id), voter)) } }
+                            }.padding(horizontal = 14.dp, vertical = 7.dp))
+                }
             }
         }
     }

@@ -431,7 +431,7 @@ object Push {
         }
         ensureChannels(ctx)
         val isMessage = kind == "message"
-        val highPriority = isMessage || kind == "test"
+        val highPriority = isMessage || kind == "test" || kind == "poll"
         val time = p.optJSONObject("time")
         val at = time?.optLong("at", 0L)?.takeIf { it > 0 && time.optString("precision") != "none" }
         val nm = ctx.getSystemService(NotificationManager::class.java)
@@ -491,17 +491,24 @@ object Push {
             Reply.action(ctx, p, noteId)?.let { builder.addAction(it) }
             noteId to builder.build()
         } else {
-            // post alerts (D-106): one per post, opening it; requests and answers open Friends
-            val alert = kind == "post" || kind == "alert"
+            // post alerts (D-106): one per post, opening it; requests and answers open Friends;
+            // a nudge to vote (D-136) rings as its post's alert or in its chat's channel
+            val pollPost = p.optString("post_id").takeIf { kind == "poll" && it.isNotEmpty() }
+            val alert = kind == "post" || kind == "alert" || pollPost != null
             val key = when (kind) {
                 "post" -> "post:${p.optString("post_id")}"
                 "alert" -> "alert:${p.optString("member_id")}:${p.optString("account_id")}"
+                "poll" -> "poll:${pollPost ?: p.optString("message_id")}"
                 else -> p.optString("account_id").ifEmpty { kind.ifEmpty { "chorus" } }
             }
             val noteId = key.hashCode()
             val tap = Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP).apply {
                 if (kind == "post") putExtra(MainActivity.EXTRA_OPEN_POST, p.optString("post_id"))
                 if (kind == "alert") putExtra(MainActivity.EXTRA_OPEN_PEOPLE, true)
+                if (kind == "poll") {
+                    if (pollPost != null) putExtra(MainActivity.EXTRA_OPEN_POST, pollPost)
+                    else setAction(MainActivity.ACTION_OPEN_CHAT).putExtra(MainActivity.EXTRA_OPEN_CHANNEL, p.optString("channel_id"))
+                }
             }
             val open = PendingIntent.getActivity(
                 ctx,

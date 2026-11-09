@@ -104,7 +104,7 @@
     menu = { item, x: Math.min(x, innerWidth - 300), y: Math.min(y, innerHeight - 320) };
   }
   const BADGE: Record<string, [string, string]> = {
-    mention: ['@', 'accent'], reply: ['reply', 'accent'], post_reply: ['reply', 'accent'], dm: ['chat', 'accent'], message: ['chat', 'accent'],
+    mention: ['@', 'accent'], reply: ['reply', 'accent'], post_reply: ['reply', 'accent'], poll_nudge: ['bell', 'accent'], dm: ['chat', 'accent'], message: ['chat', 'accent'],
     member_dm: ['chat', 'accent'], switch: ['swap', 'accent'], own_switch: ['swap', 'accent'], reaction: ['heart', 'danger'],
     repost: ['repost', 'ok'], quote: ['message', 'ok'], post: ['book', 'ink-2'], follow_request: ['users', 'warn'],
     alert_ask: ['bell', 'warn'], alert_request: ['bell', 'warn'], alert_accepted: ['bell', 'warn'], review: ['!', 'warn'], export_ready: ['doc', 'ink-2'],

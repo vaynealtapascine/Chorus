@@ -79,6 +79,18 @@ pub fn choices(v: &Value) -> Option<Vec<String>> {
     Some(out)
 }
 
+/// How soon the same member can be nudged on the same poll again (D-136).
+pub const NUDGE_COOLDOWN_MS: i64 = 4 * 3_600_000;
+/// How many members one account can nudge in an hour.
+pub const NUDGES_PER_HOUR: usize = 30;
+/// How many members one nudge can name.
+pub const MAX_NUDGED: usize = NUDGES_PER_HOUR;
+
+/// A nudge's `member_ids`: 1 to [`MAX_NUDGED`] different ids.
+pub fn nudged(v: &Value) -> Option<Vec<String>> {
+    choices(v).filter(|ids| (1..=MAX_NUDGED).contains(&ids.len()))
+}
+
 /// A vote's choices against its poll: known options, and at most one for single choice.
 pub fn check_vote(poll: &Poll, choices: &[String]) -> Result<(), &'static str> {
     if !poll.multiple && choices.len() > 1 {
@@ -188,6 +200,16 @@ mod tests {
         let open = poll(false);
         assert!(is_open(&open, None, i64::MAX));
         assert!(!is_open(&open, Some(10), 10));
+    }
+
+    #[test]
+    fn nudges_name_one_to_thirty_different_members() {
+        assert_eq!(nudged(&json!(["a", "b"])), Some(v(&["a", "b"])));
+        assert!(nudged(&json!([])).is_none());
+        assert!(nudged(&json!(["a", "a"])).is_none());
+        assert!(nudged(&json!("a")).is_none());
+        let many: Vec<String> = (0..=MAX_NUDGED).map(|i| i.to_string()).collect();
+        assert!(nudged(&json!(many)).is_none());
     }
 
     #[test]
