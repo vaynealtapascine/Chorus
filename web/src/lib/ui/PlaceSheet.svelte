@@ -23,19 +23,28 @@
   let choice = $state<string | null | undefined>(undefined);
   const chosen = $derived(choice === undefined ? entry?.layer_id ?? null : choice);
   const layerName = (id: string | null) => (id ? scene.all.find((l) => l.id === id)?.name ?? id : 'Away');
-  const status = $derived(fd.memberStatuses(projection.rows.pref, sync.accountId).get(who.id)?.text ?? null);
+  const states = $derived(fd.customStates(projection.rows.custom_state));
+  const current = $derived(fd.memberStatuses(projection.rows.pref, sync.accountId).get(who.id) ?? null);
+  const status = $derived(current && fd.statusShowing(current, entry ? since : null) ? fd.statusLine(current, states) : null);
+  // the state picker (F3.10; Android MemberStatePage): any of the common states, the system's own, own words, a note
   let stateView = $state(false);
-  const COMMON = ['Tired', 'Nonverbal', 'Busy'];
-  const commonStates = $derived([...new Set([...COMMON, ...Object.values(projection.rows.custom_state ?? {}).filter((r) => r.exists && !r.fields.deleted_at).map((r) => String(r.fields.name ?? 'State'))])]);
-  let picked = $state<string | null>(null);
-  let own = $state(false);
-  let custom = $state('');
-  $effect(() => {
-    if (!stateView) return;
-    const match = commonStates.find((s) => s.toLowerCase() === status?.toLowerCase());
-    picked = match ?? null; own = !!status && !match; custom = match ? '' : status ?? '';
-  });
-  const stateText = $derived(own ? custom.trim() || null : picked);
+  let picked = $state<string[]>([]);
+  let offered = $state<string[]>([]);
+  let note = $state('');
+  let clear = $state(true);
+  let typing = $state(false);
+  let words = $state('');
+  function openState() {
+    picked = [...(current?.tags ?? [])]; offered = fd.statusChoices(states, current);
+    note = current?.note ?? ''; clear = current?.clearOnLeave ?? true; typing = false; words = ''; stateView = true;
+  }
+  const ready = $derived(picked.length > 0 || !!note.trim());
+  const toggleTag = (t: string) => (picked = picked.includes(t) ? picked.filter((x) => x !== t) : [...picked, t]);
+  function addWords() {
+    const t = words.trim().slice(0, fd.MAX_STATUS_TAG);
+    if (t) { if (!offered.includes(t)) offered = [...offered, t]; if (!picked.includes(t)) picked = [...picked, t]; }
+    words = ''; typing = false;
+  }
   const time = (t: number) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const frontName = $derived(here?.name ?? 'Body');
 
@@ -54,7 +63,11 @@
     const present = f.entries.some((e) => e.subject_type === who.type && e.subject_id === who.id);
     place([{ type: who.type, id: who.id, layer: on ? nested[0]?.id ?? 'front' : null, present }], on ? `${who.name} is in ${f.name}` : `${who.name} left ${f.name}`, f.id, f.entries, nested[0]?.id);
   }
-  function setState(text: string | null) { fd.setStatus(who.id, text); stateView = false; }
+  function setState(clearIt = false) {
+    if (!clearIt && !ready) return;
+    fd.setStatus(who.id, clearIt ? null : { ...current, tags: picked, note: note.trim() || null, at: Date.now(), clearOnLeave: clear }, states);
+    stateView = false;
+  }
 </script>
 
 <svelte:window onkeydown={(e) => e.key === 'Escape' && onclose()} />
@@ -62,18 +75,29 @@
 <div class="sheet" role="dialog" aria-modal="true" aria-label={stateView ? `${who.name}'s state` : `Place ${who.name}`}>
   <div class="handle" aria-hidden="true"></div>
   {#if stateView}
-    <header><Face {who} size={40} {dark} /><div class="titles"><h2>Member state</h2><p>{who.name} · only your system sees this</p></div>
-      <button class="icon-btn" aria-label="Close" onclick={() => (stateView = false)}><Icon name="close" size={22} /></button></header>
-    <div class="states" role="radiogroup" aria-label="State">
-      {#each [...commonStates, 'Custom'] as s (s)}
-        {@const on = s === 'Custom' ? own : !own && picked === s}
-        <button role="radio" aria-checked={on} class:on onclick={() => { if (s === 'Custom') own = true; else { own = false; picked = s; } }}>{s.toUpperCase()}</button>
+    <header><button class="icon-btn" aria-label="Back" onclick={() => (stateView = false)}><Icon name="back" size={22} /></button>
+      <div class="titles"><h2>{who.name}'s state</h2></div>
+      <button class="icon-btn" class:accent={ready} aria-label="Set state" disabled={!ready} onclick={() => setState()}><Icon name="check" size={22} /></button></header>
+    <div class="who"><Face {who} size={56} {dark} />
+      <div class="titles"><strong>{who.name}</strong>
+        {#if picked.length}<span class="picked">{#each picked as t (t)}<span>{fd.statusLabel(t, states)}</span>{/each}</span>{/if}</div></div>
+    <p class="section">How are things?</p>
+    <div class="states" role="group" aria-label="How are things?">
+      {#each offered as t (t)}
+        {@const on = picked.includes(t)}
+        <button role="checkbox" aria-checked={on} class:on onclick={() => toggleTag(t)}>{#if on}<Icon name="check" size={14} />{/if}{fd.statusLabel(t, states)}</button>
       {/each}
+      <button class="add" onclick={() => (typing = true)}><Icon name="plus" size={14} />Custom</button>
     </div>
-    {#if own}<input class="own" bind:value={custom} maxlength="80" placeholder="In your own words" aria-label="In your own words" />{/if}
-    <div class="buttons start">
-      <button class="primary" disabled={!stateText} onclick={() => setState(stateText)}>Set state</button>
-      {#if status}<button class="outline" onclick={() => setState(null)}>Clear</button>{/if}
+    <!-- svelte-ignore a11y_autofocus -->
+    {#if typing}<input class="own" bind:value={words} maxlength={fd.MAX_STATUS_TAG} placeholder="Custom" aria-label="Custom" autofocus
+      onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addWords(); } }} onblur={addWords} />{/if}
+    <textarea class="own" bind:value={note} maxlength={fd.MAX_STATUS_NOTE} rows="2" placeholder="Note (optional)" aria-label="Note (optional)"></textarea>
+    <p class="section">Options</p>
+    <label class="setting toggle"><span><strong>Clear when {who.name} stops fronting</strong></span><input type="checkbox" role="switch" bind:checked={clear} /></label>
+    <div class="buttons">
+      <button class="outline" disabled={!current} onclick={() => setState(true)}>Clear</button>
+      <button class="primary grow" disabled={!ready} onclick={() => setState()}>Set state</button>
     </div>
   {:else}
     <header><Face {who} size={52} {dark} />
@@ -97,7 +121,7 @@
       {/each}
     </div>
     {#if who.type === 'member'}
-      <button class="setting" onclick={() => (stateView = true)}><span><strong>State</strong><span>{status ?? 'Tired, nonverbal, busy, or your own words'}</span></span><Icon name="chevron-right" size={18} /></button>
+      <button class="setting" onclick={openState}><span><strong>State</strong><span>{status ?? 'Tired, nonverbal, busy, or your own words'}</span></span><Icon name="chevron-right" size={18} /></button>
     {/if}
     {#if configured && fronts.length > 1}
       <p class="section">Also present in</p>
@@ -157,7 +181,6 @@
   .setting :global(.icon) { color: var(--ink-3); }
   .toggle input { width: 40px; height: 24px; accent-color: var(--accent); }
   .buttons { display: flex; gap: 10px; padding: 10px 16px 20px; }
-  .buttons.start { padding-left: 20px; }
   .primary, .outline { padding: 12px 16px; border-radius: 14px; font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
   .primary { border: 0; background: var(--accent); color: var(--on-accent); }
   .primary:disabled { background: var(--surface-3, var(--surface-2)); color: var(--ink-3); cursor: default; }
@@ -165,7 +188,17 @@
   .outline { background: none; border: 1px solid var(--line); color: var(--ink-2); }
   .danger { color: var(--danger); }
   .states { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 20px; }
-  .states button { padding: 7px 12px; border-radius: 999px; border: 0; background: var(--surface-2); color: var(--ink-2); font: inherit; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; cursor: pointer; }
+  .states button { display: inline-flex; align-items: center; padding: 8px 14px; border-radius: 999px; border: 0; background: var(--surface-2); color: var(--ink); font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; }
   .states button.on { background: var(--accent-soft); color: var(--accent); }
+  .states button :global(.icon) { margin-right: 6px; }
+  .states .add { color: var(--ink-2); }
+  .who { display: flex; align-items: center; gap: 14px; padding: 4px 20px 0; }
+  .who strong { font-size: 18px; font-weight: 600; }
+  .picked { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+  .picked span { padding: 3px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 500; }
+  .icon-btn.accent { color: var(--accent); }
+  .icon-btn:disabled { color: var(--ink-3); cursor: default; }
+  .outline:disabled { opacity: 0.5; cursor: default; }
+  textarea.own { margin-top: 10px; resize: vertical; }
   .own { margin: 0 20px; font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
 </style>

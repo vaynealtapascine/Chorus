@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { withPrimary, displayPrefs, duration, icon, memberStatuses, ordered, parse, scene, shortAbout, story, toJson, type Settings } from './fronting-display';
+import { withPrimary, customStates, displayPrefs, duration, icon, memberStatuses, ordered, parse, scene, shortAbout, status, statusChoices, statusLine, statusShowing, statusValue,
+  story, toJson, type Settings } from './fronting-display';
 import type { FrontPresence } from './core/fronts';
 
 const p = (id: string, layer_id: string, is_primary = false): FrontPresence => ({ subject_type: 'member', subject_id: id, layer_id, is_primary });
@@ -36,8 +37,36 @@ describe('fronting display (D-122, F3)', () => {
     };
     expect(displayPrefs(prefs, 'acct').fronts.acct.preset).toBe('complete');
     const st = memberStatuses(prefs, 'acct');
-    expect(st.get('fox')?.text).toBe('Tired');
+    expect(st.get('fox')).toMatchObject({ tags: [], note: 'Tired', at: 5 });
     expect(st.has('ama')).toBe(false);
+  });
+
+  it('reads and writes member states as Android does (tags, note, clear_on_leave, text)', () => {
+    const states = customStates({ s1: { exists: true, fields: { name: 'Blurry' } }, s2: { exists: true, fields: { name: 'Gone', deleted_at: 3 } } });
+    expect(states).toEqual([{ id: 's1', name: 'Blurry' }]);
+    // Android's shape (FrontingDisplay.statusPayload)
+    const android = { tags: ['tired', 'state:s1', 'humming'], note: 'Typing only today, please', at: 10, clear_on_leave: true, text: 'Tired · Blurry · humming · Typing only today, please', later: 1 };
+    const s = status(android)!;
+    expect(s).toMatchObject({ tags: ['tired', 'state:s1', 'humming'], note: 'Typing only today, please', at: 10, clearOnLeave: true });
+    expect(statusLine(s, states)).toBe('Tired · Blurry · humming · Typing only today, please');
+    expect(statusLine(s, [])).toBe('Tired · State · humming · Typing only today, please');
+    // a write keeps every tag and the fields this client doesn't know
+    expect(statusValue({ ...s, note: '  ' }, states)).toEqual({ tags: ['tired', 'state:s1', 'humming'], at: 10, clear_on_leave: true, text: 'Tired · Blurry · humming', later: 1 });
+    expect(status(statusValue(s, states))).toEqual(s);
+    // the old web shape reads as a note; tags with no note keep `text` out of the note
+    expect(status({ text: 'Busy', at: 5 })).toEqual({ tags: [], note: 'Busy', at: 5, clearOnLeave: false });
+    expect(status({ tags: ['busy'], text: 'Busy', at: 5 })).toEqual({ tags: ['busy'], note: null, at: 5, clearOnLeave: false });
+    expect(status({ tags: [], note: ' ' })).toBeNull();
+    expect(statusValue({ tags: [], note: ' ', at: 1, clearOnLeave: false })).toBeNull();
+    expect(statusValue(null)).toBeNull();
+    // choices: built-ins, the system's own, then the member's own words
+    expect(statusChoices(states, s)).toEqual(['tired', 'nonverbal', 'busy', 'low_spoons', 'needs_quiet', 'out_and_about', 'state:s1', 'humming']);
+    // clear_on_leave: hidden once they came back after it was set
+    expect(statusShowing(s, 5)).toBe(true);
+    expect(statusShowing(s, 10 + 60_000)).toBe(true);
+    expect(statusShowing(s, 10 + 60_001)).toBe(false);
+    expect(statusShowing(s, null)).toBe(true);
+    expect(statusShowing({ ...s, clearOnLeave: false }, 10 ** 9)).toBe(true);
   });
 
   it('sorts entries into nested, separate, unlisted and away', () => {

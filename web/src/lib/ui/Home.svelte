@@ -52,6 +52,7 @@
   const configured = $derived(!!projection.front_systems?.[sync.accountId]);
   const display = $derived(fd.displayPrefs(projection.rows.pref, sync.accountId));
   const statuses = $derived(fd.memberStatuses(projection.rows.pref, sync.accountId));
+  const customStates = $derived(fd.customStates(projection.rows.custom_state));
   const fronts = $derived(fd.ordered(frontList(projection, sync.accountId), sync.accountId, display));
   const tabs = $derived(fronts.filter((f) => f.body || !fd.front(display, f.id).hidden));
   const selected = $derived(fronts.find((f) => f.id === frontingUi.front) ?? fronts[0]);
@@ -93,9 +94,9 @@
 
   const whoOf = (e: FrontPresence) => who.get(whoKey(e.subject_type, e.subject_id));
   function line(e: FrontPresence): string {
-    const status = view.preset !== 'simple' && e.subject_type === 'member' ? statuses.get(e.subject_id)?.text : undefined;
-    if (status) return status;
     const t = since.get(e.subject_id);
+    const st = view.preset !== 'simple' && e.subject_type === 'member' ? statuses.get(e.subject_id) : undefined;
+    if (st && fd.statusShowing(st, t)) return fd.statusLine(st, customStates);
     return [whoOf(e)?.pronouns, t ? `since ${time(t)}` : null].filter(Boolean).join(' · ');
   }
   const took = (e: FrontPresence) => (view.showTime && since.has(e.subject_id) ? fd.duration(now - since.get(e.subject_id)!) : '');
