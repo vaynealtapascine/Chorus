@@ -120,7 +120,7 @@ internal fun FriendProfiles(chorus: Chorus, model: garden.vayne.chorus.data.Mode
             val shared = list
             when {
                 shared == null && error == null -> Text("Loading…", color = p.ink3)
-                shared != null && shared.isEmpty() -> Text("$shownAccount haven't shared any member profiles with you yet.", color = p.ink3)
+                shared != null && shared.isEmpty() -> EmptyState(garden.vayne.chorus.designsystem.R.drawable.ic_members, "No members shared")
                 // rows as their Members list shows them (D-100): banner, pronouns and role pills they share
                 shared != null -> for (m in shared) Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(p.surface)
                     .clickable { memberId = m.optString("id") }) {
@@ -224,7 +224,6 @@ private fun FriendMemberProfile(chorus: Chorus, model: garden.vayne.chorus.data.
                     (link.getJSONObject("target").text("handle")?.let { "  @$it" } ?: ""), color = p.ink)
                 link.text("note")?.let { Text(it, color = p.ink2) }
             }
-            Text("You see what $shownAccount chose to share with you.", color = p.ink3, style = MaterialTheme.typography.bodySmall)
         }
     }
 }

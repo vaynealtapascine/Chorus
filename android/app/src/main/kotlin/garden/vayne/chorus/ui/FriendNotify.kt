@@ -123,9 +123,9 @@ internal fun FriendNotifyPage(chorus: Chorus, model: Model, f: FollowInfo, cache
             LinkRow("Quiet hours", quiet?.let { "${it.first}–${it.second} · ${if (Friends.quietHold(prefs)) "hold until they end" else "skip them"}" } ?: "Off", null) { quietOpen = true }
             val muted = Friends.mutedUntil(prefs, now)
             LinkRow("Mute for a while", muted?.let { "Until ${java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(java.util.Date(it))}" } ?: "Off", null) { muteOpen = true }
-            SectionLabel("New posts", Modifier.padding(horizontal = 12.dp))
+            // a system that shares no member profiles has nothing to ask post alerts for
+            if (!f.account.isSystem || members.isNotEmpty()) SectionLabel("New posts", Modifier.padding(horizontal = 12.dp))
             if (!f.account.isSystem) alerts["person"]?.let { s -> AlertRow("$name’s posts", s) { toggleAlert("person", it) } }
-            else if (members.isEmpty()) Text("$name haven’t shared any member profiles with you.", color = p.ink3, fontSize = 14.sp, lineHeight = 19.sp, modifier = Modifier.padding(horizontal = 16.dp))
             else for (m in members) {
                 val id = m.optString("id")
                 alerts[id]?.let { s -> AlertRow("${shownMember(m)}’s posts", s) { toggleAlert(id, it) } }
