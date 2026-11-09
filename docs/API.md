@@ -198,7 +198,10 @@ GET  /search/posts?q=&account=&kind=&before=&after=&limit=&cursor=
   and search only their own account's posts.
 
 GET  /posts?author=&kind=&before=&limit=   each item with `quoted` (when readable), `parent` (the post
-                                            it answers, when readable; no media) and `reply_count`
+                                            it answers, when readable; no media) and `reply_count`;
+                                            a poll's counts-only `poll_tally` and `poll_closed_at`
+                                            (the author's early close, D-136; also on message search
+                                            results)
 GET  /posts/activity?before=&limit=        other accounts' readable replies, quotes, reposts and
                                             reactions on the caller's posts, newest first (D-127):
                                             {items:[{kind: reply|quote|repost|reaction, at, post?,

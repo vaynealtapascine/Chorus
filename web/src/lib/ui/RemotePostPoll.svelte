@@ -5,10 +5,10 @@
 
   // Foreign parents/totals arrive through audience-filtered REST; selections stay account-local.
   let { projection, post, member }: {
-    projection: Projection; post: { id: string; poll?: unknown; poll_tally?: PollTally | null };
+    projection: Projection; post: { id: string; poll?: unknown; poll_tally?: PollTally | null; poll_closed_at?: number | null };
     member: string | null | undefined;
   } = $props();
   const poll = $derived(parsePoll(post.poll));
 </script>
 
-{#if poll}<PollCard {projection} parentId={post.id} {poll} {member} remoteTally={post.poll_tally} />{/if}
+{#if poll}<PollCard {projection} parentId={post.id} {poll} {member} remoteTally={post.poll_tally} remoteClosedAt={post.poll_closed_at} />{/if}

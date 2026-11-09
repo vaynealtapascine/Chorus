@@ -75,7 +75,7 @@ object PeopleApi {
         val reactions = PostReactions.fromServer(post)
         return SharedPost(post.getString("id"), post.optionalText("kind") ?: "note", post.optionalText("title"),
             post.optString("text"), post.optionalText("cw"), post.getLong("occurred_at"), names, reactions, attachments(post),
-            Polls.parse(post.optJSONObject("poll")), Polls.tally(post.optJSONObject("poll_tally")),
+            Polls.parseRow(post), Polls.tally(post.optJSONObject("poll_tally")),
             post.optJSONArray("entities")?.toString() ?: "[]", tags(post), post.optionalText("account_id").orEmpty(),
             AuthorLooks.of(post), post.optionalText("reply_to"), post.optJSONObject("parent")?.let(PostThreads::one),
             post.optJSONObject("quote")?.optionalText("post_id"), post.optJSONObject("quoted")?.let(PostThreads::one),

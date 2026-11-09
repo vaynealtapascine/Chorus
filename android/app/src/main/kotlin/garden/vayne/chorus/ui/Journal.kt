@@ -185,6 +185,7 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
     var pollOn by field({ it.poll }) { copy(poll = it) }
     var pollOptions by field({ it.options }) { copy(options = it) }
     var pollMultiple by field({ it.multiple }) { copy(multiple = it) }
+    var pollCloses by field({ it.closesAt }) { copy(closesAt = it) }
     var audience by field({ it.audience }) { copy(audience = it) }
     var bucketIds by field({ it.buckets }) { copy(buckets = it) }
     var alerts by field({ it.alerts }) { copy(alerts = it) }
@@ -386,7 +387,7 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
                             val payload = PostCompose.payload(live, dev.accountId, draft.kind, authors.first(), draft.body,
                                 draft.title, draft.cw, draft.audience, draft.mood, draft.tags, draft.reply, attachmentIds = files,
                                 quotePostId = draft.quote, bucketIds = draft.buckets, authorIds = authors, alerts = draft.alerts)
-                            if (draft.poll) payload.put("poll", Polls.draft(draft.options, draft.multiple).getOrThrow())
+                            if (draft.poll) payload.put("poll", Polls.draft(draft.options, draft.multiple, draft.closesAt).getOrThrow())
                             chorus.create("post.create", id, payload, scope = "account:${dev.accountId}", expectedEditorOwner = session.owner)
                         })
                         if (postId != null) justPosted = postId
@@ -444,7 +445,7 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
                     }
                 }
                 if (pollOn) item(key = "poll") {
-                    ComposerPoll(pollOptions, { pollOptions = it }, pollMultiple, { pollMultiple = it }, !busy) { pollOn = false }
+                    ComposerPoll(pollOptions, { pollOptions = it }, pollMultiple, { pollMultiple = it }, pollCloses, { pollCloses = it }, !busy) { pollOn = false }
                 }
                 if (cwOpen || cw.isNotBlank()) item(key = "cw") {
                     ChorusField(cw, { cw = it }, label = { Text("Content warning") }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth())
@@ -781,7 +782,8 @@ private fun JournalPostCardBody(post: JournalPost, model: Model, chorus: Chorus,
             }
             post.mood?.let { Text(it, color = p.ink2, style = MaterialTheme.typography.bodySmall) }
             JournalMedia(post.attachments, chorus, names, post.occurredAt, full = full)
-            PollCard(chorus, model, post.id, Reply.speaker(model)?.id, internal = post.visibility == "private" && !model.isPerson)
+            PollCard(chorus, model, post.id, Reply.speaker(model)?.id, internal = post.visibility == "private" && !model.isPerson,
+                onClose = { chorus.create("post.poll_close", post.id, org.json.JSONObject()) })
             post.quotePostId?.let { id -> ThreadQuote(id, quoted, model, onOpenPost, chorus) }
             // tags close the post, after its media, poll and quote, just above the actions
             if (post.tags.isNotEmpty()) Text(post.tags.joinToString("  ") { "#$it" }, color = p.accent,

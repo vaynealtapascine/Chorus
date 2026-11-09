@@ -152,7 +152,7 @@
 {#snippet pollBody(id:string)}
   {@const raw = (current ? remote : []).flatMap(m=>[m,m.context_before,m.context_after]).find(m=>m?.id===id) as SearchMessage|undefined}
   {@const poll = pollOf(projection,id) ?? raw?.poll}
-  {#if poll}<PollCard {projection} parentId={id} {poll} member={null} remoteTally={raw?.poll_tally}/>{/if}
+  {#if poll}<PollCard {projection} parentId={id} {poll} member={null} remoteTally={raw?.poll_tally} remoteClosedAt={(raw as { poll_closed_at?: number | null } | undefined)?.poll_closed_at}/>{/if}
 {/snippet}
 
 <section class="search-page" aria-label={channelId ? 'Search this chat' : 'Search'}>

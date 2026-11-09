@@ -128,7 +128,8 @@
   async function send(e: SubmitEvent) {
     e.preventDefault();
     if (!canPost || authors.some((id) => !canWriteAs(projection, id, sync.accountId))) return;
-    const pollDraft = draft.pollOn ? pollPayload(draft.pollOptions, draft.pollMultiple) : {};
+    const closes = draft.pollCloses ? new Date(draft.pollCloses).getTime() : null;
+    const pollDraft = draft.pollOn ? pollPayload(draft.pollOptions, draft.pollMultiple, Number.isFinite(closes) ? closes : null) : {};
     if (pollDraft.error) { error = pollDraft.error; return; }
     busy = true;
     error = '';
@@ -215,6 +216,7 @@
         {#each draft.pollOptions as _, i (i)}<input bind:value={draft.pollOptions[i]} placeholder="Option {i + 1}" aria-label="Poll option {i + 1}" maxlength="200" />{/each}
         {#if draft.pollOptions.length < 20}<button type="button" onclick={() => (draft.pollOptions = [...draft.pollOptions, ''])}>Add option</button>{/if}
         <label><input type="checkbox" bind:checked={draft.pollMultiple} /> Allow more than one choice</label>
+        <label>Closes <input type="datetime-local" bind:value={draft.pollCloses} aria-label="Poll closes" /></label>
       {/if}
       <fieldset class="alerts"><legend>Notifications</legend>
         <div class="seg">{#each [['', 'As usual'], ['delayed', 'Random delay'], ['none', 'Don’t notify']] as [id, label] (id)}<button type="button" class:on={draft.alerts === id} aria-pressed={draft.alerts === id} onclick={() => (draft.alerts = id as typeof draft.alerts)}>{label}</button>{/each}</div>

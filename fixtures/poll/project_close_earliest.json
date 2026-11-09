@@ -1,0 +1,49 @@
+{
+  "description": "D-136: the earliest close wins whatever order or HLC the closes arrive in (not LWW)",
+  "fn": "project",
+  "args": [
+    [
+      {
+        "id": "0192f8c2-0000-7000-8000-000000000011",
+        "kind": "message.poll_close",
+        "v": 1,
+        "scope": "space:0192f8c2-0000-7000-8000-0000000000a2",
+        "entity_id": "0192f8c2-0000-7000-8000-0000000000e1",
+        "hlc": "000000002710-0000-00000001",
+        "device_at": 10000,
+        "payload": {
+          "channel_id": "c"
+        },
+        "occurred_at": 10000
+      },
+      {
+        "id": "0192f8c2-0000-7000-8000-000000000012",
+        "kind": "message.poll_close",
+        "v": 1,
+        "scope": "space:0192f8c2-0000-7000-8000-0000000000a2",
+        "entity_id": "0192f8c2-0000-7000-8000-0000000000e1",
+        "hlc": "000000002af8-0000-00000002",
+        "device_at": 11000,
+        "payload": {
+          "channel_id": "c"
+        },
+        "occurred_at": 8000
+      }
+    ]
+  ],
+  "expect": {
+    "fronts": {},
+    "opaque": 0,
+    "rows": {
+      "poll_close": {
+        "0192f8c2-0000-7000-8000-0000000000e1": {
+          "exists": true,
+          "fields": {
+            "closed_at": 8000
+          }
+        }
+      }
+    },
+    "sets": {}
+  }
+}

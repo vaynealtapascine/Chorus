@@ -1,0 +1,20 @@
+{
+  "description": "D-136: a closing time is a positive whole number of milliseconds",
+  "fn": "poll_definition",
+  "args": [
+    {
+      "options": [
+        {
+          "id": "a",
+          "text": "Soup"
+        },
+        {
+          "id": "b",
+          "text": "Rice"
+        }
+      ],
+      "closes_at": "Friday"
+    }
+  ],
+  "expect": null
+}

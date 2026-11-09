@@ -305,8 +305,9 @@ internal fun DraftsDrawer(current: JournalDraft, shelf: List<JournalDraft>, busy
 /** The poll as part of the draft (F6.2's bar-chart button turns it on): options, add and remove, and "more than one". */
 @Composable
 internal fun ComposerPoll(options: List<String>, onOptions: (List<String>) -> Unit, multiple: Boolean, onMultiple: (Boolean) -> Unit,
-    enabled: Boolean, onRemove: () -> Unit) {
+    closesAt: Long?, onClosesAt: (Long?) -> Unit, enabled: Boolean, onRemove: () -> Unit) {
     val p = LocalChorusPalette.current
+    var picking by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).border(1.dp, p.line, RoundedCornerShape(16.dp)).padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -333,7 +334,17 @@ internal fun ComposerPoll(options: List<String>, onOptions: (List<String>) -> Un
             Text("Pick several", color = p.ink2, fontSize = 14.sp, modifier = Modifier.padding(end = 8.dp))
             ChorusSwitch(multiple, if (enabled) onMultiple else null)
         }
+        // D-136: a closing time, fixed once posted
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Closes", color = p.ink2, fontSize = 14.sp, modifier = Modifier.weight(1f).padding(start = 6.dp))
+            Text(closesAt?.let { Polls.closingTime(it, System.currentTimeMillis()) } ?: "Never", color = p.accent, fontSize = 14.sp,
+                fontWeight = FontWeight.Medium, modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(enabled) { picking = true }
+                    .padding(horizontal = 6.dp, vertical = 8.dp))
+            if (closesAt != null) BarIcon(R.drawable.ic_close, "No closing time", p.ink3, 18.dp) { if (enabled) onClosesAt(null) }
+        }
     }
+    if (picking) DateTimeDrawer(closesAt ?: (System.currentTimeMillis() + 24 * 3_600_000L), { onClosesAt(it); picking = false },
+        { picking = false }, title = "Closes")
 }
 
 /** One tap to put an emoji into the text: the quick row and the rest, no search. */

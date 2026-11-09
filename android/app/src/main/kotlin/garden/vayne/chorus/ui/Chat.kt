@@ -1973,7 +1973,13 @@ internal fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors:
             }
             // Same resolved acting speaker as the composer: explicit selection or channel default.
             PollCard(chorus, model, message.id, garden.vayne.chorus.data.Polls.chatMember(model, actingMemberId),
-                definition=model.polls.polls[message.id] ?: message.poll, remoteTally=message.pollTally)
+                definition=model.polls.polls[message.id] ?: message.poll, remoteTally=message.pollTally,
+                // our own poll closes early in its space (D-136)
+                onClose = model.channels.find { it.id == message.channelId }?.spaceId
+                    ?.takeIf { message.accountId != null && message.accountId == chorus.device?.accountId }?.let { space -> suspend {
+                        chorus.create("message.poll_close", message.id, JSONObject().put("channel_id", message.channelId), scope = "space:$space")
+                        Unit
+                    } })
         }
         if (thread != null && thread.replies > 0) Row(Modifier.heightIn(min = 48.dp)
             .then(if (onThread != null) Modifier.clickable(onClickLabel = "Open thread", onClick = onThread) else Modifier),

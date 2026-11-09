@@ -11,20 +11,28 @@ pub const MAX_OPTIONS: usize = 20;
 pub const MAX_OPTION_ID: usize = 16;
 pub const MAX_OPTION_TEXT: usize = 200;
 
-/// A poll as fixed at creation: option IDs in order and single/multiple choice.
+/// A poll as fixed at creation: option IDs in order, single/multiple choice, and when it closes.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Poll {
     pub options: Vec<String>,
     pub multiple: bool,
+    /// `closes_at` (ms since 1970, UTC; D-136): no votes from then on. `None` = open until the
+    /// author closes it.
+    pub closes_at: Option<i64>,
 }
 
 /// What a valid `poll` field looks like; [`definition`] reports only this one message so the
 /// shared core stays inside the wasm size budget (SPEC §9).
-pub const POLL_RULE: &str = "poll must have 2–20 options with unique ids (1–16 characters) and text (1–200),      an optional text question and multiple: true or false";
+pub const POLL_RULE: &str = "poll must have 2–20 options with unique ids (1–16 characters) and text (1–200),      an optional text question, multiple: true or false and an optional closes_at (ms)";
 
-/// The `poll` field of `post.create` / `message.send`. Options and `multiple` never change later.
+/// The `poll` field of `post.create` / `message.send`. Options, `multiple` and `closes_at` never
+/// change later.
 pub fn definition(v: &Value) -> Option<Poll> {
     let o = v.as_object()?;
+    let closes_at = match o.get("closes_at") {
+        None | Some(Value::Null) => None,
+        Some(t) => Some(t.as_i64().filter(|t| *t > 0)?),
+    };
     let multiple = match (o.get("question"), o.get("multiple")) {
         (Some(q), _) if !q.is_null() && !q.is_string() => return None,
         (_, None | Some(Value::Null)) => false,
@@ -44,7 +52,21 @@ pub fn definition(v: &Value) -> Option<Poll> {
         }
         options.push(id.to_string());
     }
-    Some(Poll { options, multiple })
+    Some(Poll { options, multiple, closes_at })
+}
+
+/// When a poll stops taking votes (D-136): its `closes_at` or the author's early close (the
+/// `occurred_at` of the first `message.poll_close` / `post.poll_close`), whichever comes first.
+pub fn closed_at(poll: &Poll, early: Option<i64>) -> Option<i64> {
+    match (poll.closes_at, early) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, b) => a.or(b),
+    }
+}
+
+/// Whether a vote at `now` still counts. The server judges by its own arrival time.
+pub fn is_open(poll: &Poll, early: Option<i64>, now: i64) -> bool {
+    closed_at(poll, early).is_none_or(|t| now < t)
 }
 
 /// The shape of a vote's `choices`: different option IDs; `[]` withdraws the vote.
@@ -130,7 +152,7 @@ mod tests {
 
     #[test]
     fn definitions_need_two_to_twenty_unique_options_with_text() {
-        assert_eq!(poll(false), Poll { options: v(&["a", "b", "c"]), multiple: false });
+        assert_eq!(poll(false), Poll { options: v(&["a", "b", "c"]), multiple: false, closes_at: None });
         let one = json!({"options": [{"id": "a", "text": "x"}]});
         assert!(definition(&one).is_none());
         let dup = json!({"options": [{"id": "a", "text": "x"}, {"id": "a", "text": "y"}]});
@@ -147,6 +169,25 @@ mod tests {
             definition(&json!({"options": [{"id": "a", "text": "x"}, {"id": "b", "text": "y"}], "multiple": "yes"}))
                 .is_none()
         );
+    }
+
+    #[test]
+    fn closing_time_is_fixed_and_the_earlier_close_wins() {
+        let opts = json!([{"id": "a", "text": "x"}, {"id": "b", "text": "y"}]);
+        let p = definition(&json!({"options": opts, "closes_at": 5_000})).unwrap();
+        assert_eq!(p.closes_at, Some(5_000));
+        assert_eq!(definition(&json!({"options": opts, "closes_at": null})).unwrap().closes_at, None);
+        for bad in [json!("soon"), json!(0), json!(-1), json!(1.5)] {
+            assert!(definition(&json!({"options": opts, "closes_at": bad})).is_none(), "{bad}");
+        }
+        assert_eq!(closed_at(&p, None), Some(5_000));
+        assert_eq!(closed_at(&p, Some(3_000)), Some(3_000), "closed early");
+        assert_eq!(closed_at(&p, Some(9_000)), Some(5_000));
+        assert!(is_open(&p, None, 4_999));
+        assert!(!is_open(&p, None, 5_000));
+        let open = poll(false);
+        assert!(is_open(&open, None, i64::MAX));
+        assert!(!is_open(&open, Some(10), 10));
     }
 
     #[test]

@@ -1,0 +1,26 @@
+{
+  "description": "D-136: a null closing time is the same as none",
+  "fn": "poll_definition",
+  "args": [
+    {
+      "options": [
+        {
+          "id": "a",
+          "text": "Soup"
+        },
+        {
+          "id": "b",
+          "text": "Rice"
+        }
+      ],
+      "closes_at": null
+    }
+  ],
+  "expect": {
+    "options": [
+      "a",
+      "b"
+    ],
+    "multiple": false
+  }
+}

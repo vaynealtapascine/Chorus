@@ -201,6 +201,12 @@ impl<'a> CurrentView<'a> {
             .optional()?
             .and_then(|v| serde_json::from_str::<Value>(&v).ok())
             .unwrap_or(Value::Null);
+        // an early close (D-136), as on post rows
+        m["poll_closed_at"] = self
+            .conn
+            .query_row("SELECT closed_at FROM poll_close WHERE poll_id=?1", [id], |r| r.get::<_, i64>(0))
+            .optional()?
+            .map_or(Value::Null, Value::from);
         if let Some(reply) = m["reply_to"].as_str().map(str::to_string)
             && !self.message(&reply)?
         {

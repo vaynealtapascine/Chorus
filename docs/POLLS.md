@@ -23,11 +23,12 @@ forwards/imports, which copy it as-is):
 "poll": {
   "question": "Dinner?",                 // optional; the parent text is usually the question
   "options": [{"id": "a", "text": "Soup"}, {"id": "b", "text": "Rice"}],  // 2–20, unique ids
-  "multiple": false
+  "multiple": false,
+  "closes_at": 1790000000000              // optional (D-136): ms, UTC; no votes from then on
 }
 ```
 
-Options and `multiple` are fixed at creation. Edits to the parent (`post.edit`, `message.edit`)
+Options, `multiple` and `closes_at` are fixed at creation. Edits to the parent (`post.edit`, `message.edit`)
 reject any `poll` key, including null, so a vote always refers to the options the voter saw. Option IDs are
 short strings chosen by the client (`a`, `b`, ...), unique within the poll; text is 1–200 chars.
 
@@ -68,6 +69,20 @@ fans it out after transaction commit, including derived ops to the pushing devic
 (`op_as` / `server_op`, including messages) retain the same bundle through fan-out after the
 savepoint commits. Catch-up reads the same committed log. There is no HTTP sync push/pull
 fallback implemented in this server; the socket is the sole device-ingest path.
+
+**Closing (D-136, D-141).** A poll stops taking votes at `closes_at`, or earlier when its author
+closes it: `message.poll_close {channel_id}` in the space / `post.poll_close {}` in the author's
+account (the parent's scope, entity = the parent; op kinds have one scope kind, like tallies).
+Only the parent's author account may close it, in that scope and channel; a close for a parent
+the server hasn't seen is held (`unknown_parent`). The earliest close wins in any order
+(`poll_close.closed_at` = the smallest `occurred_at`, not LWW); there is no reopen. The server
+refuses a vote it **receives** at or after the effective close (`min(closes_at, closed_at)`),
+held votes included; the close publishes one last tally, and from then on nothing republishes
+it (deletes, restores and audience changes leave the final result). Clients judge "closed" by
+their own clock for display only. REST post rows and message search results carry
+`poll_closed_at`. Android: a "Closes" row in the composer's poll block (D-124 date/time drawer),
+"Closes in …" / "Closed" under the card, and "Close poll" for the author; web: a closing time in
+the post composer and the closed state (no early close yet).
 
 Message tallies follow the message's channel visibility because they carry `channel_id` and use
 the same space-scope delivery filter as the message.
@@ -132,3 +147,7 @@ is reloaded; they do not subscribe to the foreign account's private op scope.
    `fixtures/poll/`; Rust consumes them because neither client reimplements poll validation,
    tallying or projection (see that directory's README). Remaining: a live browser/device
    check (blocked by policy so far).
+4. **Closing (D-136) done (2026-11-09).** `poll::closes_at`/`closed_at`/`is_open`, the close ops and
+   `poll_close` (migration 0022), server refusal and the final tally, REST `poll_closed_at`,
+   fixtures (`definition_closes_at*`, `closed_at_earliest`, `project_close_earliest*`,
+   `validate_close_*`), `tests/polls.rs`; both clients as above.

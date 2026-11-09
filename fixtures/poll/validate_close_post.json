@@ -1,0 +1,17 @@
+{
+  "description": "D-136: a post poll closes with an empty payload in its account scope",
+  "fn": "validate_op",
+  "args": [
+    {
+      "id": "0192f8c2-0000-7000-8000-000000000013",
+      "kind": "post.poll_close",
+      "v": 1,
+      "scope": "account:0192f8c2-0000-7000-8000-0000000000a1",
+      "entity_id": "0192f8c2-0000-7000-8000-0000000000e1",
+      "hlc": "0000000003e8-0000-00000001",
+      "device_at": 1000,
+      "payload": {}
+    }
+  ],
+  "expect": "known"
+}

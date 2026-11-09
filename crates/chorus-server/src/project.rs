@@ -1250,6 +1250,16 @@ fn special(conn: &Connection, o: &Op) -> anyhow::Result<()> {
             ];
             upsert(conn, "poll_tally", &["poll_id"], &names, &values)
         }
+        // the earliest close wins in any order (D-136); there is no reopen
+        "message.poll_close" | "post.poll_close" => {
+            conn.prepare_cached(
+                "INSERT INTO poll_close (poll_id, closed_at, hlc) VALUES (?1, ?2, ?3)
+                 ON CONFLICT(poll_id) DO UPDATE SET closed_at = excluded.closed_at, hlc = excluded.hlc
+                 WHERE excluded.closed_at < poll_close.closed_at",
+            )?
+            .execute(params![o.entity().unwrap_or(""), o.time(), o.hlc.to_string()])?;
+            Ok(())
+        }
         "pref.set" => lww_keyed(
             conn,
             o,
@@ -1472,6 +1482,7 @@ pub(crate) const DERIVED: &[&str] = &[
     "field_value",
     "poll_vote",
     "poll_tally",
+    "poll_close",
     "switch",
     "front_interval",
     "front_daily",

@@ -154,7 +154,12 @@ pub fn accept(
         ));
     }
     // a vote must be one of the author's members, on a poll its account can read (D-081)
-    if !preserved && let Some((why, early)) = crate::polls::vote_denied(conn, &author, &o)? {
+    if !preserved
+        && let Some((why, early)) = match crate::polls::vote_denied(conn, &author, &o, now)? {
+            None => crate::polls::close_denied(conn, &author, &o)?,
+            refused => refused,
+        }
+    {
         // a poll the server hasn't seen yet: the device holds the vote and sends it again
         let ack = if early {
             AckResult::later(o.id, "unknown_parent", why, 30_000)

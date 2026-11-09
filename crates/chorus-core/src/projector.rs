@@ -37,7 +37,7 @@ use crate::sync::Digest;
 
 /// Bump for changes to projection shape, recognized operations or projection semantics. This
 /// versions a replaceable local UI cache; it is independent of the network sync digest.
-pub const PROJECTION_VERSION: u32 = 6;
+pub const PROJECTION_VERSION: u32 = 7;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

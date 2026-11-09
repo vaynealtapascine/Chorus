@@ -1,0 +1,37 @@
+{
+  "description": "D-136: a poll closes at its closing time or the early close, whichever is first; votes at or after it are refused",
+  "fn": "poll_closed_at",
+  "args": [
+    {
+      "options": [
+        {
+          "id": "a",
+          "text": "Soup"
+        },
+        {
+          "id": "b",
+          "text": "Rice"
+        }
+      ],
+      "closes_at": 5000
+    },
+    [
+      3000,
+      9000,
+      null
+    ],
+    4000
+  ],
+  "expect": {
+    "closed_at": [
+      3000,
+      5000,
+      5000
+    ],
+    "open_at": [
+      false,
+      true,
+      true
+    ]
+  }
+}

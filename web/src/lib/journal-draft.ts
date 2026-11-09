@@ -15,6 +15,8 @@ export interface JournalDraft {
   pollOn: boolean;
   pollOptions: string[];
   pollMultiple: boolean;
+  /** The poll's closing time as a `datetime-local` value ('' for none, D-136). */
+  pollCloses: string;
   /** Attachments that were in the composer when it was saved; they must be attached again. */
   lostFiles: number;
   /** Who hears about it (D-127): '' as usual, `delayed` (a random 5–60 minutes later) or `none`. */
@@ -23,7 +25,7 @@ export interface JournalDraft {
 
 export const emptyDraft = (visibility: JournalDraft['visibility'] = 'private', bucketIds: string[] = []): JournalDraft => ({
   kind: 'note', title: '', body: '', cw: '', mood: '', tags: '', visibility, bucketIds, authors: null,
-  quote: null, pollOn: false, pollOptions: ['', ''], pollMultiple: false, lostFiles: 0, alerts: '',
+  quote: null, pollOn: false, pollOptions: ['', ''], pollMultiple: false, pollCloses: '', lostFiles: 0, alerts: '',
 });
 
 /** Worth keeping: anything the writer typed or chose beyond the context's defaults. */
@@ -56,6 +58,7 @@ export function decodeDraft(raw: string | null): JournalDraft | null {
     authors: Array.isArray(j.authors) ? strings(j.authors) : null,
     quote: typeof j.quote === 'string' && j.quote ? j.quote : null,
     pollOn: j.pollOn === true, pollOptions: options.length >= 2 ? options : ['', ''], pollMultiple: j.pollMultiple === true,
+    pollCloses: text(j.pollCloses),
     lostFiles: typeof j.lostFiles === 'number' && j.lostFiles > 0 ? Math.floor(j.lostFiles) : 0,
     alerts: j.alerts === 'delayed' || j.alerts === 'none' ? j.alerts : '',
   };

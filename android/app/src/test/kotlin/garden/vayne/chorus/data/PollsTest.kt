@@ -63,4 +63,41 @@ class PollsTest {
         assertTrue(Polls.draft(listOf("Soup", " "), false).isFailure)
         assertEquals("""{"member_id":"kai","choices":[]}""", Polls.votePayload("kai", emptyList()).toString())
     }
+
+    /** D-136: a closing time rides in the definition; the author's early close comes from the
+     * projection or a REST row; the earlier one wins. */
+    @Test fun closingTimesAndEarlyCloses() {
+        val def = """{"options":[{"id":"a","text":"Soup"},{"id":"b","text":"Rice"}],"multiple":false,"closes_at":5000}"""
+        val p = JSONObject().put("rows", JSONObject()
+            .put("post", JSONObject().put("p1", row("""{"poll":$def}""")).put("p2", row("""{"poll":$def}""")))
+            .put("poll_close", JSONObject().put("p2", row("""{"closed_at":3000}"""))))
+        val state = Polls.fromProjection(p)
+        assertEquals(5000L, state.closedAt("p1", state.polls.getValue("p1")))
+        assertEquals(3000L, state.closedAt("p2", state.polls.getValue("p2")))
+        // a REST row folds its early close into the definition
+        val rest = Polls.parseRow(JSONObject("""{"poll":$def,"poll_closed_at":4000}"""))!!
+        assertEquals(4000L, rest.closesAt)
+        assertEquals(5000L, Polls.parseRow(JSONObject("""{"poll":$def,"poll_closed_at":null}"""))!!.closesAt)
+        assertNull(Polls.parse(JSONObject("""{"options":[{"id":"a","text":"x"},{"id":"b","text":"y"}]}"""))!!.closesAt)
+
+        assertNull(Polls.closing(null, 0))
+        assertEquals("Closed", Polls.closing(5000, 5000))
+        assertEquals("Closes in 1 min", Polls.closing(65_000, 30_000))
+        assertEquals("Closes in 3 h", Polls.closing(3 * 3_600_000L + 60_000, 0))
+        assertEquals("Closes in 1 day", Polls.closing(30 * 3_600_000L, 0))
+
+        val now = 1_000_000L
+        val draft = Polls.draft(listOf("Soup", "Rice"), false, closesAt = now + 60_000, now = now).getOrThrow()
+        assertEquals(now + 60_000, draft.getLong("closes_at"))
+        assertTrue(Polls.draft(listOf("Soup", "Rice"), false, closesAt = now, now = now).isFailure)
+        val zone = java.time.ZoneOffset.UTC
+        assertEquals("Thu 00:01", Polls.closingTime(60_000, 0, zone))
+        assertEquals("15 Jan, 00:00", Polls.closingTime(14 * 86_400_000L, 0, zone))
+    }
+
+    @Test fun draftsKeepTheClosingTime() {
+        val draft = JournalDraft("0192f8c2-0000-7000-8000-000000000001", poll = true, closesAt = 123_456L)
+        assertEquals(123_456L, JournalDraft.decode(draft.encode()) { "x" }.closesAt)
+        assertNull(JournalDraft.decode(draft.copy(closesAt = null).encode()) { "x" }.closesAt)
+    }
 }

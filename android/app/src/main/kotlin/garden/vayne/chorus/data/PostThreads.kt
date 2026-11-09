@@ -41,7 +41,7 @@ object PostThreads {
             ThreadReply(item.getString("id"), names, item.getString("text"),
                 item.optString("title").takeIf { item.has("title") && !item.isNull("title") && it.isNotBlank() },
                 item.optString("cw").takeIf { item.has("cw") && !item.isNull("cw") && it.isNotBlank() },
-                item.getLong("occurred_at"), Polls.parse(item.optJSONObject("poll")), Polls.tally(item.optJSONObject("poll_tally")),
+                item.getLong("occurred_at"), Polls.parseRow(item), Polls.tally(item.optJSONObject("poll_tally")),
                 item.optJSONArray("entities")?.toString() ?: "[]", item.optInt("reply_count", 0),
                 first?.text("color"), first?.text("avatar_blob"),
                 item.optJSONArray("authors")?.let { a -> (0 until a.length()).mapNotNull { a.optString(it).takeIf(String::isNotBlank) } }.orEmpty(),

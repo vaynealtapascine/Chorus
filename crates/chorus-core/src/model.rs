@@ -361,6 +361,15 @@ fn special(p: &mut Projection, o: &Op, payload: &Map<String, Value>, reads: &mut
             set_fields(p, "poll_vote", &id, o.hlc, payload).exists = true;
         }
         "message.poll_tally" | "post.poll_tally" => set_fields(p, "poll_tally", entity, o.hlc, payload).exists = true,
+        // the first close wins whatever order the ops arrive in (D-136): the earliest time, not LWW
+        "message.poll_close" | "post.poll_close" => {
+            let at = o.time();
+            let row = p.rows.entry("poll_close".into()).or_default().entry(entity.to_string()).or_default();
+            if row.fields.get("closed_at").and_then(Value::as_i64).is_none_or(|t| at < t) {
+                row.fields.insert("closed_at".into(), Value::from(at));
+            }
+            row.exists = true;
+        }
         "front.review_resolve" => {
             if let Some((id, resolution)) = front::review_resolution(o) {
                 set_fields(p, "front_review", id, o.hlc, &one("resolution", Value::String(resolution.into())));

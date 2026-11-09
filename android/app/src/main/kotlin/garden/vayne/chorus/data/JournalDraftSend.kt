@@ -16,7 +16,7 @@ object JournalDraftSend {
         PostCompose.payload(model, account, draft.kind, authors.firstOrNull().orEmpty(), draft.body, draft.title,
             draft.cw, draft.audience, draft.mood, draft.tags, draft.reply, quotePostId = draft.quote,
             bucketIds = draft.buckets, authorIds = authors, attachmentIds = draft.files.map { it.uri })
-        if (draft.poll) Polls.draft(draft.options, draft.multiple).getOrThrow()
+        if (draft.poll) Polls.draft(draft.options, draft.multiple, draft.closesAt).getOrThrow()
         val missing = draft.files.filterNot(readable)
         require(missing.isEmpty()) { "Cannot open ${missing.joinToString { it.name }}. Your draft is kept; attach the files again or remove their references." }
     }

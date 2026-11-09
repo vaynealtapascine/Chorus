@@ -288,3 +288,103 @@ fn server_writes_retain_tallies_and_projection_failures_roll_back_the_whole_bund
     assert_eq!(accepted.derived[0].payload["voters"], 0);
     assert!(accepted.seq < accepted.derived[0].seq);
 }
+
+/// The W clock: each push happens 1 s after the last one.
+fn next_at(w: &W) -> i64 {
+    NOW + i64::from(w.n + 1) * 1000
+}
+
+#[test]
+fn votes_after_the_closing_time_are_refused_and_the_tally_is_final() {
+    let mut w = W::new();
+    let (a, b, space) = (w.a.clone(), w.b.clone(), w.space.clone());
+    let kai = w.member(&a, 40, "Kai");
+    let june = w.member(&b, 41, "June");
+    let rin = w.member(&b, 42, "Rin");
+    let msg = new_id(NOW as u64, [90; 10]);
+    let mut poll: Value = serde_json::from_str(POLL).unwrap();
+    // closes after two more ops (the send is the first)
+    poll["closes_at"] = json!(next_at(&w) + 2_500);
+    w.ok(&a, "message.send", &space, &msg, json!({"channel_id": GENERAL, "authors": [kai], "text": "?", "poll": poll}));
+    w.voted(&b, &msg, &june, json!(["a"]));
+    w.voted(&b, &msg, &rin, json!(["b"]));
+    // the server's clock has passed closes_at: refused, not held
+    let late = w.vote(&b, &msg, &june, json!(["b"])).unwrap();
+    assert_eq!((late.code.as_str(), late.retry), ("forbidden", false), "{late:?}");
+    assert!(late.message.contains("closed"));
+    assert_eq!(w.tally(&msg), json!({"counts": {"a": 1, "b": 1}, "voters": 2}));
+    // final: deleting the message after the close publishes nothing new
+    w.ok(&a, "message.delete", &space, &msg, json!({}));
+    assert_eq!(w.tally(&msg)["voters"], 2);
+    // a closing time can't be added or moved by an edit
+    assert_eq!(
+        w.push(&a, "message.edit", &space, &msg, json!({"text": "?", "poll": poll})).unwrap().code,
+        "bad_request"
+    );
+}
+
+#[test]
+fn only_the_author_closes_a_poll_early_where_it_was_posted() {
+    let mut w = W::new();
+    let (a, b, space) = (w.a.clone(), w.b.clone(), w.space.clone());
+    let kai = w.member(&a, 40, "Kai");
+    let june = w.member(&b, 41, "June");
+    let post = new_id(NOW as u64, [91; 10]);
+    let scope = format!("account:{a}");
+    w.ok(
+        &a,
+        "post.create",
+        &scope,
+        &post,
+        json!({"kind": "note", "authors": [kai], "text": "?", "visibility": {"mode": "followers"},
+        "poll": serde_json::from_str::<Value>(POLL).unwrap()}),
+    );
+    w.c.execute(
+        "INSERT INTO follow(id,follower_account_id,target_account_id,status,created_at) VALUES ('f',?1,?2,'active',0)",
+        params![b, a],
+    )
+    .unwrap();
+    w.voted(&b, &post, &june, json!(["a"]));
+    // another account can't close it, in its own scope or anywhere else
+    assert_eq!(w.push(&b, "post.poll_close", &format!("account:{b}"), &post, json!({})).unwrap().code, "forbidden");
+    assert_eq!(w.push(&b, "post.poll_close", &scope, &post, json!({})).unwrap().code, "forbidden");
+    // a close for a poll the server hasn't seen waits for it
+    let early = w.push(&a, "post.poll_close", &scope, &new_id(NOW as u64, [92; 10]), json!({})).unwrap();
+    assert!(early.retry, "{early:?}");
+    // the author closes it: votes stop, the tally is final, and followers see the close
+    w.ok(&a, "post.poll_close", &scope, &post, json!({}));
+    assert_eq!(w.vote(&b, &post, &june, json!(["b"])).unwrap().code, "forbidden");
+    w.ok(&a, "post.set_visibility", &scope, &post, json!({"visibility": {"mode": "private"}}));
+    assert_eq!(w.tally(&post), json!({"counts": {"a": 1, "b": 0}, "voters": 1}), "final after the close");
+    let closed_at: i64 =
+        w.c.query_row("SELECT closed_at FROM poll_close WHERE poll_id = ?1", [&post], |r| r.get(0)).unwrap();
+    // closing again later keeps the first close
+    w.ok(&a, "post.poll_close", &scope, &post, json!({}));
+    let again: i64 =
+        w.c.query_row("SELECT closed_at FROM poll_close WHERE poll_id = ?1", [&post], |r| r.get(0)).unwrap();
+    assert_eq!(again, closed_at);
+    let mine = chorus_server::posts::list(&w.c, &a, &Default::default()).unwrap();
+    let item = mine["items"].as_array().unwrap().iter().find(|i| i["id"] == json!(post)).unwrap().clone();
+    assert_eq!(item["poll_closed_at"], json!(closed_at));
+
+    // a message's close carries its channel, in its space
+    let msg = new_id(NOW as u64, [93; 10]);
+    w.ok(
+        &a,
+        "message.send",
+        &space,
+        &msg,
+        json!({"channel_id": GENERAL, "authors": [kai], "text": "?", "poll": serde_json::from_str::<Value>(POLL).unwrap()}),
+    );
+    assert_eq!(
+        w.push(&b, "message.poll_close", &space, &msg, json!({"channel_id": GENERAL})).unwrap().code,
+        "forbidden"
+    );
+    assert_eq!(
+        w.push(&a, "message.poll_close", &space, &msg, json!({"channel_id": "other"})).unwrap().code,
+        "forbidden"
+    );
+    assert_eq!(w.push(&a, "message.poll_close", &space, &msg, json!({})).unwrap().code, "bad_request");
+    w.ok(&a, "message.poll_close", &space, &msg, json!({"channel_id": GENERAL}));
+    assert_eq!(w.vote(&b, &msg, &june, json!(["a"])).unwrap().code, "forbidden");
+}

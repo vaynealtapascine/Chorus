@@ -2,22 +2,33 @@
   // A poll on a message or post (D-081). Totals are the server's counts-only tally; the acting
   // member's own choice shows at once, before the next tally arrives. Holding an option (or a
   // right click) chooses which of our members pick it, all at once (D-142).
-  import { ownChoices, tallyOf, toggled, vote, type Poll, type PollTally } from '../polls';
+  import { closedAt, closingLabel, ownChoices, tallyOf, toggled, vote, type Poll, type PollTally } from '../polls';
   import { sync, type Projection } from '../sync/client';
   import { longPress } from '../long-press';
   import { actors, frontingIds, votesFor, type MemberChange } from '../many-members';
   import ManyMembersSheet from './ManyMembersSheet.svelte';
 
-  let { projection, parentId, poll, member, remoteTally = null }: {
+  let { projection, parentId, poll, member, remoteTally = null, remoteClosedAt = null }: {
     projection: Projection; parentId: string; poll: Poll; member: string | null | undefined; remoteTally?: PollTally | null;
+    remoteClosedAt?: number | null;
   } = $props();
+
+  // D-136: once closed (by the device clock, for display; the server decides) the result is final
+  const closesAt = $derived(closedAt(projection, parentId, poll, remoteClosedAt));
+  let now = $state(Date.now());
+  $effect(() => {
+    if (closesAt == null || now >= closesAt) return;
+    const t = setTimeout(() => (now = Date.now()), Math.min(30_000, Math.max(1_000, closesAt - now)));
+    return () => clearTimeout(t);
+  });
+  const closed = $derived(closesAt != null && now >= closesAt);
 
   const tally = $derived(tallyOf(projection, parentId) ?? remoteTally);
   const mine = $derived(ownChoices(projection, parentId, member));
   const most = $derived(Math.max(1, ...Object.values(tally?.counts ?? {})));
-  const pick = (option: string) => { if (member) vote(parentId, member, toggled(poll, mine, option)); };
+  const pick = (option: string) => { if (member && !closed) vote(parentId, member, toggled(poll, mine, option)); };
 
-  const voters = $derived(member ? actors(projection, sync.accountId) : []);
+  const voters = $derived(member && !closed ? actors(projection, sync.accountId) : []);
   let holding = $state<string | null>(null);
   const held = $derived(poll.options.find((o) => o.id === holding));
   const choicesOf = (id: string) => ownChoices(projection, parentId, id);
@@ -45,7 +56,7 @@
     {#each poll.options as option (option.id)}
       {@const n = tally?.counts[option.id] ?? 0}
       <li>
-        <button type="button" class:on={mine.includes(option.id)} aria-pressed={mine.includes(option.id)} disabled={!member} onclick={() => pick(option.id)}
+        <button type="button" class:on={mine.includes(option.id)} aria-pressed={mine.includes(option.id)} disabled={!member || closed} onclick={() => pick(option.id)}
           oncontextmenu={(e) => hold(option.id, e)} use:longPress={{ enabled: voters.length > 1, onpress: () => hold(option.id) }}>
           <span class="bar" style="width: {(n / most) * 100}%"></span>
           <span class="text">{option.text}</span>
@@ -56,7 +67,8 @@
   </ul>
   <p class="foot">
     {#if tally}{tally.voters} {tally.voters === 1 ? 'vote' : 'votes'}{:else}No totals yet{/if}
-    {#if !member} · Pick who is speaking to vote{:else if mine.length}<button type="button" class="link" onclick={() => member && vote(parentId, member, [])}>Remove my vote</button>{/if}
+    {#if closesAt != null}<span class="closing">· {closingLabel(closesAt, now)}</span>{/if}
+    {#if closed}{:else if !member} · Pick who is speaking to vote{:else if mine.length}<button type="button" class="link" onclick={() => member && vote(parentId, member, [])}>Remove my vote</button>{/if}
   </p>
 </div>
 

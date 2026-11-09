@@ -12,6 +12,8 @@ use serde_json::Value;
 /// A poll's parent and where its totals are published.
 struct Parent {
     poll: Poll,
+    /// When it stopped taking votes, if it has a closing time or was closed early (D-136).
+    closed_at: Option<i64>,
     author: String,
     /// `Some(channel)` for a message (tally in the space), `None` for a post (tally in the author's account).
     channel: Option<String>,
@@ -26,9 +28,14 @@ fn parent(conn: &Connection, id: &str) -> anyhow::Result<Option<Parent>> {
         )?
         .query_row([id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
         .optional()?;
+    let early: Option<i64> = conn
+        .prepare_cached("SELECT closed_at FROM poll_close WHERE poll_id = ?1")?
+        .query_row([id], |r| r.get(0))
+        .optional()?;
     if let Some((def, author, channel, space)) = message {
         let Some(poll) = definition(&def) else { return Ok(None) };
-        return Ok(Some(Parent { poll, author, channel: Some(channel), scope: format!("space:{space}") }));
+        let closed_at = poll::closed_at(&poll, early);
+        return Ok(Some(Parent { poll, closed_at, author, channel: Some(channel), scope: format!("space:{space}") }));
     }
     let post: Option<(String, String)> = conn
         .prepare_cached("SELECT poll, account_id FROM post WHERE id = ?1 AND poll IS NOT NULL")?
@@ -37,7 +44,8 @@ fn parent(conn: &Connection, id: &str) -> anyhow::Result<Option<Parent>> {
     Ok(post.and_then(|(def, author)| {
         let poll = definition(&def)?;
         let scope = format!("account:{author}");
-        Some(Parent { poll, author, channel: None, scope })
+        let closed_at = poll::closed_at(&poll, early);
+        Some(Parent { poll, closed_at, author, channel: None, scope })
     }))
 }
 
@@ -64,9 +72,14 @@ fn can_read(conn: &Connection, account: &str, id: &str, parent: &Parent) -> anyh
     Ok(conn.prepare_cached(&sql)?.query_row(params![id, account], |r| r.get(0))?)
 }
 
+fn closed(parent: &Parent, now: i64) -> bool {
+    parent.closed_at.is_some_and(|t| now >= t)
+}
+
 /// Why a live `poll.vote` from `author` is refused, if it is. `Err` with `retry` for a parent the
-/// server hasn't seen yet: the device sends it again later.
-pub fn vote_denied(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<Option<(String, bool)>> {
+/// server hasn't seen yet: the device sends it again later. A vote that reaches the server at or
+/// after the poll's close is refused, even one held for its parent (D-136).
+pub fn vote_denied(conn: &Connection, author: &str, o: &Op, now: i64) -> anyhow::Result<Option<(String, bool)>> {
     if o.kind != "poll.vote" {
         return Ok(None);
     }
@@ -84,24 +97,57 @@ pub fn vote_denied(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<Op
     if !can_read(conn, author, id, &parent)? {
         return Ok(Some(("you can't vote on a poll you can't read".into(), false)));
     }
+    if closed(&parent, now) {
+        return Ok(Some(("this poll has closed".into(), false)));
+    }
     let choices = poll::choices(o.payload.get("choices").unwrap_or(&Value::Null)).unwrap_or_default();
     Ok(poll::check_vote(&parent.poll, &choices).err().map(|why| (why.to_string(), false)))
 }
 
-/// After a live op is accepted: recompute and publish the totals it may have changed.
+/// Why a live early close (`message.poll_close` / `post.poll_close`) is refused: only the
+/// parent's author account closes it, in the parent's scope (D-136). `retry` for a parent the
+/// server hasn't seen yet.
+pub fn close_denied(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<Option<(String, bool)>> {
+    if !matches!(o.kind.as_str(), "message.poll_close" | "post.poll_close") {
+        return Ok(None);
+    }
+    let Some(parent) = parent(conn, o.entity().unwrap_or_default())? else {
+        return Ok(Some(("that poll isn't here yet".into(), true)));
+    };
+    if parent.author != author {
+        return Ok(Some(("only the poll's author can close it".into(), false)));
+    }
+    let channel = o.payload.get("channel_id").and_then(Value::as_str);
+    if parent.scope != o.scope || (parent.channel.is_some() && parent.channel.as_deref() != channel) {
+        return Ok(Some(("a poll closes where it was posted".into(), false)));
+    }
+    Ok(None)
+}
+
+/// After a live op is accepted: recompute and publish the totals it may have changed. Once a
+/// poll has closed its last tally is final (D-136); the close itself publishes one last count.
 pub fn after_op(conn: &Connection, o: &Op, now: i64) -> anyhow::Result<Option<Op>> {
     let id = match o.kind.as_str() {
         "poll.vote" | "message.delete" | "message.restore" | "post.delete" | "post.restore" | "post.set_visibility" => {
             o.entity().unwrap_or_default()
         }
+        "message.poll_close" | "post.poll_close" => return recount(conn, o.entity().unwrap_or_default(), now, true),
         _ => return Ok(None),
     };
     publish(conn, id, now)
 }
 
-/// Append a tally op for `id` when its totals differ from the latest one published.
+/// Append a tally op for `id` when its totals differ from the latest one published, unless the
+/// poll has closed.
 pub fn publish(conn: &Connection, id: &str, now: i64) -> anyhow::Result<Option<Op>> {
+    recount(conn, id, now, false)
+}
+
+fn recount(conn: &Connection, id: &str, now: i64, closing: bool) -> anyhow::Result<Option<Op>> {
     let Some(parent) = parent(conn, id)? else { return Ok(None) };
+    if !closing && closed(&parent, now) {
+        return Ok(None);
+    }
     let votes: Vec<(String, String)> = conn
         .prepare_cached("SELECT account_id, choices FROM poll_vote WHERE poll_id = ?1")?
         .query_map([id], |r| Ok((r.get(0)?, r.get(1)?)))?

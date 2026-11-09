@@ -28,6 +28,8 @@ data class JournalDraft(val id: String, val revision: Long = 0, val body: String
     val cw: String = "", val tags: String = "", val mood: String = "",
     val reply: String? = null, val quote: String? = null, val poll: Boolean = false,
     val options: List<String> = listOf("", ""), val multiple: Boolean = false,
+    /** The poll's closing time (D-136), or none. */
+    val closesAt: Long? = null,
     val files: List<JournalDraftFile> = emptyList(), val editing: Boolean = false,
     val advanced: Boolean = false, val sendingPost: String? = null,
     val launches: List<JournalLaunch> = emptyList(), val recovery: String? = null,
@@ -51,6 +53,7 @@ data class JournalDraft(val id: String, val revision: Long = 0, val body: String
         .put("kind", kind).put("authors", authors?.let { JSONArray(it) } ?: JSONObject.NULL).put("authorHint", authorHint)
         .put("audience", audience).put("buckets", JSONArray(buckets)).put("audienceChosen", audienceChosen).put("cw", cw).put("tags", tags).put("mood", mood)
         .put("reply", reply).put("quote", quote).put("poll", poll).put("options", JSONArray(options)).put("multiple", multiple)
+        .put("closesAt", closesAt ?: JSONObject.NULL)
         .put("files", JSONArray(files.map { it.json() })).put("editing", editing).put("advanced", advanced)
         .put("sendingPost", sendingPost).put("launches", JSONArray(launches.map { it.json() })).put("recovery", recovery)
         .put("receipts", JSONArray(receipts)).put("alerts", alerts).toString()
@@ -87,6 +90,7 @@ data class JournalDraft(val id: String, val revision: Long = 0, val body: String
                 cw = text("cw"), tags = text("tags"), mood = text("mood"),
                 reply = nullable("reply"), quote = nullable("quote"), poll = field(false) { j.getBoolean("poll") },
                 options = strings("options"), multiple = field(false) { j.getBoolean("multiple") },
+                closesAt = j.optLong("closesAt").takeIf { it > 0 && !j.isNull("closesAt") },
                 files = field(emptyList()) { files(j.getJSONArray("files")) },
                 editing = field(true) { j.getBoolean("editing") }, advanced = field(false) { j.getBoolean("advanced") },
                 sendingPost = nullable("sendingPost"), recovery = nullable("recovery"),

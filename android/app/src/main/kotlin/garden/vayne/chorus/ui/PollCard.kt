@@ -21,6 +21,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -47,6 +48,7 @@ import garden.vayne.chorus.data.PollTally
 import garden.vayne.chorus.data.Polls
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import garden.vayne.chorus.designsystem.R
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -54,14 +56,27 @@ import kotlinx.coroutines.launch
  * member's own choice shows at once. Votes go to this account's own scope. Results appear once the
  * voter has chosen (F6.9/F6.10): before that the options are plain buttons. [internal] polls (our
  * system's own posts) say how many of our members voted and let the voter be changed. Holding an
- * option chooses which of our members pick it, all at once (D-142).
+ * option chooses which of our members pick it, all at once (D-142). A poll with a closing time
+ * says when it closes; once closed it shows the final result and takes no votes (D-136, the
+ * device clock for display; the server decides). [onClose]: the author's early close.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun PollCard(chorus: Chorus, model: Model, parentId: String, member: String?,
-    definition: Poll? = model.polls.polls[parentId], remoteTally: PollTally? = null, internal: Boolean = false) {
+    definition: Poll? = model.polls.polls[parentId], remoteTally: PollTally? = null, internal: Boolean = false,
+    onClose: (suspend () -> Unit)? = null) {
     val poll = definition ?: return
     val p = LocalChorusPalette.current
+    val closedAt = model.polls.closedAt(parentId, poll)
+    // ticks while it is still open, so "Closes in…" counts down and the card closes on time
+    val now by produceState(System.currentTimeMillis(), closedAt) {
+        while (closedAt != null && value < closedAt) {
+            delay((closedAt - value).coerceIn(1_000L, 30_000L))
+            value = System.currentTimeMillis()
+        }
+    }
+    val closed = closedAt != null && now >= closedAt
+    var confirmClose by remember { mutableStateOf(false) }
     val actions = rememberCoroutineScope()
     val tally = model.polls.tallies[parentId] ?: remoteTally
     val account = chorus.device?.accountId
@@ -73,7 +88,7 @@ fun PollCard(chorus: Chorus, model: Model, parentId: String, member: String?,
     var holding by remember { mutableStateOf<String?>(null) }
     val mine = model.polls.choices(parentId, voter)
     val voters = (tally?.voters ?: 0L).coerceAtLeast(1L)
-    val showResults = tally != null && (mine.isNotEmpty() || voter == null)
+    val showResults = tally != null && (mine.isNotEmpty() || voter == null || closed)
     val bar = p.accent.copy(alpha = 0.16f)
     val shape = RoundedCornerShape(12.dp)
     fun cast(choices: List<String>) {
@@ -103,7 +118,7 @@ fun PollCard(chorus: Chorus, model: Model, parentId: String, member: String?,
                 .border(1.dp, if (showResults) (if (on) p.accent else p.line) else p.accent.copy(alpha = .6f), rowShape)
                 .background(p.surface)
                 .drawBehind { if (showResults) drawRect(bar, size = Size(size.width * n / voters, size.height)) }
-                .combinedClickable(enabled = voter != null, role = Role.Checkbox, onClick = { cast(Polls.toggled(poll, mine, option.id)) },
+                .combinedClickable(enabled = voter != null && !closed, role = Role.Checkbox, onClick = { cast(Polls.toggled(poll, mine, option.id)) },
                     onLongClick = { holding = option.id }.takeIf { ours.size > 1 }, onLongClickLabel = "Choose who picks this")
                 .semantics { selected = on; contentDescription = "${option.text}${if (showResults) ", $percent%" else ""}" },
                 contentAlignment = Alignment.CenterStart) {
@@ -120,7 +135,12 @@ fun PollCard(chorus: Chorus, model: Model, parentId: String, member: String?,
         // tapping a chosen option again takes the vote back (Polls.toggled)
         val line = if (internal && ours.size > 1) "${Polls.voted(model.polls, parentId, ours)} of ${ours.size} voted"
             else tally?.let { "${it.voters} ${if (it.voters == 1L) "vote" else "votes"}" }
-        line?.let { Text(it, color = p.ink3, fontSize = 12.sp) }
+        val foot = listOfNotNull(line, Polls.closing(closedAt, now)).joinToString(" · ")
+        if (foot.isNotEmpty() || (onClose != null && !closed)) Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(foot, color = p.ink3, fontSize = 12.sp, modifier = Modifier.weight(1f))
+            if (onClose != null && !closed) Text("Close poll", color = p.accent, fontSize = 12.sp, fontWeight = FontWeight.Medium,
+                modifier = Modifier.clip(CircleShape).clickable(role = Role.Button) { confirmClose = true }.padding(horizontal = 8.dp, vertical = 6.dp))
+        }
     }
     poll.options.find { it.id == holding }?.let { option ->
         val had = ours.filter { option.id in model.polls.choices(parentId, it.id) }.mapTo(HashSet()) { it.id }
@@ -133,6 +153,8 @@ fun PollCard(chorus: Chorus, model: Model, parentId: String, member: String?,
                 actions.launch { for ((who, choices) in votes) runCatching { chorus.create("poll.vote", parentId, Polls.votePayload(who, choices)) } }
             }, lines = { m -> (model.polls.choices(parentId, m.id) - option.id).takeIf { it.isNotEmpty() }?.let { "Voted ${text(it)}" } })
     }
+    if (confirmClose && onClose != null) ConfirmDrawer("Close this poll?", null, "Close poll",
+        { confirmClose = false; actions.launch { runCatching { onClose() } } }, { confirmClose = false }, icon = R.drawable.ic_poll)
 }
 
 /** F6.10's Votes list: each of our members and what they chose, or that they haven't voted. */

@@ -31,9 +31,23 @@ fn call(f: &str, a: &[Value]) -> Result<String, String> {
     match f {
         // Poll helpers without bridge exports stay test-only: no wasm size cost. See
         // fixtures/poll/README.md for the portable inputs and results.
-        "poll_definition" => {
-            Ok(json!(poll::definition(&a[0]).map(|p| { json!({"options": p.options, "multiple": p.multiple}) }))
-                .to_string())
+        "poll_definition" => Ok(json!(poll::definition(&a[0]).map(|p| {
+            let mut out = json!({"options": p.options, "multiple": p.multiple});
+            if let Some(t) = p.closes_at {
+                out["closes_at"] = json!(t);
+            }
+            out
+        }))
+        .to_string()),
+        // D-136: `[definition, [early close or null, …], now]` → when each closes, and whether it is open at `now`
+        "poll_closed_at" => {
+            let p = poll::definition(&a[0]).ok_or("invalid poll definition")?;
+            let early: Vec<Option<i64>> =
+                a[1].as_array().ok_or("early closes must be an array")?.iter().map(Value::as_i64).collect();
+            let now = a[2].as_i64().ok_or("now must be a number")?;
+            let closed: Vec<_> = early.iter().map(|e| poll::closed_at(&p, *e)).collect();
+            let open: Vec<_> = early.iter().map(|e| poll::is_open(&p, *e, now)).collect();
+            Ok(json!({"closed_at": closed, "open_at": open}).to_string())
         }
         "poll_vote" => {
             let p = poll::definition(&a[0]).ok_or("invalid poll definition")?;

@@ -31,3 +31,16 @@ it('writes a foreign poll vote only into the voter account scope', () => {
     expect(create).toHaveBeenCalledWith('poll.vote', sync.accountScope, 'foreign', { member_id: 'kai', choices: ['b'] });
   } finally { create.mockRestore(); }
 });
+
+it('shows a closed poll as final and takes no votes (D-136)', () => {
+  const projection = { rows: { poll_vote: { 'closed|kai': { exists: true, fields: { choices: ['a'] }, clocks: {} } } }, sets: {}, fronts: {}, opaque: 0 } as unknown as Projection;
+  const poll = { options: [{ id: 'a', text: 'Soup' }, { id: 'b', text: 'Rice' }], multiple: false, closes_at: 1 };
+  const html = render(PollCard, { props: { projection, parentId: 'closed', poll, member: 'kai', remoteTally: { counts: { a: 1, b: 0 }, voters: 1 } } }).body;
+  expect(html).toContain('Closed');
+  expect(html).not.toContain('Remove my vote');
+  expect(html.match(/disabled/g)?.length).toBe(2);
+  const open = render(PollCard, { props: { projection, parentId: 'closed', poll: { ...poll, closes_at: Date.now() + 3 * 3_600_000 + 60_000 }, member: 'kai' } }).body;
+  expect(open).toContain('Closes in 3 h');
+  expect(open).toContain('Remove my vote');
+});
+

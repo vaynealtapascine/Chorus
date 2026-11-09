@@ -1,0 +1,27 @@
+{
+  "description": "D-136: a poll may carry a closing time (ms since 1970, UTC)",
+  "fn": "poll_definition",
+  "args": [
+    {
+      "options": [
+        {
+          "id": "a",
+          "text": "Soup"
+        },
+        {
+          "id": "b",
+          "text": "Rice"
+        }
+      ],
+      "closes_at": 1790000000000
+    }
+  ],
+  "expect": {
+    "options": [
+      "a",
+      "b"
+    ],
+    "multiple": false,
+    "closes_at": 1790000000000
+  }
+}

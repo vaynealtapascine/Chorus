@@ -64,7 +64,7 @@ class SearchVisibility(private val model: Model, private val account: String, pr
                 segments=(0 until seg.length()).mapNotNull {i -> seg.optJSONObject(i)?.let {ChatSegment(it.optInt("offset"),it.optInt("length"),strings(it.optJSONArray("authors"))) }},
                 pinned=text("pinned_at")!=null, forward=ChatForward.parse(j.optJSONArray("forward_snapshot")), quote=ChatForward.quoted(j.optJSONObject("quote")),
                 authorCards=j.optJSONArray("author_cards")?.let {a -> (0 until a.length()).mapNotNull {a.optJSONObject(it)?.let(ForeignAuthor::fromJson)}.associateBy {it.id}}.orEmpty(),
-                poll=Polls.parse(j.optJSONObject("poll")),pollTally=Polls.tally(j.optJSONObject("poll_tally")))
+                poll=Polls.parseRow(j),pollTally=Polls.tally(j.optJSONObject("poll_tally")))
         }
     }
 }

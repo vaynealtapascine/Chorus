@@ -338,6 +338,9 @@ pub static CATALOGUE: &[KindSpec] = &[
     k!("poll.vote", "poll_vote", Account, Special),
     k!("message.poll_tally", "poll_tally", Space, Special),
     k!("post.poll_tally", "poll_tally", Account, Special),
+    // D-136: the parent's author closes a poll early, in the parent's scope; there is no reopen
+    k!("message.poll_close", "poll_close", Space, Special),
+    k!("post.poll_close", "poll_close", Account, Special),
     k!("reltype.set", "relationship_type", Account, Set, RELTYPE_FIELDS),
     k!("reltype.delete", "relationship_type", Account, Delete),
     k!("relationship.set", "relationship", Account, Set, REL_FIELDS),
@@ -586,6 +589,15 @@ fn payload_shape(op: &Op) -> Result<(), OpError> {
             nonempty("member_id")?;
             if crate::poll::choices(p.get("choices").unwrap_or(&Value::Null)).is_none() {
                 return bad("choices must be a list of different option ids");
+            }
+        }
+        "message.poll_close" | "post.poll_close" => {
+            if op.entity_id.is_none() {
+                return Err(OpError::MissingEntity);
+            }
+            // a message's close is delivered like its message: by channel (D-136)
+            if op.kind == "message.poll_close" {
+                nonempty("channel_id")?;
             }
         }
         "field.define" | "field.set_def" => one_of("type", FIELD_TYPES, false)?,

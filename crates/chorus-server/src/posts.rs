@@ -48,7 +48,7 @@ pub(crate) fn audience_sql(viewer: &str, owner: &str, audience: &str) -> String 
 }
 
 /// The first column after [`COLUMNS`] (search appends its score there).
-const SCORE: usize = 21;
+const SCORE: usize = 22;
 
 pub(crate) const COLUMNS: &str = "p.id,p.account_id,p.kind,p.title,p.text,p.entities,p.mood,p.tags,p.cw,
     p.reply_to_id,p.quote,p.repost_of_id,p.visibility,p.occurred_at,p.edited_at,
@@ -73,7 +73,8 @@ pub(crate) const COLUMNS: &str = "p.id,p.account_id,p.kind,p.title,p.text,p.enti
              WHERE r.target_type='post' AND r.target_id=p.id AND r.is_present
              ORDER BY r.emoji,r.member_id)), '[]'),
     p.poll,
-    (SELECT json_object('counts',json(t.counts),'voters',t.voters) FROM poll_tally t WHERE t.poll_id=p.id)";
+    (SELECT json_object('counts',json(t.counts),'voters',t.voters) FROM poll_tally t WHERE t.poll_id=p.id),
+    (SELECT closed_at FROM poll_close WHERE poll_id=p.id)";
 
 #[derive(Default, Deserialize)]
 pub struct PostQuery {
@@ -112,6 +113,8 @@ pub(crate) fn row(r: &Row<'_>) -> rusqlite::Result<Value> {
         // the poll and its counts-only totals; voters are never listed (D-081, D-086)
         "poll": parsed(r.get(19)?),
         "poll_tally": parsed(r.get(20)?),
+        // the author's early close (D-136); `poll.closes_at` is the planned one
+        "poll_closed_at": r.get::<_, Option<i64>>(21)?,
     }))
 }
 
@@ -188,7 +191,7 @@ pub fn attach_context(conn: &Connection, viewer: &str, item: &mut Value) -> anyh
         && let Some(mut parent) = one(conn, viewer, &parent_id)?
     {
         if let Some(fields) = parent.as_object_mut() {
-            for key in ["quote", "reactions", "attachments", "poll", "poll_tally", "visibility"] {
+            for key in ["quote", "reactions", "attachments", "poll", "poll_tally", "poll_closed_at", "visibility"] {
                 fields.remove(key);
             }
         }
