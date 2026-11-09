@@ -246,7 +246,7 @@ internal fun FormattingDrawer(value: TextFieldValue, headings: Boolean, onDismis
             val mono = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = p.ink3)
             val rows = buildList {
                 add(Triple("**bold**", "bold", androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold)))
-                add(Triple("*italic*", "italic", androidx.compose.ui.text.SpanStyle(fontStyle = FontStyle.Italic)))
+                add(Triple("_italic_", "italic", androidx.compose.ui.text.SpanStyle(fontStyle = FontStyle.Italic)))
                 add(Triple("~~strike~~", "strike", androidx.compose.ui.text.SpanStyle(textDecoration = TextDecoration.LineThrough)))
                 add(Triple("`code`", "code", androidx.compose.ui.text.SpanStyle(fontFamily = FontFamily.Monospace, color = p.accent)))
                 add(Triple("||spoiler||", "spoiler", androidx.compose.ui.text.SpanStyle(color = p.surface3, background = p.surface3)))

@@ -32,7 +32,14 @@ data class AccountPrefs(val notifyChat: JSONObject = JSONObject(), val followCei
     /** The bucket new friends start in (`follow.start_bucket`, UI20 F7.8); only a starting choice. */
     val startBucket: String? = null,
     /** Home's sections (D-130, F0.3): each reader's (`home.sections:<member>`), and the account's. */
-    val homeSections: Map<String, Any?> = emptyMap(), val homeSectionsAll: Any? = null) {
+    val homeSections: Map<String, Any?> = emptyMap(), val homeSectionsAll: Any? = null,
+    /** Feeds shown as Journal tabs, in order (`journal.pinned_feeds`, F6.8): "system", "friends",
+     * "entries" or a saved feed's id. Null until chosen: the three built-in tabs. */
+    val pinnedFeeds: List<String>? = null) {
+    /** The tabs to show: pins that still exist ([live] are the saved feeds' ids), never none. */
+    fun tabs(live: Set<String>): List<String> =
+        (pinnedFeeds ?: DEFAULT_TABS).filter { it in DEFAULT_TABS || it in live }.distinct().ifEmpty { DEFAULT_TABS }
+
     fun isSaved(postId: String): Boolean = postId in bookmarks
 
     /** A channel's chat notifications; DMs default to everything, other channels to mentions (as on web). */
@@ -72,7 +79,8 @@ data class AccountPrefs(val notifyChat: JSONObject = JSONObject(), val followCei
                 keyed(prefs, accountId, FrontingDisplay.STATUS).mapNotNull { (member, v) -> FrontingDisplay.status(v)?.let { member to it } }.toMap(),
                 keyed(prefs, accountId, Inbox.READ).mapValues { (_, v) -> InboxRead.parse(v) }, value(Inbox.SHOWS_PREF) as? JSONObject,
                 (value(Friends.START_BUCKET) as? String)?.takeIf { it.isNotBlank() },
-                keyed(prefs, accountId, HomeDashboard.READER), value(HomeDashboard.PREF)?.takeIf { it != JSONObject.NULL })
+                keyed(prefs, accountId, HomeDashboard.READER), value(HomeDashboard.PREF)?.takeIf { it != JSONObject.NULL },
+                (value(PINNED_FEEDS) as? org.json.JSONArray)?.let { a -> (0 until a.length()).mapNotNull { a.optString(it).takeIf(String::isNotBlank) } })
         }
 
         /** Account-wide (no device) prefs under [prefix], by the rest of the key; a pending local
@@ -108,6 +116,16 @@ data class AccountPrefs(val notifyChat: JSONObject = JSONObject(), val followCei
         }
 
         const val POST_AUDIENCE = "journal.default_audience"
+
+        const val PINNED_FEEDS = "journal.pinned_feeds"
+        val DEFAULT_TABS = listOf("system", "friends", "entries")
+
+        /** The new order of pinned feeds; written whole, so two devices pinning at once keep the later list. */
+        fun pinnedFeedsPayload(ids: List<String>): JSONObject = payload(PINNED_FEEDS, org.json.JSONArray(ids))
+
+        /** [id] pinned (appended) or unpinned in [tabs]. */
+        fun pinned(tabs: List<String>, id: String, pin: Boolean): List<String> =
+            if (pin) (tabs.filter { it != id } + id) else tabs.filter { it != id }
 
         /** The audience new posts start with; null goes back to the built-in Only us (D-117). */
         fun postAudiencePayload(audience: Audience?): JSONObject = payload(POST_AUDIENCE, audience?.toJson() ?: JSONObject.NULL)

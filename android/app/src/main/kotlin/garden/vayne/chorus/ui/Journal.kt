@@ -11,6 +11,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -139,7 +141,17 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
         JournalField({ get(session.state.value.draft) }) { value -> session.edit { set(value) } }
     val p = LocalChorusPalette.current
     var editorOptions by field({ it.advanced }) { copy(advanced = it) }
-    var journalTab by rememberSaveable { mutableStateOf("system") }
+    var chosenTab by rememberSaveable { mutableStateOf("system") }
+    // pinned feeds are the tabs (F6.8); a shared feed's definition comes from the server
+    var sharedFeeds by remember { mutableStateOf<List<garden.vayne.chorus.data.FeedInfo>>(emptyList()) }
+    LaunchedEffect(chorus.device?.session) {
+        val dev = chorus.device ?: return@LaunchedEffect
+        try { sharedFeeds = garden.vayne.chorus.data.Feeds.list(dev).filter { it.shared } }
+        catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { }
+    }
+    val feedRowList = feedRows(model, sharedFeeds)
+    val tabIds = model.accountPrefs.tabs(feedRowList.map { it.id }.toSet())
+    val journalTab = chosenTab.takeIf { it in tabIds } ?: tabIds.first()
     var feedMenu by remember { mutableStateOf(false) }
     var editing by field({ it.editing }) { copy(editing = it) }
     var profileId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -510,7 +522,8 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
         return@ChorusScene
     }
     if (shown == "feeds") {
-        JournalFeeds(chorus, model, onTimeline = { section = "timeline" }, onThread = { threadPostId = it }, onProfile = openFriend)
+        JournalFeeds(chorus, model, onTimeline = { section = "timeline" }, onThread = { threadPostId = it }, onProfile = openFriend,
+            onLists = { section = "lists" }, onOpenTab = { chosenTab = it; section = "timeline" }, backEnabled = active && shown == route)
         return@ChorusScene
     }
     if (shown == "board") {
@@ -579,10 +592,15 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
                 MenuRow("Lists", R.drawable.ic_friends) { feedMenu = false; section = "lists" }
             }
         }
-        val journalTabs = listOf("system" to if (model.isPerson) "My posts" else "Our system", "friends" to "Friends", "entries" to "Journals")
-        UnderlineTabs(journalTabs.map { it.second to 0 }, journalTabs.indexOfFirst { it.first == journalTab }.coerceAtLeast(0)) { journalTab = journalTabs[it].first }
+        val journalTabs = tabIds.map { id -> id to (feedRowList.find { it.id == id }?.name ?: id) }
+        // many pins scroll sideways under the same underline
+        Box(Modifier.fillMaxWidth().then(if (journalTabs.size > 3) Modifier.horizontalScroll(rememberScrollState()) else Modifier)) {
+            UnderlineTabs(journalTabs.map { it.second to 0 }, journalTabs.indexOfFirst { it.first == journalTab }.coerceAtLeast(0)) { chosenTab = journalTabs[it].first }
+        }
         Box(Modifier.weight(1f)) {
-        if (journalTab == "friends") JournalFriends(chorus, model, onThread = { threadPostId = it }, onProfile = openFriend, onReply = {
+        val customFeed = feedRowList.find { it.id == journalTab && !it.builtIn }?.feed
+        if (customFeed != null) FeedPosts(chorus, model, customFeed, onThread = { threadPostId = it }, onProfile = openFriend)
+        else if (journalTab == "friends") JournalFriends(chorus, model, onThread = { threadPostId = it }, onProfile = openFriend, onReply = {
             launchDraft("reply", it, audience = "server")
         }, onQuote = { launchDraft("quote", it) }) else LazyColumn(Modifier.fillMaxSize(), state = feedListState, contentPadding = PaddingValues(bottom = 80.dp)) {
         if (shownEvents.isEmpty()) item {
@@ -611,7 +629,7 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
             }
         }
         }
-        NewPostsPill(newPosts && journalTab != "friends", motion, Modifier.align(Alignment.TopCenter).padding(top = 8.dp)) {
+        NewPostsPill(newPosts && journalTab != "friends" && customFeed == null, motion, Modifier.align(Alignment.TopCenter).padding(top = 8.dp)) {
             actions.launch {
                 if (motion) feedListState.animateScrollToItem(0) else feedListState.scrollToItem(0)
                 newPosts = false
