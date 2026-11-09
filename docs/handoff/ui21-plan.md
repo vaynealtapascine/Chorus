@@ -41,9 +41,9 @@ Then web, by the same waves, using each audit's *Web* section.
 
 ## Owner questions (defaults in use)
 
-Asked and answered 2026-11-08: D-130–D-138 (and Q24). Pending from the owner: the CHORUS
-wordmark SVG and the serif for member names in onboarding (F1.1) — use a placeholder until
-they arrive.
+Asked and answered 2026-11-08: D-130–D-138 (and Q24). The CHORUS wordmark is outlined from the
+owner's logo file (`res/drawable/chorus_wordmark.xml`, the mark in place of the O as F1.1 draws
+it); no serif for member names exists in that file, so they keep the app's sans.
 F1.2 words (default in use): one word per row (the Figma shows two ticks per row; the app needs one
 word to show), stored as `system.terminology.system` / `.front` (DATA_MODEL §4.3 gains `system`). Only
 setup's titles, Home's "Fronting now", More's Fronting row and System settings read them so far;

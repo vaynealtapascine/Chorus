@@ -1,9 +1,11 @@
 package garden.vayne.chorus.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -12,6 +14,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -19,12 +22,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.material3.Text
+import garden.vayne.chorus.R
 import garden.vayne.chorus.designsystem.HankenGrotesk
 
 /*
  * The welcome screen's art (F1.1): the four brand colours as large soft shapes on teal, and the
- * CHORUS wordmark. Both are stand-ins until the owner's wordmark SVG arrives (UI21 Q-C); swap
- * [ChorusWordmark]'s body for the vector and keep its size.
+ * CHORUS wordmark with the mark in place of the O, outlined from the owner's logo file.
  */
 
 internal object Welcome {
@@ -41,8 +44,7 @@ internal object Welcome {
 @Composable
 internal fun ChorusWordmark(modifier: Modifier = Modifier, line: AnnotatedString = AnnotatedString("VOICE FOR THE MANY")) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text("CHORUS", color = Welcome.Cream, fontFamily = HankenGrotesk, fontWeight = FontWeight.Black, fontSize = 64.sp,
-            letterSpacing = (-1).sp, lineHeight = 70.sp, modifier = Modifier.semantics { heading() })
+        Image(painterResource(R.drawable.chorus_wordmark), "Chorus", Modifier.width(272.dp).semantics { heading() })
         Text(line, color = Welcome.Cream, fontFamily = HankenGrotesk, fontWeight = FontWeight.Bold, fontSize = 15.sp,
             letterSpacing = if (line.text.all { !it.isLowerCase() }) 1.sp else 0.sp)
     }
