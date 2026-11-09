@@ -1,0 +1,30 @@
+{
+  "args": [
+    {
+      "device_at": 1000,
+      "entity_id": "0192f8c2-0000-7000-8000-0000000000e1",
+      "hlc": "0000000003e8-0000-00000001",
+      "id": "0192f8c2-0000-7000-8000-000000000001",
+      "kind": "post.edit",
+      "payload": {
+        "entities": [
+          {
+            "length": 5,
+            "level": 3,
+            "offset": 0,
+            "type": "heading"
+          }
+        ],
+        "text": "Title\nbody"
+      },
+      "scope": "account:0192f8c2-0000-7000-8000-0000000000a1",
+      "v": 1
+    }
+  ],
+  "description": "D-134: two heading levels only",
+  "expect": {
+    "error": true,
+    "message": "invalid payload: a heading's level must be 1 or 2"
+  },
+  "fn": "validate_op"
+}

@@ -1,0 +1,8 @@
+{
+  "args": [
+    "{\"text\": \"# x\\n## y\\n### z\", \"entities\": []}"
+  ],
+  "description": "D-134: a literal \"# \" line is escaped so it never becomes a heading when edited",
+  "expect": "\\# x\n\\## y\n### z",
+  "fn": "to_markup"
+}

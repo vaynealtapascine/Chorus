@@ -41,6 +41,18 @@
     return marks.map((m) => CLASS[m.type] ?? '').filter(Boolean).join(' ');
   }
 
+  /** Runs of pieces under the same heading (D-134; level 1 or 2) or under none. */
+  export function blocks(parts: Piece[]): { level: number; parts: [Piece, number][] }[] {
+    const out: { level: number; heading: Entity | undefined; parts: [Piece, number][] }[] = [];
+    parts.forEach((p, i) => {
+      const heading = p.marks.find((m) => m.type === 'heading' && (m.level === 1 || m.level === 2));
+      const last = out.at(-1);
+      if (last && last.heading === heading) last.parts.push([p, i]);
+      else out.push({ level: heading ? Number(heading.level) : 0, heading, parts: [[p, i]] });
+    });
+    return out.map(({ level, parts }) => ({ level, parts }));
+  }
+
   export function href(marks: Entity[], text: string): string | null {
     const link = marks.find((m) => m.type === 'text_link' || m.type === 'url');
     if (!link) return null;
@@ -57,8 +69,7 @@
   let revealed = $state(new Set<number>());
 </script>
 
-<span class="rich">
-  {#each parts as p, i (i)}
+{#snippet piece(p: Piece, i: number)}
     {@const url = href(p.marks, p.text)}
     {@const cls = classes(p.marks)}
     {@const customId = p.marks.find((mark) => mark.type === 'custom_emoji')?.emoji_id}
@@ -75,6 +86,16 @@
     {:else}
       {p.text}
     {/if}
+{/snippet}
+
+<span class="rich">
+  {#each blocks(parts) as b, n (n)}
+    {#if b.level}
+      <!-- inside a post body: h3/h4 in the page outline -->
+      <span class="h{b.level}" role="heading" aria-level={b.level + 2}>{#each b.parts as [p, i] (i)}{@render piece(p, i)}{/each}</span>
+    {:else}
+      {#each b.parts as [p, i] (i)}{@render piece(p, i)}{/each}
+    {/if}
   {/each}
 </span>
 
@@ -87,6 +108,18 @@
   .emoji-token { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .b {
     font-weight: 650;
+  }
+  .h1,
+  .h2 {
+    font-family: var(--font-display, inherit);
+    font-weight: 650;
+    line-height: 1.3;
+  }
+  .h1 {
+    font-size: 1.3em;
+  }
+  .h2 {
+    font-size: 1.12em;
   }
   .i {
     font-style: italic;

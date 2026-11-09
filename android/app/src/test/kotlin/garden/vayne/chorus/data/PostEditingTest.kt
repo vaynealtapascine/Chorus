@@ -26,4 +26,28 @@ class PostEditingTest {
             assertEquals(c.getString("name"), expected, ids)
         }
     }
+
+    /** D-134: a post's headings open as `# ` lines and save back unchanged; a literal "# " line stays literal. */
+    @Test fun headingsOpenAndSaveUnchanged() {
+        val entities = """[{"type":"heading","level":1,"offset":0,"length":8},{"type":"heading","level":2,"offset":9,"length":4}]"""
+        val post = JournalPost("p", "entry", listOf("kai"), "T", "Saturday\nPlan\n# literal", 0, null, "private", null, null,
+            emptyList(), entities = entities)
+        val raw = JSONObject(PostEditing.open(post))
+        assertEquals("# Saturday\n## Plan\n\\# literal", raw.getString("markup"))
+        val history = RichEditHistory.open(post.text, post.entities, raw.getString("markup"), RichTextEdit.POST_NAMES)
+        val payload = PostEditing.payload(post, history.legacyState(), history.current.text, "T", "")
+        assertEquals(post.text, payload.getString("text"))
+        val got = payload.getJSONArray("entities")
+        assertEquals(2, got.length())
+        assertEquals(listOf(1, 2), (0 until 2).map { got.getJSONObject(it).getInt("level") })
+        // chat and bios keep "# " literal
+        val chat = JSONObject(uniffi.chorus_ffi.parseMarkup("# hi", ""))
+        assertEquals("# hi", chat.getString("text"))
+        assertEquals(0, chat.getJSONArray("entities").length())
+    }
+
+    @Test fun headingLevelReachesTheRenderer() {
+        val prepared = RichTextPresentation.prepare("Title\nbody", """[{"type":"heading","level":2,"offset":0,"length":5}]""", emptyList())
+        assertEquals(listOf(BodySpan(0, 5, "heading", "", 2)), prepared.spans)
+    }
 }

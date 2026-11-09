@@ -52,4 +52,13 @@ describe('post rich editing', () => {
     const appended = updatePostEdit(state, `${state.markup}!`, state.markup.length, state.markup.length);
     expect(parsePostEdit(appended).entities.map((e) => e.target_id)).toEqual(['first', 'second']);
   });
+
+  it('opens and saves headings unchanged, and keeps a literal "# " line literal (D-134)', () => {
+    const rich = { text: 'Saturday\nbody\n# not a heading', entities: [{ type: 'heading', level: 1, offset: 0, length: 8 }] };
+    const state = openPostEdit(rich);
+    expect(state.markup).toBe('# Saturday\nbody\n\\# not a heading');
+    expect(parsePostEdit(state)).toEqual(rich);
+    const typed = parsePostEdit(updatePostEdit(state, `## Sunday\n${state.markup}`, 0, 0));
+    expect(typed.entities.filter((e) => e.type === 'heading').map((e) => [e.level, e.offset, e.length])).toEqual([[2, 0, 6], [1, 7, 8]]);
+  });
 });

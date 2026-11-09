@@ -1,0 +1,30 @@
+{
+  "args": [
+    "# Saturday\n## The **plan**\n### not one\nbody",
+    "{\"headings\": true}"
+  ],
+  "description": "D-134: \"# \" is a level-1 heading and \"## \" level 2, one whole line each; inline marks nest inside; \"###\" stays literal",
+  "expect": {
+    "entities": [
+      {
+        "length": 8,
+        "level": 1,
+        "offset": 0,
+        "type": "heading"
+      },
+      {
+        "length": 8,
+        "level": 2,
+        "offset": 9,
+        "type": "heading"
+      },
+      {
+        "length": 4,
+        "offset": 13,
+        "type": "bold"
+      }
+    ],
+    "text": "Saturday\nThe plan\n### not one\nbody"
+  },
+  "fn": "parse_markup"
+}

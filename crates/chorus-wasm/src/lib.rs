@@ -31,10 +31,15 @@ pub fn parse_markup(src: &str, names_json: &str) -> Result<String, JsError> {
 }
 
 /// Source trace only; the web editor uses the ordinary parser for the rich value. Names never
-/// change the emitted plain text or its source offsets, so no resolver JSON is needed here.
+/// change the emitted plain text or its source offsets, so no resolver JSON is needed here;
+/// headings do (their `# ` prefix is dropped), so posts pass `headings` (D-134).
 #[wasm_bindgen(js_name = markupSources)]
-pub fn markup_sources(src: &str) -> Vec<u32> {
-    chorus_core::text::parse_mapped(src, &chorus_core::text::NoNames).1
+pub fn markup_sources(src: &str, headings: bool) -> Vec<u32> {
+    if headings {
+        chorus_core::text::parse_mapped(src, &chorus_core::text::HeadingsOnly).1
+    } else {
+        chorus_core::text::parse_mapped(src, &chorus_core::text::NoNames).1
+    }
 }
 
 #[wasm_bindgen(js_name = toMarkup)]

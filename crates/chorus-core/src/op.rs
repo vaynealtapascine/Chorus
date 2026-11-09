@@ -562,6 +562,14 @@ fn payload_shape(op: &Op) -> Result<(), OpError> {
             typed("entities", Value::is_array, "a list")?;
             typed("tags", strings, "a list of tags")?;
             ranges(p)?;
+            // headings: posts and journal entries only, one whole line, level 1 or 2 (D-134)
+            let text = p.get("text").and_then(Value::as_str);
+            let allowed = op.kind.starts_with("post.");
+            for e in p.get("entities").and_then(Value::as_array).into_iter().flatten() {
+                if let Some(why) = crate::text::heading_problem(e, text, allowed) {
+                    return bad(why);
+                }
+            }
             if let Some(poll) = p.get("poll") {
                 if op.kind.ends_with(".edit") {
                     return bad("a poll cannot be changed after it is created");

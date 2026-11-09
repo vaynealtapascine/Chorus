@@ -492,7 +492,7 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
                     Spacer(Modifier.weight(1f))
                     if (!busy && error == null) Text("Saved", color = p.ink3, fontSize = 13.sp)
                 }
-                ComposerFormatRow(bodyValue, !busy, headings = false, onStyles = { formatOpen = true }, onLink = { linkOpen = true }) {
+                ComposerFormatRow(bodyValue, !busy, headings = true, onStyles = { formatOpen = true }, onLink = { linkOpen = true }) {
                     bodyValue = it; bodyFocus.requestFocus()
                 }
                 ComposerActionRow(!busy, pollOn, cwOpen || cw.isNotBlank(), editorOptions || tags.isNotBlank() || mood.isNotBlank(),
@@ -502,7 +502,7 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
                     onCw = { if (cw.isNotBlank() || cwOpen) { cw = ""; cwOpen = false } else cwOpen = true },
                     onTags = { editorOptions = !editorOptions })
             }
-            if (formatOpen) FormattingDrawer(bodyValue, headings = false, onDismiss = { formatOpen = false },
+            if (formatOpen) FormattingDrawer(bodyValue, headings = true, onDismiss = { formatOpen = false },
                 onLink = { formatOpen = false; linkOpen = true }) { bodyValue = it }
             if (linkOpen) LinkDrawer(bodyValue, { linkOpen = false }) { bodyValue = it.value; bodyFocus.requestFocus() }
             if (emojiOpen) EmojiDrawer({ emojiOpen = false }) { bodyValue = insertAtCaret(bodyValue, it); bodyFocus.requestFocus() }

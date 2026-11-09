@@ -38,13 +38,16 @@ pub fn version() -> String {
 }
 
 /// Names the markup parser resolves: `{"mentions": {"kai": {"target_type": "member",
-/// "target_id": "…"}}, "emoji": {"kai_wave": "<emoji id>"}}`. Missing = none.
+/// "target_id": "…"}}, "emoji": {"kai_wave": "<emoji id>"}, "headings": true}`. Missing = none;
+/// `headings` (posts and journal entries, D-134) reads `# `/`## ` lines as headings.
 #[derive(Deserialize, Default)]
 pub struct Names {
     #[serde(default)]
     mentions: BTreeMap<String, MentionName>,
     #[serde(default)]
     emoji: BTreeMap<String, String>,
+    #[serde(default)]
+    headings: bool,
 }
 
 #[derive(Deserialize)]
@@ -64,6 +67,9 @@ impl Resolver for Names {
     }
     fn emoji(&self, name: &str) -> Option<String> {
         self.emoji.get(name).cloned()
+    }
+    fn headings(&self) -> bool {
+        self.headings
     }
 }
 
@@ -88,10 +94,14 @@ pub fn parse_markup(src: &str, names_json: &str) -> Result<String, String> {
     Ok(js(&text::parse(src, &names(names_json)?)))
 }
 
-/// `{"text", "entities"}` → markup for editing.
+/// `{"text", "entities"}` → markup for editing. Entities this core can't read are dropped
+/// ([`Rich::lenient`]), so a newer client's formatting never stops an older one from editing.
 pub fn to_markup(rich_json: &str) -> Result<String, String> {
-    let r: Rich = parse("rich text", rich_json)?;
-    Ok(text::to_markup(&r))
+    let v: Value = parse("rich text", rich_json)?;
+    if !v.get("text").is_some_and(Value::is_string) {
+        return Err("bad rich text JSON: missing text".into());
+    }
+    Ok(text::to_markup(&Rich::lenient(&v)))
 }
 
 #[derive(Deserialize)]

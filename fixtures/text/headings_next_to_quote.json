@@ -1,0 +1,30 @@
+{
+  "args": [
+    "# a\n> quote\n## b",
+    "{\"headings\": true}"
+  ],
+  "description": "D-134: a heading beside a quote; neither covers the other",
+  "expect": {
+    "entities": [
+      {
+        "length": 1,
+        "level": 1,
+        "offset": 0,
+        "type": "heading"
+      },
+      {
+        "length": 5,
+        "offset": 2,
+        "type": "blockquote"
+      },
+      {
+        "length": 1,
+        "level": 2,
+        "offset": 8,
+        "type": "heading"
+      }
+    ],
+    "text": "a\nquote\nb"
+  },
+  "fn": "parse_markup"
+}

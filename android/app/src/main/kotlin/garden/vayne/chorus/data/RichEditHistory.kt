@@ -86,8 +86,8 @@ data class RichEditHistory(val originalText: String, val originalEntities: Strin
     companion object {
         const val MAX_UNDO = 32
         const val MAX_HISTORY_BYTES = 1024 * 1024
-        fun open(text: String, entities: String, markup: String): RichEditHistory {
-            val old = JSONObject(RichTextEdit.open(text, entities, markup))
+        fun open(text: String, entities: String, markup: String, names: String = ""): RichEditHistory {
+            val old = JSONObject(RichTextEdit.open(text, entities, markup, names))
             val origins = old.getJSONArray("origins")
             return RichEditHistory(text, entities, RichEditFrame(markup, List(origins.length()) { origins.getInt(it) }))
         }

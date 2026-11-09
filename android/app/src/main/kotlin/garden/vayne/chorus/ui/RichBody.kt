@@ -28,6 +28,16 @@ import garden.vayne.chorus.designsystem.ChorusPalette
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import org.json.JSONArray
 
+/** A heading (D-134): bold and larger than the body it sits in; level 1 or 2, anything else is body. */
+internal fun headingSpan(level: Int, body: TextStyle): SpanStyle? {
+    val size = if (body.fontSize.isSp) body.fontSize.value else 16f
+    return when (level) {
+        1 -> SpanStyle(fontWeight = FontWeight.Bold, fontSize = (size * 1.3f).sp)
+        2 -> SpanStyle(fontWeight = FontWeight.Bold, fontSize = (size * 1.12f).sp)
+        else -> null
+    }
+}
+
 /** A hidden spoiler is one solid bar: its placeholder glyphs share the background's opaque colour. */
 internal fun spoilerBar(p: ChorusPalette): SpanStyle = lerp(p.surface3, p.ink3, .45f).let { SpanStyle(color = it, background = it) }
 
@@ -75,6 +85,8 @@ internal fun RichBody(text: String, entities: String, modifier: Modifier = Modif
                         "code", "pre" -> SpanStyle(fontFamily = FontFamily.Monospace, background = p.surface2)
                         "blockquote", "expandable_blockquote" -> SpanStyle(color = p.ink2, fontStyle = FontStyle.Italic)
                         "url", "text_link" -> SpanStyle(color = p.accent, textDecoration = TextDecoration.Underline)
+                        // D-134: posts and entries only; the level decides the size
+                        "heading" -> headingSpan(r.level, style)
                         else -> null
                     }
                     if (span != null) addStyle(span, r.start, r.end)

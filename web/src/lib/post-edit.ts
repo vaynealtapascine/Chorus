@@ -3,7 +3,8 @@ import { markupSources } from './core/pkg/chorus_wasm';
 
 interface Mapped extends Rich { sources: number[] }
 export interface PostEditState { markup: string; original: Rich; origins: number[] }
-const mapped = (src: string): Mapped => ({ ...core.parseMarkup(src), sources: Array.from(markupSources(src)) });
+// posts and journal entries read `# ` / `## ` lines as headings (D-134); chat and bios don't
+const mapped = (src: string): Mapped => ({ ...core.parseMarkup(src, { headings: true }), sources: Array.from(markupSources(src, true)) });
 const atomic = (e: Entity) => e.type === 'mention' || e.type === 'custom_emoji';
 
 export function openPostEdit(original: Rich): PostEditState {

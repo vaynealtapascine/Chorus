@@ -28,7 +28,7 @@ internal fun PostEditDialog(post: JournalPost, chorus: Chorus, onDismiss: () -> 
         try {
             val history = withContext(Dispatchers.Default) {
                 val raw = JSONObject(PostEditing.open(post))
-                RichEditHistory.open(post.text, post.entities, raw.getString("markup"))
+                RichEditHistory.open(post.text, post.entities, raw.getString("markup"), RichTextEdit.POST_NAMES)
             }
             controller = RichEditorController(history) {}
         } catch (e: Exception) { error = e.message ?: "Could not open this post." }

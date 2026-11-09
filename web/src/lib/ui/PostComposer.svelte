@@ -153,7 +153,7 @@
       // our members' @handles become mentions (D-126)
       const mentions = Object.fromEntries([...handleMentions(memberHandles(projection, sync.accountId), members(projection))]
         .map(([handle, member]) => [handle, { target_type: 'member', target_id: member }]));
-      const rich = core.parseMarkup(sending.body, { mentions });
+      const rich = core.parseMarkup(sending.body, { mentions, headings: true });
       sync.create('post.create', sync.accountScope, sync.newId(), {
         kind: sending.kind, authors, title: sending.kind === 'entry' ? sending.title.trim() || null : null,
         text: rich.text, entities: rich.entities, mood: sending.mood.trim() || null,

@@ -1,0 +1,12 @@
+{
+  "args": [
+    "# Saturday\n## plan",
+    ""
+  ],
+  "description": "D-134: without \"headings\" (chat messages, bios) heading markup stays literal text",
+  "expect": {
+    "entities": [],
+    "text": "# Saturday\n## plan"
+  },
+  "fn": "parse_markup"
+}

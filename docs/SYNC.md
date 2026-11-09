@@ -488,7 +488,7 @@ closes the window with `reconcile-close` or `POST /admin/reconcile/close`.
 }
 ```
 
-Areas: `hlc`, `time`, `lww`, `set`, `groups_cycle`, `front`, `review`, `text_entities`,
+Areas: `hlc`, `time`, `lww`, `set`, `groups_cycle`, `front`, `review`, `text_entities` (`fixtures/text/`, headings: `headings_*`, D-134),
 `speaker_parse`, `feed_query`, `visibility`, `digest`, `poll` (D-081/D-086; test-only helper
 adapters documented in `fixtures/poll/README.md`), `search` (message search: the web's word
 index runs these too, `web/src/lib/search.test.ts`). Rust runs all of them in CI. Any non-Rust

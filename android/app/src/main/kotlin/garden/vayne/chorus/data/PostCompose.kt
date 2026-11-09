@@ -38,7 +38,7 @@ object PostCompose {
         val selectedAudience = validatedAudience(Audience(audience, bucketIds), model.sharingBuckets.map { it.first }.toSet())
         require(body.isNotBlank() || attachmentIds.isNotEmpty()) { "Write a post or attach a file first." }
         val authors = validatedAuthors(model, accountId, authorIds)
-        val rich = JSONObject(markup(body, ""))
+        val rich = JSONObject(markup(body, RichTextEdit.POST_NAMES))
         require(rich.getString("text").isNotBlank() || attachmentIds.isNotEmpty()) { "Write a post or attach a file first." }
         val result = JSONObject().put("kind", kind).put("authors", JSONArray(authors))
             .put("title", title.trim().takeIf { kind == "entry" && it.isNotBlank() } ?: JSONObject.NULL)

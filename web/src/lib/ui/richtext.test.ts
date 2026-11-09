@@ -1,5 +1,6 @@
+import { render } from 'svelte/server';
 import { describe, expect, it } from 'vitest';
-import { classes, href, pieces } from './RichText.svelte';
+import RichText, { blocks, classes, href, pieces } from './RichText.svelte';
 
 describe('rich text pieces', () => {
   it('splits at entity boundaries with UTF-16 offsets', () => {
@@ -19,5 +20,21 @@ describe('rich text pieces', () => {
     expect(href(docs.marks, docs.text)).toBe('https://x.org');
     expect(classes(docs.marks)).toBe('i');
     expect(href([{ type: 'text_link', offset: 0, length: 1, url: 'javascript:alert(1)' }], 'x')).toBeNull();
+  });
+
+  it('groups a heading line into one heading, inline marks inside (D-134)', () => {
+    const text = 'Saturday\nThe plan\nbody';
+    const entities = [
+      { type: 'heading', level: 1, offset: 0, length: 8 },
+      { type: 'heading', level: 2, offset: 9, length: 8 },
+      { type: 'bold', offset: 13, length: 4 },
+    ];
+    const b = blocks(pieces(text, entities));
+    expect(b.map((x) => [x.level, x.parts.map(([p]) => p.text).join('')])).toEqual([[1, 'Saturday'], [0, '\n'], [2, 'The plan'], [0, '\nbody']]);
+    const html = render(RichText, { props: { text, entities } }).body.replace(/<!--[^>]*-->/g, '');
+    expect(html).toMatch(/<span class="h1[^"]*" role="heading" aria-level="3">Saturday<\/span>/);
+    expect(html).toMatch(/<span class="h2[^"]*" role="heading" aria-level="4">The <span class="b[^"]*">plan<\/span><\/span>/);
+    // an unknown level is plain text
+    expect(blocks(pieces('x', [{ type: 'heading', level: 3, offset: 0, length: 1 }]))[0].level).toBe(0);
   });
 });

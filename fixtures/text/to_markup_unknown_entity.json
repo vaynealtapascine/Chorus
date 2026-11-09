@@ -1,0 +1,8 @@
+{
+  "args": [
+    "{\"text\": \"ab\", \"entities\": [{\"type\": \"x_future\", \"offset\": 0, \"length\": 1}, {\"type\": \"bold\", \"offset\": 1, \"length\": 1}]}"
+  ],
+  "description": "An entity type this core does not know (a newer client's) is dropped, not an error, when opening text for editing",
+  "expect": "a**b**",
+  "fn": "to_markup"
+}

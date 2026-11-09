@@ -1,0 +1,23 @@
+{
+  "args": [
+    "\\# not\n# \n#tag\n```\n# code\n```\n> # quoted",
+    "{\"headings\": true}"
+  ],
+  "description": "D-134: an escaped \\#, an empty heading, #tag, a fenced line and a quoted line are not headings",
+  "expect": {
+    "entities": [
+      {
+        "length": 6,
+        "offset": 14,
+        "type": "pre"
+      },
+      {
+        "length": 8,
+        "offset": 21,
+        "type": "blockquote"
+      }
+    ],
+    "text": "# not\n# \n#tag\n# code\n# quoted"
+  },
+  "fn": "parse_markup"
+}

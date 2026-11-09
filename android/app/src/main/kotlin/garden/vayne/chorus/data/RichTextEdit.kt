@@ -10,11 +10,14 @@ import uniffi.chorus_ffi.parseMarkupMapped
  */
 object RichTextEdit {
     // EntityKind's canonical order in core/text.rs, after offset and descending length.
-    private val kinds = listOf("blockquote", "expandable_blockquote", "pre", "text_link", "bold", "italic",
+    private val kinds = listOf("blockquote", "expandable_blockquote", "heading", "pre", "text_link", "bold", "italic",
         "underline", "strikethrough", "spoiler", "code", "url", "mention", "custom_emoji")
     private fun atomic(e: JSONObject) = e.optString("type") in setOf("mention", "custom_emoji")
-    fun open(text: String, entities: String, markup: String): String {
-        val parsed = JSONObject(parseMarkupMapped(markup, ""))
+    /** Names for a post or journal entry: `# ` / `## ` lines are headings there (D-134), not in chat or bios. */
+    const val POST_NAMES = """{"headings":true}"""
+
+    fun open(text: String, entities: String, markup: String, names: String = ""): String {
+        val parsed = JSONObject(parseMarkupMapped(markup, names))
         require(parsed.getString("text") == text) { "This rich text could not be opened safely. Cancel and reopen it." }
         val origins = IntArray(markup.length) { -1 }
         val sources = parsed.getJSONArray("sources")

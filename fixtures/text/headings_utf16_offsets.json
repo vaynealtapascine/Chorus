@@ -1,0 +1,25 @@
+{
+  "args": [
+    "# 🌌 a\n# b",
+    "{\"headings\": true}"
+  ],
+  "description": "D-134: heading offsets are UTF-16 units; consecutive heading lines stay separate entities",
+  "expect": {
+    "entities": [
+      {
+        "length": 4,
+        "level": 1,
+        "offset": 0,
+        "type": "heading"
+      },
+      {
+        "length": 1,
+        "level": 1,
+        "offset": 5,
+        "type": "heading"
+      }
+    ],
+    "text": "🌌 a\nb"
+  },
+  "fn": "parse_markup"
+}

@@ -8,10 +8,10 @@ import uniffi.chorus_ffi.toMarkup
 object PostEditing {
     fun open(post: JournalPost): String {
         val rich = JSONObject().put("text", post.text).put("entities", JSONArray(post.entities))
-        return RichTextEdit.open(post.text, post.entities, toMarkup(rich.toString()))
+        return RichTextEdit.open(post.text, post.entities, toMarkup(rich.toString()), RichTextEdit.POST_NAMES)
     }
     fun payload(post: JournalPost, state: String, body: String, title: String, cw: String): JSONObject {
-        val rich = RichTextEdit.parse(state, body, "")
+        val rich = RichTextEdit.parse(state, body, RichTextEdit.POST_NAMES)
         require(rich.getString("text").isNotBlank()) { "Write some text before saving." }
         return JSONObject().put("post_id", post.id).put("text", rich.getString("text"))
             .put("entities", rich.getJSONArray("entities"))

@@ -2,7 +2,7 @@ package garden.vayne.chorus.data
 
 import org.json.JSONArray
 
-data class BodySpan(val start: Int, val end: Int, val type: String, val url: String?)
+data class BodySpan(val start: Int, val end: Int, val type: String, val url: String?, val level: Int = 0)
 data class PreparedBody(val text: String, val spans: List<BodySpan>, val hidden: Set<Int>)
 
 object RichTextPresentation {
@@ -15,7 +15,7 @@ object RichTextPresentation {
             val start = e.optInt("offset", -1)
             val length = e.optInt("length")
             if (start < 0 || length <= 0 || start > text.length - length) return@mapNotNull null
-            BodySpan(start, start + length, e.optString("type"), e.optString("url"))
+            BodySpan(start, start + length, e.optString("type"), e.optString("url"), e.optInt("level"))
         }
         val hidden = ranges.filter { it.type == "spoiler" && it.start !in revealed }
         val safe = text.toCharArray()

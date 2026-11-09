@@ -216,6 +216,13 @@ are server state and out of scope.
 
 ---
 
+## D16 · Heading spans carry a level — settled (Chorus D-134, 2026-11-09)
+
+`SPAN_TYPE_HEADING` had no level. `Span.level` (field 6) now holds it: 1 is the top level, a
+heading covers one whole line of `EntityText.text`. Chorus produces levels 1 and 2 (posts and
+journal entries, not chat). A consumer with no headings shows the line as bold text; markdown is
+`# ` / `## `.
+
 ## Readiness path
 
 Owner, 2026-09-26: work through step 4, then stop; the owner reviews the spec before anything

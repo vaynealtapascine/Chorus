@@ -225,8 +225,8 @@ fn message_rows(f: &serde_json::Map<String, Value>) -> anyhow::Result<MessageRow
     // only mentions matter here: don't read every entity of every message
     let entities = f.get("entities").and_then(Value::as_array);
     if entities.is_some_and(|es| es.iter().any(|e| e.get("type").and_then(Value::as_str) == Some("mention"))) {
-        let ents: Vec<Entity> =
-            f.get("entities").and_then(|e| serde_json::from_value(e.clone()).ok()).unwrap_or_default();
+        // one entity at a time: a type this server doesn't know (a newer client's) mustn't hide the rest
+        let ents = entities.into_iter().flatten().filter_map(|e| serde_json::from_value::<Entity>(e.clone()).ok());
         for e in ents {
             if let text::EntityKind::Mention { target_type, target_id } = e.kind {
                 let tt = serde_json::to_value(target_type)?.as_str().unwrap_or("member").to_string();

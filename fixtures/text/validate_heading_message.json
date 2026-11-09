@@ -1,0 +1,34 @@
+{
+  "args": [
+    {
+      "device_at": 1000,
+      "entity_id": "0192f8c2-0000-7000-8000-0000000000e1",
+      "hlc": "0000000003e8-0000-00000001",
+      "id": "0192f8c2-0000-7000-8000-000000000001",
+      "kind": "message.send",
+      "payload": {
+        "authors": [
+          "m"
+        ],
+        "channel_id": "c",
+        "entities": [
+          {
+            "length": 5,
+            "level": 1,
+            "offset": 0,
+            "type": "heading"
+          }
+        ],
+        "text": "Title\nbody"
+      },
+      "scope": "space:0192f8c2-0000-7000-8000-0000000000a2",
+      "v": 1
+    }
+  ],
+  "description": "D-134: chat messages may not carry headings",
+  "expect": {
+    "error": true,
+    "message": "invalid payload: headings are for posts and journal entries"
+  },
+  "fn": "validate_op"
+}

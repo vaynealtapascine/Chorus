@@ -16,6 +16,7 @@
 //! | `[label](https://…)` | text_link |
 //! | `> line` | blockquote (consecutive lines merge) |
 //! | `>> line` | expandable blockquote |
+//! | `# line` / `## line` | heading, level 1 / 2 (posts and journal entries only: [`Resolver::headings`], D-134) |
 //! | `@name` | mention, if the resolver knows the name |
 //! | `:name:` | custom_emoji, if the resolver knows it (text keeps `:name:`) |
 //! | `https://…` | url (auto-detected) |
@@ -39,6 +40,10 @@ pub enum MentionTarget {
 pub enum EntityKind {
     Blockquote,
     ExpandableBlockquote,
+    /// One whole line; `level` 1 or 2 (D-134). Only posts and journal entries carry it.
+    Heading {
+        level: u8,
+    },
     Pre {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         language: Option<String>,
@@ -137,6 +142,11 @@ pub fn normalize_entities(e: &mut Vec<Entity>) {
 pub trait Resolver {
     fn mention(&self, name: &str) -> Option<(MentionTarget, Option<String>)>;
     fn emoji(&self, name: &str) -> Option<String>;
+    /// Whether `# ` / `## ` lines become headings (posts and journal entries, D-134). Chat
+    /// messages and bios keep them literal.
+    fn headings(&self) -> bool {
+        false
+    }
 }
 
 /// A resolver that knows nothing (only `@front` resolves).
@@ -150,10 +160,70 @@ impl Resolver for NoNames {
     }
 }
 
+/// Knows no names, like [`NoNames`], but reads headings (a post's or entry's source map).
+pub struct HeadingsOnly;
+impl Resolver for HeadingsOnly {
+    fn mention(&self, name: &str) -> Option<(MentionTarget, Option<String>)> {
+        NoNames.mention(name)
+    }
+    fn emoji(&self, _: &str) -> Option<String> {
+        None
+    }
+    fn headings(&self) -> bool {
+        true
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Rich {
     pub text: String,
     pub entities: Vec<Entity>,
+}
+
+impl Rich {
+    /// For display and editing: entities this core doesn't know (a newer client's) or can't
+    /// read are dropped instead of failing the whole text. Ingest stays strict (`op::validate_new`).
+    pub fn lenient(v: &serde_json::Value) -> Rich {
+        let text = v.get("text").and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
+        let entities = v
+            .get("entities")
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|e| serde_json::from_value::<Entity>(e.clone()).ok())
+            .collect();
+        Rich { text, entities }
+    }
+}
+
+/// Why a `heading` entity in a new op is wrong, if it is: level 1 or 2, one whole line of `text`
+/// (when the op carries it), and only where headings are allowed (D-134).
+pub fn heading_problem(e: &serde_json::Value, text: Option<&str>, allowed: bool) -> Option<&'static str> {
+    if e.get("type").and_then(serde_json::Value::as_str) != Some("heading") {
+        return None;
+    }
+    if !allowed {
+        return Some("headings are for posts and journal entries");
+    }
+    if !matches!(e.get("level").and_then(serde_json::Value::as_u64), Some(1 | 2)) {
+        return Some("a heading's level must be 1 or 2");
+    }
+    let (Some(text), Some(offset), Some(length)) = (
+        text,
+        e.get("offset").and_then(serde_json::Value::as_u64),
+        e.get("length").and_then(serde_json::Value::as_u64),
+    ) else {
+        return None;
+    };
+    let units: Vec<u16> = text.encode_utf16().collect();
+    let (start, end) = (offset as usize, (offset + length) as usize);
+    let nl = u16::from(b'\n');
+    let whole = length > 0
+        && end <= units.len()
+        && (start == 0 || units[start - 1] == nl)
+        && (end == units.len() || units[end] == nl)
+        && !units[start..end].contains(&nl);
+    (!whole).then_some("a heading must cover one whole line")
 }
 
 pub fn utf16_len(s: &str) -> u32 {
@@ -182,7 +252,7 @@ pub fn utf16_slice(s: &str, offset: u32, length: u32) -> &str {
 
 // ─── parser ──────────────────────────────────────────────────────────────────
 
-const ESCAPABLE: &[char] = &['\\', '*', '_', '~', '|', '`', '[', ']', '(', ')', '>', '@', ':'];
+const ESCAPABLE: &[char] = &['\\', '*', '_', '~', '|', '`', '[', ']', '(', ')', '>', '@', ':', '#'];
 
 struct P<'a> {
     s: Vec<char>,
@@ -534,6 +604,20 @@ enum LineKind {
     Normal,
     Quote,
     Expandable,
+    /// `# ` (1) or `## ` (2): one line each, never grouped.
+    Heading(u8),
+}
+
+/// A heading line's level and prefix length: `# ` or `## ` followed by something to show.
+fn heading_prefix(line: &[char]) -> Option<(u8, usize)> {
+    let (level, n) = if line.starts_with(&['#', '#', ' ']) {
+        (2, 3)
+    } else if line.starts_with(&['#', ' ']) {
+        (1, 2)
+    } else {
+        return None;
+    };
+    line[n..].iter().any(|c| !c.is_whitespace()).then_some((level, n))
 }
 
 pub(crate) fn count_fences_str(line: &str) -> usize {
@@ -577,8 +661,11 @@ fn parse_inner(src: &str, r: &dyn Resolver, _mapped: bool) -> (Rich, Vec<u32>) {
         if i == s.len() || s[i] == '\n' {
             let line = &s[start..i];
             let fence_toggles = count_fences(line) % 2 == 1;
+            let heading = if r.headings() && !in_fence && !fence_toggles { heading_prefix(line) } else { None };
             let (kind, content_start) = if in_fence {
                 (LineKind::Normal, start)
+            } else if let Some((level, n)) = heading {
+                (LineKind::Heading(level), start + n)
             } else if line.starts_with(&['>', '>', ' ']) {
                 (LineKind::Expandable, start + 3)
             } else if line.starts_with(&['>', '>']) && line.len() == 2 {
@@ -625,7 +712,7 @@ fn parse_inner(src: &str, r: &dyn Resolver, _mapped: bool) -> (Rich, Vec<u32>) {
     while k < lines.len() {
         let kind = lines[k].0;
         let mut g = k;
-        while g + 1 < lines.len() && lines[g + 1].0 == kind {
+        while g + 1 < lines.len() && lines[g + 1].0 == kind && !matches!(kind, LineKind::Heading(_)) {
             g += 1;
         }
         if k > 0 {
@@ -635,6 +722,16 @@ fn parse_inner(src: &str, r: &dyn Resolver, _mapped: bool) -> (Rich, Vec<u32>) {
             LineKind::Normal => {
                 let (from, to) = (lines[k].1, lines[g].2);
                 p.inline(from, to);
+            }
+            LineKind::Heading(level) => {
+                let start = p.u16;
+                // no code blocks inside a heading line
+                p.depth += 1;
+                p.inline(lines[k].1, lines[k].2);
+                p.depth -= 1;
+                if p.u16 > start {
+                    p.ents.push(Entity { kind: EntityKind::Heading { level }, offset: start, length: p.u16 - start });
+                }
             }
             LineKind::Quote | LineKind::Expandable => {
                 let start = p.u16;
@@ -714,6 +811,12 @@ pub fn to_markup(rich: &Rich) -> String {
     let mut ents: Vec<&Entity> = rich.entities.iter().filter(|e| e.end() <= len && e.length > 0).collect();
     crate::sort::by_key(&mut ents, |a| (a.offset, std::cmp::Reverse(a.length)));
     let is_quote = |k: &EntityKind| matches!(k, EntityKind::Blockquote | EntityKind::ExpandableBlockquote);
+    let heading_at = |u: u32| {
+        ents.iter().find_map(|e| match e.kind {
+            EntityKind::Heading { level } if e.offset == u => Some(level),
+            _ => None,
+        })
+    };
     let is_literal = |k: &EntityKind| matches!(k, EntityKind::Code | EntityKind::Pre { .. });
     let quotes: Vec<&Entity> = ents.iter().copied().filter(|e| is_quote(&e.kind)).collect();
     let inline: Vec<&Entity> =
@@ -809,11 +912,16 @@ pub fn to_markup(rich: &Rich) -> String {
         if continues_atom {
             out.push_str("\\&");
         }
+        let heading = if line_start { heading_at(u) } else { None };
         if line_start {
             match quote_at(u) {
                 Some(EntityKind::Blockquote) => out.push_str("> "),
                 Some(EntityKind::ExpandableBlockquote) => out.push_str(">> "),
-                _ => {}
+                _ => match heading {
+                    Some(1) => out.push_str("# "),
+                    Some(_) => out.push_str("## "),
+                    None => {}
+                },
             }
         }
         let len_before_tokens = out.len();
@@ -848,7 +956,15 @@ pub fn to_markup(rich: &Rich) -> String {
             });
             // a '>' that would start a markup line must not read as a quote
             let quote_like = c == '>' && line_start && quote_at(u).is_none() && out.len() == len_before_tokens;
+            // so is a '#' that would start a heading line (`# ` or `## `, D-134)
+            let heading_like = c == '#'
+                && line_start
+                && heading.is_none()
+                && quote_at(u).is_none()
+                && out.len() == len_before_tokens
+                && (next == Some(' ') || next == Some('#') && chars.get(idx + 2).map(|c| c.1) == Some(' '));
             let escape = quote_like
+                || heading_like
                 || !in_atom
                     && match c {
                         '\\' | '*' | '_' | '~' | '|' | '`' | '[' | ']' => true,
@@ -1011,6 +1127,72 @@ mod tests {
             let b = parse(&m, &Names);
             assert_eq!(a, b, "src={src:?} markup={m:?}");
         }
+    }
+
+    fn h(level: u8, offset: u32, length: u32) -> Entity {
+        e(EntityKind::Heading { level }, offset, length)
+    }
+
+    #[test]
+    fn headings_are_whole_lines_in_posts_only() {
+        let r = parse("# Saturday\n## The **plan**\n### not one\nbody", &HeadingsOnly);
+        assert_eq!(r.text, "Saturday\nThe plan\n### not one\nbody");
+        assert_eq!(r.entities, vec![h(1, 0, 8), h(2, 9, 8), e(EntityKind::Bold, 13, 4)]);
+        // chat and bios keep the markup literal
+        let chat = parse("# Saturday", &NoNames);
+        assert_eq!((chat.text.as_str(), chat.entities.len()), ("# Saturday", 0));
+        // an escape, an empty heading, no space, inside a fence and inside a quote stay literal
+        for src in [r"\# not", "# ", "#tag", "```\n# code\n```", "> # quoted"] {
+            assert!(
+                !parse(src, &HeadingsOnly).entities.iter().any(|x| matches!(x.kind, EntityKind::Heading { .. })),
+                "{src:?}"
+            );
+        }
+        assert_eq!(parse(r"\# not", &HeadingsOnly).text, "# not");
+        // two heading lines in a row stay two headings; offsets are UTF-16
+        let r = parse("# 🌌 a\n# b", &HeadingsOnly);
+        assert_eq!(r.entities, vec![h(1, 0, 4), h(1, 5, 1)]);
+    }
+
+    #[test]
+    fn headings_round_trip_through_markup() {
+        for src in [
+            "# Saturday\n## The **plan**\nbody",
+            "# a\n> quote\n## b",
+            "literal\n\\# not a heading\n\\## nor this\n### three",
+            "# # hash inside\n## > not a quote",
+        ] {
+            let a = parse(src, &HeadingsOnly);
+            let m = to_markup(&a);
+            assert_eq!(a, parse(&m, &HeadingsOnly), "src={src:?} markup={m:?}");
+        }
+        // a literal "# " line (old post, or chat) is escaped and reads back the same either way
+        let lit = Rich { text: "# x".into(), entities: vec![] };
+        assert_eq!(to_markup(&lit), r"\# x");
+        assert_eq!(parse(&to_markup(&lit), &NoNames), lit);
+        assert_eq!(parse(&to_markup(&lit), &HeadingsOnly), lit);
+    }
+
+    #[test]
+    fn heading_rules_for_new_ops() {
+        let j = |level: u64, offset: u64, length: u64| serde_json::json!({"type": "heading", "level": level, "offset": offset, "length": length});
+        let text = Some("Title\nbody");
+        assert_eq!(heading_problem(&j(1, 0, 5), text, true), None);
+        assert_eq!(heading_problem(&j(2, 6, 4), text, true), None);
+        assert!(heading_problem(&j(1, 0, 5), text, false).is_some(), "not in chat");
+        assert!(heading_problem(&j(3, 0, 5), text, true).is_some(), "two levels only");
+        assert!(heading_problem(&j(1, 0, 3), text, true).is_some(), "part of a line");
+        assert!(heading_problem(&j(1, 0, 10), text, true).is_some(), "two lines");
+        assert!(heading_problem(&j(1, 1, 4), text, true).is_some(), "not from the line start");
+        assert_eq!(heading_problem(&j(1, 9, 9), None, true), None, "an edit without text: shape only");
+        assert_eq!(heading_problem(&serde_json::json!({"type": "bold"}), text, false), None);
+    }
+
+    #[test]
+    fn lenient_rich_drops_unknown_entities() {
+        let v = serde_json::json!({"text": "ab", "entities": [{"type": "x_new", "offset": 0, "length": 1},
+            {"type": "bold", "offset": 1, "length": 1}, {"type": "heading", "offset": 0}]});
+        assert_eq!(Rich::lenient(&v).entities, vec![e(EntityKind::Bold, 1, 1)]);
     }
 
     #[test]

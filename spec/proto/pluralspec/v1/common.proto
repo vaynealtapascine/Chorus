@@ -69,6 +69,8 @@ message Span {
   string url = 4;
   // PRE: the code language, if known.
   string language = 5;
+  // HEADING: 1 for the top level, then 2, ... A heading covers one whole line. Chorus writes 1 and 2.
+  uint32 level = 6;
 }
 
 enum SpanType {
