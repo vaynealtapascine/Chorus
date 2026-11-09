@@ -3,6 +3,11 @@
   // one formatter and one adapted colour per value for every message on the page (R24)
   const clock = new Intl.DateTimeFormat([], { hour: '2-digit', minute: '2-digit' });
   const adapted = new Map<string, MemberColors>();
+  /** A forward's header: the forwarder may have left out who wrote it (F5.20), and the source chat's name
+   * stays hidden in another space (ChatForward). */
+  export function forwardedFrom(authors: string[], nameOf: (id: string) => string, channel?: string | null): string {
+    return (authors.length ? `Forwarded from ${authors.map(nameOf).join(' & ')}` : 'Forwarded') + (channel ? ` · #${channel}` : '');
+  }
 </script>
 
 <script lang="ts">
@@ -320,7 +325,7 @@
       {/if}
       {#each m.forward_snapshot ?? [] as f (f.message_id)}
         {@const src = onjump ? original(f.message_id) : undefined}
-        {@const from = `Forwarded from ${f.authors.map(nameOf).join(' & ')}${f.channel_name ? ` · #${f.channel_name}` : ''}`}
+        {@const from = forwardedFrom(f.authors, nameOf, f.channel_name)}
         <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
         <div class="forward" class:jumps={!!src} onclick={(e) => jump(e, src)}>
           {#if src}<button class="fwd q-src" onclick={(e) => jump(e, src)} title="Show the original message">{from}</button>{:else}<span class="fwd">{from}</span>{/if}

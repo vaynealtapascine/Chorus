@@ -340,7 +340,7 @@
               </blockquote>
             {/if}
             {#each m.forward_snapshot ?? [] as f (f.message_id)}
-              <div class="forward">Forwarded from {f.authors.map(nameOf).join(' & ')}: <RichText text={f.text} entities={f.entities} />
+              <div class="forward">{f.authors.length ? `Forwarded from ${f.authors.map(nameOf).join(' & ')}` : 'Forwarded'}: <RichText text={f.text} entities={f.entities} />
                 {#each f.attachments ?? [] as a (a.id)}<AttachmentView attachment={a} blur={def.render.blur_attachments} revealable={false} />{/each}
               </div>
             {/each}
