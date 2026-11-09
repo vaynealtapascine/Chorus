@@ -53,8 +53,9 @@ import garden.vayne.chorus.designsystem.LocalChorusPalette
 import garden.vayne.chorus.designsystem.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.first
 import garden.vayne.chorus.data.Reply
+import garden.vayne.chorus.data.LocalRelationships
+import androidx.activity.compose.BackHandler
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.DateFormat
@@ -90,6 +91,13 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
     var busy by remember(memberId) { mutableStateOf(false) }
     var removedHighlights by remember(memberId) { mutableStateOf<Set<String>>(emptySet()) }
     var subsystemOpen by remember(memberId) { mutableStateOf(false) }
+    var relationshipsOpen by rememberSaveable(memberId) { mutableStateOf(false) }
+    if (relationshipsOpen && member != null) {
+        BackHandler { relationshipsOpen = false }
+        RelationshipsScreen(chorus, model, member, onClose = { relationshipsOpen = false }, onMessage = onMessage,
+            onOpenProfile = { relationshipsOpen = false; onOpenProfile?.invoke(it) })
+        return
+    }
 
     LaunchedEffect(dev?.session, memberId) {
         bundle = null
@@ -138,15 +146,9 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
     val canMessage = onMessage != null && !model.isPerson && member.archived.not() && model.active.any { it.id != memberId }
     fun message() = write("Could not start the message.") {
         val latest = chorus.model.value
-        val home = latest.spaces.firstOrNull { it.kind == "internal" } ?: throw IllegalStateException("Your internal space is not available yet.")
         val speaker = Reply.speaker(latest)?.takeIf { it.id != memberId } ?: latest.active.first { it.id != memberId }
-        val participants = garden.vayne.chorus.data.MemberDms.selected(latest.active, listOf(speaker.id, memberId), dev?.accountId.orEmpty())
-        val target = garden.vayne.chorus.data.MemberDms.existing(latest.channels, home.id, participants.map { it.id })?.id
-            ?: chorus.newId().also { id ->
-                chorus.create("channel.create", id, garden.vayne.chorus.data.MemberDms.payload(home.id, participants), scope = "space:${home.id}")
-            }
-        kotlinx.coroutines.withTimeout(15_000) { chorus.model.first { next -> next.channels.any { it.id == target && it.spaceId == home.id } } }
-        onMessage?.invoke(home.id, target)
+        val (space, channel) = garden.vayne.chorus.data.MemberDms.open(chorus, speaker, memberId)
+        onMessage?.invoke(space, channel)
     }
     val openThread = onOpenPost?.let { open -> { post: JournalPost -> open(post.id) } }
     // front time and "last fronted" from Body's named-front history when the account has one (D-080)
@@ -163,7 +165,8 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
                     else "Make a subsystem", onSubsystem = { subsystemOpen = true })
         }
         item(key = "details") {
-            ProfileDetails(member, model, spans, error, onTab = { tab = it }, onInside = { subsystemOpen = true }, onOpenProfile = onOpenProfile)
+            ProfileDetails(member, model, spans, error, onTab = { tab = it }, onInside = { subsystemOpen = true }, onOpenProfile = onOpenProfile,
+                onRelationships = { relationshipsOpen = true })
         }
         stickyHeader(key = "tabs") { ProfileTabRow(tab) { tab = it } }
         fun posts(shown: List<JournalPost>, empty: String, icon: Int) {
@@ -225,7 +228,7 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
                 }
             }
             else -> item(key = "about") {
-                ProfileAbout(chorus, model, member, bundle, spans, Modifier.animateItem())
+                ProfileAbout(chorus, model, member, bundle, spans, Modifier.animateItem()) { relationshipsOpen = true }
             }
         }
     }
@@ -331,7 +334,7 @@ internal fun ProfilePill(label: String, icon: Int?, filled: Boolean, description
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ProfileDetails(member: Member, model: Model, spans: List<FrontSpan>, error: String?, onTab: (String) -> Unit, onInside: () -> Unit,
-    onOpenProfile: ((String) -> Unit)?) {
+    onOpenProfile: ((String) -> Unit)?, onRelationships: () -> Unit) {
     val p = LocalChorusPalette.current
     val counts = ProfilePresentation.counts(model, member.id)
     Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 14.dp),
@@ -357,7 +360,7 @@ private fun ProfileDetails(member: Member, model: Model, spans: List<FrontSpan>,
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             ProfileStat(counts.posts, "post", "posts") { onTab("Posts") }
             ProfileStat(counts.entries, "entry", "entries") { onTab("Journal") }
-            ProfileStat(counts.relationships, "relationship", "relationships") { onTab("About") }
+            ProfileStat(counts.relationships, "relationship", "relationships") { onRelationships() }
         }
         if (member.description != null) RichBody(member.description, member.descriptionEntities,
             style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 21.sp))
@@ -488,7 +491,8 @@ private fun MediaRow(cells: List<Pair<JournalPost, ChatAttachment>>, chorus: Cho
 
 /** Everything that doesn't fit the header: fields, front time, counts and relationships. */
 @Composable
-private fun ProfileAbout(chorus: Chorus, model: Model, member: Member, bundle: ProfileBundle?, spans: List<FrontSpan>, modifier: Modifier) {
+private fun ProfileAbout(chorus: Chorus, model: Model, member: Member, bundle: ProfileBundle?, spans: List<FrontSpan>, modifier: Modifier,
+    onRelationships: () -> Unit) {
     val p = LocalChorusPalette.current
     val uri = androidx.compose.ui.platform.LocalUriHandler.current
     var linkError by remember { mutableStateOf<String?>(null) }
@@ -518,8 +522,6 @@ private fun ProfileAbout(chorus: Chorus, model: Model, member: Member, bundle: P
         }
         if (linkError != null) Text(linkError.orEmpty(), color = p.danger, style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(top = 8.dp))
-        Text("Relationships", color = p.ink, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleSmall,
-            modifier = Modifier.padding(top = 20.dp, bottom = 8.dp))
-        ProfileRelationships(chorus, model, member.id)
+        AboutRow("Relationships", LocalRelationships.rows(model, member.id).size.toString(), onRelationships)
     }
 }

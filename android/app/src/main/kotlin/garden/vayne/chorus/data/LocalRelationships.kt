@@ -6,6 +6,8 @@ data class RelationshipType(val id: String, val name: String, val inverseName: S
 data class MemberRelationship(val id: String, val fromMemberId: String, val toKind: String,
     val toId: String?, val toLabel: String?, val typeId: String, val note: String?, val visibility: String = "{\"mode\":\"private\"}")
 data class ProfileLink(val id: String, val type: String, val target: String, val note: String?)
+/** One line of F6.5: who is on the other end of [memberId]'s link, and how. [inside] is one of our own members. */
+data class RelationshipRow(val id: String, val otherId: String?, val name: String, val inside: Boolean, val type: String, val note: String?, val outgoing: Boolean)
 
 /** Account-local relationship rows and their profile labels. */
 object LocalRelationships {
@@ -33,6 +35,22 @@ object LocalRelationships {
         val toLabel = f.string("to_label")
         if (toId == null && toLabel == null) return@mapNotNull null
         MemberRelationship(id, from, kind, toId, toLabel, type, f.string("note"), f.optJSONObject("visibility")?.toString() ?: "{\"mode\":\"private\"}")
+    }
+
+    /** [memberId]'s links, ours first; [others] names members of other accounts by id (the server's targets). */
+    fun rows(model: Model, memberId: String, others: Map<String, String> = emptyMap()): List<RelationshipRow> {
+        val types = model.relationshipTypes.associateBy { it.id }
+        return model.relationships.mapNotNull { link ->
+            val outgoing = link.fromMemberId == memberId
+            if (!outgoing && !(link.toKind == "member" && link.toId == memberId)) return@mapNotNull null
+            val type = types[link.typeId]
+            val typeName = if (outgoing || type?.symmetric == true) type?.name ?: "Relationship"
+                else type?.inverseName ?: "${type?.name ?: "Relationship"} (incoming)"
+            val otherId = if (outgoing) link.toId.takeIf { link.toKind == "member" } else link.fromMemberId
+            val mine = otherId?.let { model.member(it) }
+            RelationshipRow(link.id, otherId, mine?.shownName ?: otherId?.let { others[it] } ?: link.toLabel ?: "Someone",
+                mine != null, typeName, link.note, outgoing)
+        }.sortedWith(compareByDescending<RelationshipRow> { it.inside }.thenBy { it.name.lowercase() }.thenBy { it.id })
     }
 
     fun forMember(model: Model, memberId: String): List<ProfileLink> {

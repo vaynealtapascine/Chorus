@@ -74,6 +74,11 @@ perf and review write-ups, are in `git show a9c3c2e:docs/NOTES.md`.
   (`GIT_AUTHOR_NAME="Vayne Altapascine"`, `GIT_AUTHOR_EMAIL=vaynealtapascine@proton.me`, same
   for committer), as `F:/DunBuild/chorus-commit.sh` does.
 
+- Tool-written Kotlin can lose its escapes: a file arrived with real newlines inside `'
+'` and `"
+"` literals (UI21 wave 6). Check `git diff` for a quote closed on the next line before building; bash heredocs also eat backslashes, write patch scripts with the editor tool.
+- The feed editor's live preview counts only our own posts (`FeedRules.matches`, Android); `feed_filter` is not in the FFI, and the grammar has no content-warning key, so F6.7's "Hide posts with content warnings" switch is not built (2026-11-09, UI21).
+
 ## Gate (`scripts/verify.py`)
 
 - `--changed` (stages a change can affect, D-118) is enough to commit; `--quick` while iterating;

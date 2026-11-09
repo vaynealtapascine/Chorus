@@ -1,5 +1,6 @@
 package garden.vayne.chorus.data
 
+import kotlinx.coroutines.flow.first
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -16,6 +17,17 @@ object MemberDms {
         require(ids.size >= 2 && ids.size == participants.size) { "Choose a sender and at least one other member." }
         return channels.filter { it.spaceId == spaceId && it.kind == "member_dm" &&
             it.memberIds.size == ids.size && it.memberIds.toSet() == ids }.minByOrNull { it.id }
+    }
+
+    /** The (space, channel) of the DM between [speaker] and [other], made if there is none yet. */
+    suspend fun open(chorus: Chorus, speaker: Member, other: String): Pair<String, String> {
+        val latest = chorus.model.value
+        val home = latest.spaces.firstOrNull { it.kind == "internal" } ?: throw IllegalStateException("Your internal space is not available yet.")
+        val participants = selected(latest.active, listOf(speaker.id, other), chorus.device?.accountId.orEmpty())
+        val target = existing(latest.channels, home.id, participants.map { it.id })?.id
+            ?: chorus.newId().also { id -> chorus.create("channel.create", id, payload(home.id, participants), scope = "space:${home.id}") }
+        kotlinx.coroutines.withTimeout(15_000) { chorus.model.first { next -> next.channels.any { it.id == target && it.spaceId == home.id } } }
+        return home.id to target
     }
 
     fun payload(spaceId: String, participants: List<Member>): JSONObject {

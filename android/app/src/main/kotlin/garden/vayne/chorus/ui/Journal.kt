@@ -515,6 +515,7 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
     }
 
     if (shown == "lists") {
+        BackHandler(active && shown == route && selectedListId.isEmpty()) { section = "timeline" }
         JournalLists(chorus, model, selectedListId, onSelect = { selectedListId = it },
             onTimeline = { section = "timeline" },
             onReply = { launchDraft("reply", it) },
@@ -589,7 +590,7 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
                 if (!model.isPerson) MenuRow("System board", R.drawable.ic_users) { feedMenu = false; section = "board" }
                 MenuRow("Saved", R.drawable.ic_bookmark) { feedMenu = false; section = "saved" }
                 MenuRow("Search saved posts", R.drawable.ic_search) { feedMenu = false; onSearch("Saved") }
-                MenuRow("Lists", R.drawable.ic_friends) { feedMenu = false; section = "lists" }
+                MenuRow("Lists", R.drawable.ic_folder) { feedMenu = false; section = "lists" }
             }
         }
         val journalTabs = tabIds.map { id -> id to (feedRowList.find { it.id == id }?.name ?: id) }

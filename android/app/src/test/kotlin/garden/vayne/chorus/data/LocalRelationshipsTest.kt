@@ -25,6 +25,11 @@ class LocalRelationshipsTest {
             ProfileLink("two", "Sibling", "Rin", null), ProfileLink("three", "Sibling", "Sam", null)),
             LocalRelationships.forMember(model, "kai").toSet())
         assertEquals("Mentee", LocalRelationships.forMember(model, "rin").first().type)
+        // F6.5 rows: our own members first, then people elsewhere (outside Chorus by their label)
+        val rows = LocalRelationships.rows(model, "kai")
+        assertEquals(listOf("Rin", "Rin", "Sam"), rows.map { it.name })
+        assertEquals(listOf(true, true, false), rows.map { it.inside })
+        assertEquals(listOf(true, false), rows.filter { it.inside }.map { it.outgoing })
     }
 
     @Test fun queuedPayloadsStayPrivateAndIdentifyTheTarget() {
