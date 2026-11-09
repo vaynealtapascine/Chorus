@@ -39,6 +39,9 @@ Reference images and node trees: `F:/DunBuild/figma-cache` (README there). Audit
 
 Then web, by the same waves, using each audit's *Web* section.
 
+**Order changed (owner, 2026-11-09):** after Android wave 7 ships, go to web parity (waves 1–7 on web,
+`ui21-web-plan.md`); Android wave 8 (the new approved features) comes after web parity.
+
 ## Owner questions (defaults in use)
 
 Asked and answered 2026-11-08: D-130–D-138 (and Q24). The CHORUS wordmark is outlined from the
