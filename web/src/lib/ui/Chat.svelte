@@ -43,6 +43,7 @@
   import { groups } from '../data';
   import { handleMentions, memberHandles, shownHandle } from '../handles';
   import { canEditSpace, privateSides, roleIn } from '../chat-manage';
+  import type { MemberChange } from '../many-members';
   import { selfMember, type MemberRow } from '../data';
   import { apiBase } from '../sync/device';
   import { apiFetch } from '../http';
@@ -986,6 +987,13 @@
       member_id: speaker,
     });
   }
+  // D-142: the same reaction as several of our members at once (in a private chat only its own)
+  const frontingIds = $derived(new Set(fronting.filter((e) => e.subject_type === 'member').map((e) => e.subject_id)));
+  function reactAs(m: MessageRow, emoji: string, change: MemberChange) {
+    for (const [on, ids] of [[true, change.add], [false, change.remove]] as const) {
+      for (const id of ids) sync.create(on ? 'reaction.add' : 'reaction.remove', scope, m.id, { target_type: 'message', target_id: m.id, emoji, member_id: id });
+    }
+  }
 
   // reading the channel moves the read mark forward (never backward, SYNC.md §5.5); only while
   // the page is actually visible, and again when it becomes visible
@@ -1399,6 +1407,7 @@
           heldUntil={held[m.id]?.until}
           oncancelheld={() => sync.cancelHeld(m.id)}
           onreact={(emoji, on) => react(m, emoji, on)}
+          reactors={ownSenders} fronting={frontingIds} onreactas={(emoji, change) => reactAs(m, emoji, change)}
           onjump={(t) => showMessage(t, m.id)}
           profileOf={(id) => profileHref(people.get(id), sync.accountId)}
           postOf={(id) => postsById.get(id)}

@@ -25,6 +25,9 @@
   import { journalCompose } from '../journal-compose.svelte';
   import { router } from '../router.svelte';
   import { memberHandles, shownHandle } from '../handles';
+  import { longPress } from '../long-press';
+  import { actors, frontingIds, type MemberChange } from '../many-members';
+  import ManyMembersSheet from './ManyMembersSheet.svelte';
 
   let { post, people, dark, reactions, speaker, compactEntry = false, onreply, onreact, projection, replyCount = 0, replyToNames, inThread = false, quote = null, social, saved, repostedBy, full = false, quoteCount = 0, onquotes, reactorNames }: {
     post: PostRow; people: Map<string, MemberRow>; dark: boolean;
@@ -33,7 +36,8 @@
     reactorNames?: Map<string, string>;
     /** In a feed: stop at 300 characters with Show more (an entry opens its thread). */
     compactEntry?: boolean;
-    onreply: () => void; onreact: (emoji: string, add: boolean) => void;
+    /** `member`: one of ours other than the speaker (D-142: held, several at once). */
+    onreply: () => void; onreact: (emoji: string, add: boolean, member?: string) => void;
     /** Replies to this post, shown on its Reply button. */
     replyCount?: number;
     /** Who the post it answers is by, when that post is on this device. */
@@ -93,6 +97,21 @@
   const audienceLabel = $derived(post.visibility.mode === 'private' ? 'Only your system' : post.visibility.mode === 'friends' ? 'Friends' : post.visibility.mode === 'followers' ? 'Followers' : post.visibility.mode === 'following' ? 'Following'
     : post.visibility.mode === 'buckets' ? projection ? bucketAudience(audienceOf(post.visibility), buckets(projection)) : 'Selected buckets' : 'Everyone on this server');
 
+  // D-142: hold (or right-click) the heart to heart as several of our members at once
+  const writers = $derived(projection && speaker ? actors(projection, sync.accountId) : []);
+  let many = $state(false);
+  let pendingMany = $state<MemberChange | null>(null);
+  function applyMany(change: MemberChange) {
+    many = false;
+    if (change.add.length && post.visibility.mode !== 'private' && !localStorage.getItem(NAME_NOTICE)) { pendingMany = change; disclose?.showModal(); return; }
+    for (const id of change.add) onreact(HEART, true, id);
+    for (const id of change.remove) onreact(HEART, false, id);
+  }
+  function holdHeart(e?: Event) {
+    if (writers.length < 2) return;
+    e?.preventDefault();
+    many = true;
+  }
   function heart() {
     if (!speaker) return;
     // readers of a shared post see the member's name with the reaction: say so once per device
@@ -100,9 +119,12 @@
     onreact(HEART, !hearted);
   }
   function confirmHeart() {
+    const change = pendingMany;
+    pendingMany = null;
     localStorage.setItem(NAME_NOTICE, '1');
     disclose?.close();
-    onreact(HEART, true);
+    if (change) applyMany(change);
+    else onreact(HEART, true);
   }
   function repost() {
     repostMenu = false;
@@ -199,6 +221,7 @@
             {#if repostMenu}<div class="menu" role="menu" use:outside={() => (repostMenu = false)}><button role="menuitem" disabled={!social} onclick={repost}><Icon name="repost" size={18} />{ownRepost ? 'Undo repost' : 'Repost'}</button><button role="menuitem" onclick={quotePost}><Icon name="edit" size={18} />Quote</button></div>{/if}
           </span>
           <button class="act heart" class:on={hearted} disabled={!speaker} title={reactedBy || undefined}
+            oncontextmenu={holdHeart} use:longPress={{ enabled: writers.length > 1, onpress: () => holdHeart() }}
             aria-label={speaker ? `${hearted ? 'Remove heart' : 'Heart'} as ${name(speaker)}${hearts.length ? ` (${hearts.length})` : ''}` : `${hearts.length} hearts`}
             onclick={heart}><Icon name={hearted ? 'heart-filled' : 'heart'} size={iconSize} />{#if hearts.length && !full}<span>{hearts.length}</span>{/if}</button>
           <button class="act" class:on={isSaved} aria-pressed={isSaved} disabled={!saved} aria-label={!saved ? 'Save (not available here)' : isSaved ? 'Remove from saved' : 'Save'} onclick={toggleSave}><Icon name={isSaved ? 'bookmark-filled' : 'bookmark'} size={iconSize} /></button>
@@ -224,13 +247,22 @@
 {#if editing}<PostEdit {post} onclose={() => (editing = false)} />{/if}
 {#if changingAudience && projection}<PostAudienceDialog {projection} postId={post.id} current={audienceOf(post.visibility)} onclose={() => (changingAudience = false)} />{/if}
 
-<dialog bind:this={disclose} class="disclose" aria-labelledby="disclose-{post.id}">
-  <h2 id="disclose-{post.id}">React as {speaker ? name(speaker) : 'this member'}?</h2>
-  <p>Post readers can see this member’s name with the reaction. You’ll only be asked once on this device.</p>
+{#if many}
+  <ManyMembersSheet title="Heart as…" subtitle={post.visibility.mode !== 'private' ? 'Post readers see each name' : null} members={writers}
+    had={new Set(hearts.filter((id) => writers.some((m) => m.id === id)))} fronting={frontingIds(projection!, sync.accountId)}
+    onclose={() => (many = false)} onapply={applyMany}>
+    {#snippet extra()}{#if reactedBy}<p class="also">{reactedBy}</p>{/if}{/snippet}
+  </ManyMembersSheet>
+{/if}
+
+<dialog bind:this={disclose} class="disclose" aria-labelledby="disclose-{post.id}" onclose={() => (pendingMany = null)}>
+  <h2 id="disclose-{post.id}">React as {pendingMany ? `${pendingMany.add.length} ${pendingMany.add.length === 1 ? 'member' : 'members'}` : speaker ? name(speaker) : 'this member'}?</h2>
+  <p>Post readers can see {pendingMany ? 'each member’s' : 'this member’s'} name with the reaction. You’ll only be asked once on this device.</p>
   <div class="dialog-actions"><button onclick={() => disclose?.close()}>Cancel</button><button class="primary" onclick={confirmHeart}>Heart</button></div>
 </dialog>
 
 <style>
+  .also { margin: 0 4px; color: var(--ink-3); font-size: 13px; line-height: 18px; }
   .post { padding: 10px 16px; background: var(--bg); border-bottom: 1px solid var(--line); min-width: 0; }
   .post:not(.full) { cursor: pointer; }
   .post:not(.full):hover { background: color-mix(in srgb, var(--surface) 60%, var(--bg)); }

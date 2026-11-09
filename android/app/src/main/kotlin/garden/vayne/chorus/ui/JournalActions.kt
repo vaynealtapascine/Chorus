@@ -52,7 +52,8 @@ private const val NAME_NOTICE = "heart_name_notice"
  * (Figma F6.3: 18 dp icons, 13 sp counts), so the columns line up from post to post whatever the
  * counts are; each target reaches 8 dp past its icon. A heart is one tap; the contextual identity
  * disclosure appears only the first time on this device, and only when other accounts can read
- * the post. Long-press the heart to see who reacted. The row is the same on every post (D-127):
+ * the post. Long-press the heart to heart as several of our [members] at once (D-142), or, with
+ * one member or none, to see who reacted. The row is the same on every post (D-127):
  * an action whose callback is null is shown disabled, never hidden, so the columns never move. */
 @Composable
 internal fun JournalActions(reactions: List<PostReaction>, member: Member?, enabled: Boolean = true,
@@ -60,12 +61,16 @@ internal fun JournalActions(reactions: List<PostReaction>, member: Member?, enab
     reposts: Int = 0, reposted: Boolean = false, onRepost: (() -> Unit)? = null,
     onUndoRepost: (() -> Unit)? = null, onQuote: (() -> Unit)? = null,
     saved: Boolean = false, onBookmark: (() -> Unit)? = null, onShare: (() -> Unit)? = null,
-    readersSeeName: Boolean = true, large: Boolean = false, onCopyLink: (() -> Unit)? = null) {
+    readersSeeName: Boolean = true, large: Boolean = false, onCopyLink: (() -> Unit)? = null,
+    members: List<Member> = emptyList(), here: Set<String> = emptySet(), onReactAs: ((ManyMembers.Change) -> Unit)? = null) {
     val p = LocalChorusPalette.current
     val notice = LocalContext.current.getSharedPreferences("chorus.journal", 0)
     var who by remember { mutableStateOf(false) }
     var disclose by remember { mutableStateOf(false) }
     var repostMenu by remember { mutableStateOf(false) }
+    var many by remember { mutableStateOf(false) }
+    var pending by remember { mutableStateOf<ManyMembers.Change?>(null) }
+    val canMany = onReactAs != null && members.size > 1
     val hearts = reactions.count { it.emoji == PostReactions.HEART }
     val selected = member != null && reactions.any { it.emoji == PostReactions.HEART && it.memberId == member.id }
     val canReact = member != null && onReact != null
@@ -110,7 +115,8 @@ internal fun JournalActions(reactions: List<PostReaction>, member: Member?, enab
             if (canReact) "${if (selected) "Remove heart" else "Heart"} as ${member!!.shownName}; visible to post readers"
             else "$hearts ${if (hearts == 1) "heart" else "hearts"}", large, enabled = (enabled && canReact) || hearts > 0,
             onClick = { if (canReact) heart() else who = true },
-            onLongClick = { who = true }.takeIf { hearts > 0 }, longClickLabel = "Show who reacted") {
+            onLongClick = if (canMany && enabled) ({ many = true }) else ({ who = true }).takeIf { hearts > 0 },
+            longClickLabel = if (canMany && enabled) "Heart as several members" else "Show who reacted") {
             PopIcon(if (selected) R.drawable.ic_heart_filled else R.drawable.ic_heart, selected, tint, icon, burst = true)
         }
     }
@@ -148,6 +154,24 @@ internal fun JournalActions(reactions: List<PostReaction>, member: Member?, enab
             notice.edit().putBoolean(NAME_NOTICE, true).apply()
             disclose = false; onReact?.invoke()
         }, { disclose = false }, enabled = enabled, icon = R.drawable.ic_heart)
+    if (many) {
+        val ids = members.mapTo(HashSet()) { it.id }
+        val had = reactions.filter { it.emoji == PostReactions.HEART && it.memberId in ids }.mapTo(HashSet()) { it.memberId }
+        ManyMembersDrawer("Heart as…", if (readersSeeName) "Post readers see each name" else null, members, had, here,
+            { many = false }, { change ->
+                many = false
+                if (change.add.isNotEmpty() && readersSeeName && !notice.getBoolean(NAME_NOTICE, false)) pending = change
+                else onReactAs?.invoke(change)
+            }) {
+            if (reactions.isNotEmpty()) MenuRow("Who reacted", R.drawable.ic_heart,
+                "${reactions.size} ${if (reactions.size == 1) "reaction" else "reactions"}") { many = false; who = true }
+        }
+    }
+    pending?.let { change -> ConfirmDrawer("React as ${change.add.size} ${if (change.add.size == 1) "member" else "members"}?",
+        "Post readers can see each member’s name with the reaction. You’ll only be asked once on this device.", "Heart", {
+            notice.edit().putBoolean(NAME_NOTICE, true).apply()
+            pending = null; onReactAs?.invoke(change)
+        }, { pending = null }, enabled = enabled, icon = R.drawable.ic_heart) }
     MenuDrawer(who, { who = false }, "Reactions", "${reactions.size} ${if (reactions.size == 1) "reaction" else "reactions"}") {
         for (r in reactions) Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -253,6 +277,8 @@ internal fun JournalPostActions(post: JournalPost, model: Model, chorus: Chorus,
     var error by remember(post.id) { mutableStateOf<String?>(null) }
     val account = chorus.device?.accountId
     val member = Reply.speaker(model)?.takeIf { it.createdByAccountId == null || it.createdByAccountId == account }
+    // D-142: any of our members can heart it too, held down
+    val ours = remember(model.members, account) { ChatCompose.members(model, account.orEmpty()) }
     fun write(failure: String, block: suspend () -> Unit) {
         if (busy) return
         busy = true; error = null
@@ -297,7 +323,13 @@ internal fun JournalPostActions(post: JournalPost, model: Model, chorus: Chorus,
                 chorus.create(if (selected) "post.unreact" else "post.react", post.id, PostReactions.payload(post.id, who.id))
                 onReacted?.invoke(who)
             }
-        } }, readersSeeName = foreign || post.visibility != "private", large = large)
+        } }, readersSeeName = foreign || post.visibility != "private", large = large,
+        members = ours, here = model.current.filter { it.subjectType == "member" }.mapTo(HashSet()) { it.subjectId },
+        onReactAs = { change -> write("Could not save the reactions. Try again.") {
+            for (id in change.add) chorus.create("post.react", post.id, PostReactions.payload(post.id, id))
+            for (id in change.remove) chorus.create("post.unreact", post.id, PostReactions.payload(post.id, id))
+            for (id in change.add + change.remove) model.member(id)?.let { onReacted?.invoke(it) }
+        } })
     if (error != null) Text(error.orEmpty(), color = p.danger, style = MaterialTheme.typography.bodySmall)
 }
 

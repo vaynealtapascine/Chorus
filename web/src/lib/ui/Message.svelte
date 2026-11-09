@@ -21,6 +21,8 @@
   import { longPress } from '../long-press';
   import { linkTo } from '../share-links';
   import LinkEmbeds from './LinkEmbeds.svelte';
+  import ManyMembersSheet from './ManyMembersSheet.svelte';
+  import type { MemberChange } from '../many-members';
 
   export type Quote = TextRange;
   export type Forwarded = SnapshotItem;
@@ -52,6 +54,9 @@
     reacts,
     speaker,
     onreact,
+    reactors = [],
+    fronting = new Set(),
+    onreactas,
     emojiById,
     cwAutoExpand,
     heldUntil,
@@ -116,6 +121,10 @@
     reacts: Map<string, string[]> | undefined;
     speaker: string | null;
     onreact: (emoji: string, on: boolean) => void;
+    /** D-142: our members who may react here; with two or more, holding a reaction chooses who. */
+    reactors?: MemberRow[];
+    fronting?: Set<string>;
+    onreactas?: (emoji: string, change: MemberChange) => void;
     emojiById: Map<string, EmojiRow>;
     cwAutoExpand: boolean;
   } = $props();
@@ -186,6 +195,16 @@
   // a right click or a held finger opens the same menu where it is (owner, 2026-11-06); links and
   // media keep the browser's own, and Shift + right click always does
   const OWN_MENU = 'a, img, video, audio, input, textarea';
+  // D-142: a held (or right-clicked) reaction chooses which of our members react with it
+  const canMany = $derived(!readOnly && !heldUntil && !!onreactas && reactors.length > 1);
+  let manyEmoji = $state<string | null>(null);
+  function holdReaction(emoji: string, e?: Event) {
+    if (!canMany) return;
+    e?.preventDefault();
+    e?.stopPropagation();
+    palette = false;
+    manyEmoji = emoji;
+  }
   function openActionsAt(x: number, y: number) {
     if (readOnly || heldUntil || !actionMenu) return;
     anchor = { left: x, bottom: y };
@@ -245,7 +264,7 @@
   {/if}
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
   <div class="msg" class:cont class:self={out} class:pinned={m.pinned} class:selected data-message-id={m.id} onclick={tapBubble}
-    oncontextmenu={rightClick} use:longPress={{ enabled: !readOnly && !heldUntil, skip: OWN_MENU, onpress: ({ x, y }) => openActionsAt(x, y) }}>
+    oncontextmenu={rightClick} use:longPress={{ enabled: !readOnly && !heldUntil, skip: canMany ? `${OWN_MENU}, .react, .palette button` : OWN_MENU, onpress: ({ x, y }) => openActionsAt(x, y) }}>
     {#if !cont || selecting}
       <div class="head">
         {#if selecting}<button class="select-toggle" aria-label={selected ? 'Deselect message' : 'Select message'} aria-pressed={selected} onclick={onselect}>{selected ? '☑' : '□'}</button>{/if}
@@ -347,7 +366,8 @@
         <div class="reacts">
           {#each [...reacts] as [emoji, who] (emoji)}
             {@const mine = !!speaker && who.includes(speaker)}
-            <button class="react" class:mine disabled={readOnly} onclick={() => onreact(emoji, !mine)} title={who.map(nameOf).join(', ')}>
+            <button class="react" class:mine disabled={readOnly} onclick={() => onreact(emoji, !mine)} title={who.map(nameOf).join(', ')}
+              oncontextmenu={(e) => holdReaction(emoji, e)} use:longPress={{ enabled: canMany, onpress: () => holdReaction(emoji) }}>
               {#if emoji.startsWith('custom:') && emojiById.has(emoji.slice(7))}
                 {@const custom = emojiById.get(emoji.slice(7))!}
                 <EmojiImage hash={custom.blob_hash} name={custom.name} />
@@ -376,10 +396,12 @@
     {#if palette}
       <div class="palette" role="listbox" aria-label="React">
         {#each PALETTE as e (e)}
-          <button onclick={() => { onreact(e, true); palette = false; }}>{e}</button>
+          <button onclick={() => { onreact(e, true); palette = false; }} oncontextmenu={(ev) => holdReaction(e, ev)}
+            use:longPress={{ enabled: canMany, onpress: () => holdReaction(e) }}>{e}</button>
         {/each}
         {#each [...emojiById.values()].filter((e) => !e.deleted) as e (e.id)}
-          <button onclick={() => { onreact(`custom:${e.id}`, true); palette = false; }} title={`:${e.name}:`}><EmojiImage hash={e.blob_hash} name={e.name} /></button>
+          <button onclick={() => { onreact(`custom:${e.id}`, true); palette = false; }} title={`:${e.name}:`}
+            oncontextmenu={(ev) => holdReaction(`custom:${e.id}`, ev)} use:longPress={{ enabled: canMany, onpress: () => holdReaction(`custom:${e.id}`) }}><EmojiImage hash={e.blob_hash} name={e.name} /></button>
         {/each}
       </div>
     {/if}
@@ -421,6 +443,17 @@
   </div>
 {/if}
 
+{#if manyEmoji}
+  {@const emoji = manyEmoji}
+  {@const all = reacts?.get(emoji) ?? []}
+  {@const others = all.filter((id) => !reactors.some((r) => r.id === id))}
+  <ManyMembersSheet title="React {emoji.startsWith('custom:') ? `:${emojiById.get(emoji.slice(7))?.name ?? 'emoji'}:` : emoji} as…" members={reactors}
+    had={new Set(all.filter((id) => reactors.some((r) => r.id === id)))} {fronting}
+    onclose={() => (manyEmoji = null)} onapply={(change) => { const picked = emoji; manyEmoji = null; onreactas?.(picked, change); }}>
+    {#snippet extra()}{#if others.length}<p class="also">Also reacted: {others.map(nameOf).join(', ')}</p>{/if}{/snippet}
+  </ManyMembersSheet>
+{/if}
+
 <!-- beside the bubble: "edited" always, the time on hover where there is one (owner, 2026-11-02) -->
 {#snippet aside()}
   <span class="aside" class:bare={!m.edited}>
@@ -430,6 +463,7 @@
 {/snippet}
 
 <style>
+  .also { margin: 0 4px; color: var(--ink-3); font-size: 13px; line-height: 18px; }
   /* Bubbles (Figma F5.21): others on the left with their face beside the last of a run, the one
      speaking here on the right; names open a run, time and a sent tick close each bubble. */
   .msg-row { position: relative; display: flex; align-items: flex-end; gap: 8px; padding: 2px 64px 2px 0; min-width: 0; touch-action: pan-y pinch-zoom; }

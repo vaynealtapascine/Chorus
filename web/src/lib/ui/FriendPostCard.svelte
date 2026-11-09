@@ -63,7 +63,7 @@
         <RemotePostPoll {projection} {post} member={speaker} />
         {#if tags}<p class="tags">{tags}</p>{/if}
       {/if}
-      <RemotePostActions {post} {speaker} {speakerName} />
+      <RemotePostActions {post} {speaker} {speakerName} {projection} />
     </div>
   </div>
 </article>

@@ -3,7 +3,10 @@
   // our own (D-127): reply, repost/quote, heart, save, share. The post isn't in this replica, so it
   // can't be reposted or saved (shown disabled); it can be quoted, and the quote borrows its audience.
   import { postReaction } from '../posts';
-  import { sync } from '../sync/client';
+  import { sync, type Projection } from '../sync/client';
+  import { longPress } from '../long-press';
+  import { actors, frontingIds, type MemberChange } from '../many-members';
+  import ManyMembersSheet from './ManyMembersSheet.svelte';
   import { router } from '../router.svelte';
   import { shareText } from '../journal-social';
   import { withHeart } from '../friends-feed';
@@ -12,8 +15,10 @@
   import type { ThreadPost } from '../post-threads';
   import Icon from './Icon.svelte';
 
-  let { post, speaker, speakerName, onreply }: {
+  let { post, speaker, speakerName, onreply, projection }: {
     post: ThreadPost; speaker: string | null; speakerName: string;
+    /** Our members, for hearting as several at once (D-142). */
+    projection?: Projection;
     /** What Reply does; it opens the post by default. */
     onreply?: () => void;
   } = $props();
@@ -49,15 +54,34 @@
     if (!hearted && !localStorage.getItem(NAME_NOTICE)) { disclose?.showModal(); return; }
     react(!hearted);
   }
-  function react(on: boolean) {
-    if (!speaker) return;
-    sync.create(on ? 'post.react' : 'post.unreact', sync.accountScope, post.id, postReaction(post.id, '💜', speaker));
-    answered = withHeart(shown, speaker, speakerName, on);
+  function react(on: boolean, as = speaker, asName = speakerName) {
+    if (!as) return;
+    sync.create(on ? 'post.react' : 'post.unreact', sync.accountScope, post.id, postReaction(post.id, '💜', as));
+    answered = withHeart(answered ?? post, as, asName, on);
+  }
+  // D-142: hold (or right-click) the heart to heart as several of our members at once
+  const writers = $derived(projection && speaker ? actors(projection, sync.accountId) : []);
+  let many = $state(false);
+  let pendingMany = $state<MemberChange | null>(null);
+  function applyMany(change: MemberChange) {
+    many = false;
+    if (change.add.length && !localStorage.getItem(NAME_NOTICE)) { pendingMany = change; disclose?.showModal(); return; }
+    const nameOf = (id: string) => { const m = writers.find((w) => w.id === id); return m?.display_name ?? m?.name ?? 'Someone'; };
+    for (const id of change.add) react(true, id, nameOf(id));
+    for (const id of change.remove) react(false, id, nameOf(id));
+  }
+  function holdHeart(e?: Event) {
+    if (writers.length < 2) return;
+    e?.preventDefault();
+    many = true;
   }
   function confirmHeart() {
+    const change = pendingMany;
+    pendingMany = null;
     localStorage.setItem(NAME_NOTICE, '1');
     disclose?.close();
-    react(true);
+    if (change) applyMany(change);
+    else react(true);
   }
   async function shareOut() {
     if (!share) return;
@@ -76,6 +100,7 @@
     {#if repostMenu}<div class="menu" role="menu" use:outside><button role="menuitem" disabled title="Only your own system’s posts can be reposted"><Icon name="repost" size={18} />Repost</button><button role="menuitem" onclick={quote}><Icon name="edit" size={18} />Quote</button></div>{/if}
   </span>
   <button class="act heart" class:on={hearted} disabled={!speaker} title={hearts.map((r) => r.member_name).join(' · ') || undefined}
+    oncontextmenu={holdHeart} use:longPress={{ enabled: writers.length > 1, onpress: () => holdHeart() }}
     aria-label={speaker ? `${hearted ? 'Remove heart' : 'Heart'} as ${speakerName}${hearts.length ? ` (${hearts.length})` : ''}` : `${hearts.length} hearts`}
     onclick={heart}><Icon name={hearted ? 'heart-filled' : 'heart'} size={18} />{#if hearts.length}<span>{hearts.length}</span>{/if}</button>
   <button class="act" aria-label="Save (only your system’s posts)" disabled><Icon name="bookmark" size={18} /></button>
@@ -83,13 +108,22 @@
   {#if notice}<span class="notice" role="status">{notice}</span>{/if}
 </div>
 
-<dialog bind:this={disclose} class="disclose" aria-labelledby="heart-disclose-{post.id}">
-  <h2 id="heart-disclose-{post.id}">React as {speakerName}?</h2>
-  <p>Post readers can see this member’s name with the reaction. You’ll only be asked once on this device.</p>
+{#if many && projection}
+  <ManyMembersSheet title="Heart as…" subtitle="Post readers see each name" members={writers}
+    had={new Set(hearts.map((r) => r.member_id).filter((id): id is string => !!id && writers.some((m) => m.id === id)))} fronting={frontingIds(projection, sync.accountId)}
+    onclose={() => (many = false)} onapply={applyMany}>
+    {#snippet extra()}{#if hearts.length}<p class="also">{hearts.map((r) => r.member_name).join(' · ')}</p>{/if}{/snippet}
+  </ManyMembersSheet>
+{/if}
+
+<dialog bind:this={disclose} class="disclose" aria-labelledby="heart-disclose-{post.id}" onclose={() => (pendingMany = null)}>
+  <h2 id="heart-disclose-{post.id}">React as {pendingMany ? `${pendingMany.add.length} ${pendingMany.add.length === 1 ? 'member' : 'members'}` : speakerName}?</h2>
+  <p>Post readers can see {pendingMany ? 'each member’s' : 'this member’s'} name with the reaction. You’ll only be asked once on this device.</p>
   <div class="dialog-actions"><button onclick={() => disclose?.close()}>Cancel</button><button class="primary" onclick={confirmHeart}>Heart</button></div>
 </dialog>
 
 <style>
+  .also { margin: 0 4px; color: var(--ink-3); font-size: 13px; line-height: 18px; }
   .actions { display: flex; align-items: center; margin: 0 -8px; }
   .actions > .act, .actions > .pop-anchor { flex: 1; }
   .pop-anchor { position: relative; display: inline-flex; }

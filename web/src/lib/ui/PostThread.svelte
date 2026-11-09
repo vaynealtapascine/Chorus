@@ -90,9 +90,9 @@
     if (history.length > 1) history.back();
     else router.go('/journal');
   }
-  function react(postId: string, emoji: string, add: boolean) {
-    if (!speaker) return;
-    sync.create(add ? 'post.react' : 'post.unreact', sync.accountScope, postId, postReaction(postId, emoji, speaker));
+  function react(postId: string, emoji: string, add: boolean, as = speaker) {
+    if (!as) return;
+    sync.create(add ? 'post.react' : 'post.unreact', sync.accountScope, postId, postReaction(postId, emoji, as));
   }
   // a click anywhere on a row opens it, except on its own links and controls
   function rowClick(event: MouseEvent, next: string) {
@@ -140,7 +140,7 @@
       {:else}
         {@render content(item, post, context)}
       {/if}
-      <RemotePostActions post={{ ...post, reply_count: item.replyCount }} {speaker} speakerName={speaker ? name(speaker) : ''}
+      <RemotePostActions post={{ ...post, reply_count: item.replyCount }} {projection} {speaker} speakerName={speaker ? name(speaker) : ''}
         onreply={item.id === id ? focusReply : undefined} />
     </div>
   </article>
@@ -159,7 +159,7 @@
         <!-- own parents keep every action, as own replies do -->
         {#if parent.local}
           <div class="own-parent"><PostCard {projection} post={parent.local} {people} {dark} reactions={merged.reactions(parent.id)} reactorNames={merged.names} {speaker} {social} {saved} inThread
-            quote={quoteFor(parent)} replyCount={parent.replyCount} onreply={() => open(parent.id)} onreact={(emoji, add) => react(parent.id, emoji, add)} /></div>
+            quote={quoteFor(parent)} replyCount={parent.replyCount} onreply={() => open(parent.id)} onreact={(emoji, add, as) => react(parent.id, emoji, add, as)} /></div>
         {:else}{@render row(parent, true, true)}{/if}
       {/each}
     </div>
@@ -171,7 +171,7 @@
         quoteCount={quotes.length} onquotes={() => (showQuotes = true)}
         quote={quoteView(own.quote_post_id, postById, name, detail?.quoted ?? (own.quote_post_id && !postById.has(own.quote_post_id) ? remotePost(own.quote_post_id) : null))}
         replyCount={replies.length} onreply={focusReply}
-        onreact={(emoji, add) => react(own.id, emoji, add)} />
+        onreact={(emoji, add, as) => react(own.id, emoji, add, as)} />
     </div>
   {:else if detail}
     <div class="focus remote" class:joined={ancestors.length > 0}>
@@ -204,7 +204,7 @@
         {#if reply.local}
           <PostCard {projection} post={reply.local} {people} {dark} reactions={merged.reactions(reply.id)} reactorNames={merged.names} {speaker} {social} {saved} inThread={listed === replies}
             quote={quoteFor(reply)}
-            replyCount={reply.replyCount} onreply={() => open(reply.id)} onreact={(emoji, add) => react(reply.id, emoji, add)} />
+            replyCount={reply.replyCount} onreply={() => open(reply.id)} onreact={(emoji, add, as) => react(reply.id, emoji, add, as)} />
         {:else}
           {@render row(reply, false, false)}
         {/if}

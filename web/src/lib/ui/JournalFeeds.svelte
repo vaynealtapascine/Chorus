@@ -114,8 +114,8 @@
       selected = id;
     } catch (cause) { saveError = cause instanceof Error ? cause.message : String(cause); }
   }
-  function react(post: PostRow, emoji: string, add: boolean) {
-    if (speaker) sync.create(add ? 'post.react' : 'post.unreact', sync.accountScope, post.id, postReaction(post.id, emoji, speaker));
+  function react(post: PostRow, emoji: string, add: boolean, as = speaker) {
+    if (as) sync.create(add ? 'post.react' : 'post.unreact', sync.accountScope, post.id, postReaction(post.id, emoji, as));
   }
   async function copyQuery() {
     try { await navigator.clipboard.writeText(query); copied = true; } catch { copied = false; }
@@ -161,7 +161,7 @@
     <div class="preview"><h2>Preview · newest {preview.rows.length} matches</h2>
       {#each preview.rows as result (`${result.item.kind}:${result.id}`)}
         {#if result.post}
-          <PostCard {projection} post={result.post} quote={quoteView(result.post.quote_post_id, postById, memberName)} {people} {dark} reactions={reacts.get(result.post.id) ?? new Map()} {speaker} {social} {saved} replyCount={social.replies.get(result.post.id) ?? 0} onreply={() => router.go(`/journal/post/${encodeURIComponent(result.post!.id)}`)} onreact={(emoji, add) => react(result.post!, emoji, add)} />
+          <PostCard {projection} post={result.post} quote={quoteView(result.post.quote_post_id, postById, memberName)} {people} {dark} reactions={reacts.get(result.post.id) ?? new Map()} {speaker} {social} {saved} replyCount={social.replies.get(result.post.id) ?? 0} onreply={() => router.go(`/journal/post/${encodeURIComponent(result.post!.id)}`)} onreact={(emoji, add, as) => react(result.post!, emoji, add, as)} />
         {:else if result.message}
           <article class="message"><p class="muted">#{result.channelName} · {new Date(result.occurred_at).toLocaleString()}</p>
             {#if result.message.cw}<details><summary>Content warning: {result.message.cw}</summary><p><RichText text={result.message.text} entities={result.message.entities} /></p>{#each result.message.attachments as attachment (attachment.id)}<AttachmentView {attachment} />{/each}</details>

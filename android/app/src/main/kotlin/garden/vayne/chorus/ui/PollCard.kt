@@ -2,7 +2,9 @@ package garden.vayne.chorus.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.Chorus
+import garden.vayne.chorus.data.ManyMembers
 import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.Poll
 import garden.vayne.chorus.data.PollTally
@@ -50,8 +53,10 @@ import kotlinx.coroutines.launch
  * A poll under a message or post (D-081). Totals are the server's counts-only tally; the acting
  * member's own choice shows at once. Votes go to this account's own scope. Results appear once the
  * voter has chosen (F6.9/F6.10): before that the options are plain buttons. [internal] polls (our
- * system's own posts) say how many of our members voted and let the voter be changed.
+ * system's own posts) say how many of our members voted and let the voter be changed. Holding an
+ * option chooses which of our members pick it, all at once (D-142).
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun PollCard(chorus: Chorus, model: Model, parentId: String, member: String?,
     definition: Poll? = model.polls.polls[parentId], remoteTally: PollTally? = null, internal: Boolean = false) {
@@ -65,6 +70,7 @@ fun PollCard(chorus: Chorus, model: Model, parentId: String, member: String?,
     var picked by rememberSaveable(parentId) { mutableStateOf<String?>(null) }
     val voter = (if (internal) picked?.takeIf { id -> ours.any { it.id == id } } else null) ?: member
     var changing by remember { mutableStateOf(false) }
+    var holding by remember { mutableStateOf<String?>(null) }
     val mine = model.polls.choices(parentId, voter)
     val voters = (tally?.voters ?: 0L).coerceAtLeast(1L)
     val showResults = tally != null && (mine.isNotEmpty() || voter == null)
@@ -97,7 +103,8 @@ fun PollCard(chorus: Chorus, model: Model, parentId: String, member: String?,
                 .border(1.dp, if (showResults) (if (on) p.accent else p.line) else p.accent.copy(alpha = .6f), rowShape)
                 .background(p.surface)
                 .drawBehind { if (showResults) drawRect(bar, size = Size(size.width * n / voters, size.height)) }
-                .clickable(enabled = voter != null, role = Role.Checkbox) { cast(Polls.toggled(poll, mine, option.id)) }
+                .combinedClickable(enabled = voter != null, role = Role.Checkbox, onClick = { cast(Polls.toggled(poll, mine, option.id)) },
+                    onLongClick = { holding = option.id }.takeIf { ours.size > 1 }, onLongClickLabel = "Choose who picks this")
                 .semantics { selected = on; contentDescription = "${option.text}${if (showResults) ", $percent%" else ""}" },
                 contentAlignment = Alignment.CenterStart) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically,
@@ -114,6 +121,17 @@ fun PollCard(chorus: Chorus, model: Model, parentId: String, member: String?,
         val line = if (internal && ours.size > 1) "${Polls.voted(model.polls, parentId, ours)} of ${ours.size} voted"
             else tally?.let { "${it.voters} ${if (it.voters == 1L) "vote" else "votes"}" }
         line?.let { Text(it, color = p.ink3, fontSize = 12.sp) }
+    }
+    poll.options.find { it.id == holding }?.let { option ->
+        val had = ours.filter { option.id in model.polls.choices(parentId, it.id) }.mapTo(HashSet()) { it.id }
+        val text = { ids: List<String> -> ids.mapNotNull { id -> poll.options.find { it.id == id }?.text }.joinToString(", ") }
+        ManyMembersDrawer("Who picks “${option.text}”?", if (poll.multiple) "Their other choices stay" else "Moves each vote here",
+            ours, had, model.current.filter { it.subjectType == "member" }.mapTo(HashSet()) { it.subjectId }, { holding = null },
+            { change ->
+                holding = null
+                val votes = ManyMembers.votes(poll, model.polls, parentId, ours.map { it.id }, option.id, had + change.add - change.remove.toSet())
+                actions.launch { for ((who, choices) in votes) runCatching { chorus.create("poll.vote", parentId, Polls.votePayload(who, choices)) } }
+            }, lines = { m -> (model.polls.choices(parentId, m.id) - option.id).takeIf { it.isNotEmpty() }?.let { "Voted ${text(it)}" } })
     }
 }
 

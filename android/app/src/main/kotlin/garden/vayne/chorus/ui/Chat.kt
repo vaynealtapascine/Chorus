@@ -151,6 +151,7 @@ import kotlinx.coroutines.withContext
 import kotlin.coroutines.cancellation.CancellationException
 import garden.vayne.chorus.data.ChatReaction
 import garden.vayne.chorus.data.ChatReactions
+import garden.vayne.chorus.data.ManyMembers
 import garden.vayne.chorus.data.ChatForward
 import garden.vayne.chorus.data.AccountPrefs
 import garden.vayne.chorus.data.ChatOrganize
@@ -385,6 +386,16 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 chorus.create(if (on) "reaction.add" else "reaction.remove", message.id,
                     ChatReactions.payload(message.id, emoji, member), scope = "space:${home.id}")
             } catch (e: Exception) { error = e.message ?: "Could not save the reaction." }
+        }
+    }
+    // D-142: the same reaction as several members at once, each its own element
+    fun reactAs(message: ChatMessage, emoji: String, change: ManyMembers.Change) {
+        val home = space ?: return
+        actions.launch {
+            try {
+                for (id in change.add) chorus.create("reaction.add", message.id, ChatReactions.payload(message.id, emoji, id), scope = "space:${home.id}")
+                for (id in change.remove) chorus.create("reaction.remove", message.id, ChatReactions.payload(message.id, emoji, id), scope = "space:${home.id}")
+            } catch (e: Exception) { error = e.message ?: "Could not save the reactions." }
         }
     }
     fun setChannelFront(frontId: String) {
@@ -880,6 +891,10 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             .filter { paneSides?.mine.isNullOrEmpty() || it in paneSides!!.mine }.toSet()
         ChatPresentation.aligned(model, channel?.id?.let { ChatSpeaker.speakers(model, it, writable) }.orEmpty() + listOfNotNull(replySpeakerId))
     }
+    // D-142: who may react here as well as the speaker, held down (a private chat: only its own members)
+    val reactors = remember(model, paneSides) {
+        ChatCompose.members(model, chorus.device?.accountId.orEmpty()).filter { paneSides?.mine.isNullOrEmpty() || it.id in paneSides!!.mine }
+    }
     // a DM with someone you follow: who's fronting there, as far as they share it (FriendFronts)
     val dmPartner = space?.takeIf { it.kind == "dm" }?.let { s -> directory[s.id]?.accounts?.firstOrNull { it.id != chorus.device?.accountId } }
     fun infoTitle(c: garden.vayne.chorus.data.ChatChannel, s: ChatSpace): String = when {
@@ -1140,6 +1155,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     onDelete = if (chorus.device?.accountId?.let { it == message.accountId } == true &&
                         heldMessages[message.id] == null) ({ deleting = message }) else null,
                     onReact = { emoji, on -> react(message, emoji, on) },
+                    reactors = reactors, here = here.toSet(), onReactAs = { emoji, change -> reactAs(message, emoji, change) },
                     showSender = groupStart, showAvatar = groupEnd, onStage = { stageSelection = listOf(message.id); staging = true },
                     quote = message.replyTo?.let { id -> messages.find { it.id == id } ?: everywhere[id] },
                     quoteElsewhere = message.replyTo?.let { id -> everywhere[id]?.takeIf { it.channelId != message.channelId } }
@@ -1762,6 +1778,9 @@ internal fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors:
     aligned: Set<String>? = null,
     onReplyPrivately: (() -> Unit)?, onEdit: (() -> Unit)?,
     reactions: List<ChatReaction> = emptyList(), onReact: ((String, Boolean) -> Unit)? = null,
+    /** D-142: our members who may react here; with two or more, holding a reaction chooses who. */
+    reactors: List<Member> = emptyList(), here: Set<String> = emptySet(),
+    onReactAs: ((String, ManyMembers.Change) -> Unit)? = null,
     onForward: (() -> Unit)? = null, onDelete: (() -> Unit)? = null, onPin: (() -> Unit)? = null,
     thread: ThreadSummary? = null, onThread: (() -> Unit)? = null, interactive: Boolean = true,
     showSender: Boolean = true, showAvatar: Boolean = true, quote: ChatMessage? = null, onStage: () -> Unit,
@@ -1820,6 +1839,10 @@ internal fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors:
         if (add) hearts++
     }) else null
     val openActions = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); menuOpen = true }
+    var manyEmoji by remember(message.id) { mutableStateOf<String?>(null) }
+    val holdReaction: ((String) -> Unit)? = if (settled && onReactAs != null && reactors.size > 1) ({ emoji ->
+        haptic.performHapticFeedback(HapticFeedbackType.LongPress); menuOpen = false; manyEmoji = emoji
+    }) else null
     Box(Modifier.fillMaxWidth().swipeToReply(swipe)) {
     if (swipe.active) ReplySwipeHint(swipe)
     Row(Modifier.fillMaxWidth().graphicsLayer { translationX = swipe.translation }.padding(start = if (own) 36.dp else 0.dp),
@@ -1963,7 +1986,7 @@ internal fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors:
         if (reactions.isNotEmpty() || message.pinned || held != null) Row(Modifier.then(if (reactions.isNotEmpty()) Modifier.fillMaxWidth() else Modifier.align(Alignment.End)),
             horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
             if (reactions.isNotEmpty()) ReactionChips(reactions, actingMemberId, Modifier.weight(1f),
-                { id -> model.member(id)?.shownName ?: foreignAuthors[id]?.name ?: "Someone" }, onReact.takeIf { held == null })
+                { id -> model.member(id)?.shownName ?: foreignAuthors[id]?.name ?: "Someone" }, onReact.takeIf { held == null }, holdReaction)
             if (message.pinned) androidx.compose.material3.Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_pin), "Pinned",
                 Modifier.size(14.dp), tint = p.ink3)
             if (held != null) ChatIcon(R.drawable.ic_history, "Message held for slow mode")
@@ -1973,6 +1996,16 @@ internal fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors:
         }
         if (!own && edited) EditedMark()
     }
+    }
+    manyEmoji?.let { emoji ->
+        val ids = reactors.mapTo(HashSet()) { it.id }
+        val all = reactions.find { it.emoji == emoji }?.memberIds.orEmpty()
+        ManyMembersDrawer("React $emoji as…", null, reactors, all.filterTo(HashSet()) { it in ids }, here, { manyEmoji = null },
+            { change -> manyEmoji = null; onReactAs?.invoke(emoji, change) }) {
+            val others = all.filter { it !in ids }
+            if (others.isNotEmpty()) Text("Also reacted: " + others.joinToString(", ") { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: "Someone" },
+                color = p.ink3, fontSize = 13.sp, lineHeight = 18.sp, modifier = Modifier.padding(horizontal = 4.dp))
+        }
     }
     if (menuOpen) Drawer({ menuOpen = false }) {
         var allEmoji by remember(message.id) { mutableStateOf(false) }
@@ -2021,7 +2054,7 @@ internal fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors:
         }
         Column(Modifier.fillMaxWidth().semantics { contentDescription = "Message actions" },
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (held == null && onReact != null) ReactionPicker(reactions, actingMemberId, allEmoji, { allEmoji = !allEmoji }) { emoji, on ->
+            if (held == null && onReact != null) ReactionPicker(reactions, actingMemberId, allEmoji, { allEmoji = !allEmoji }, holdReaction) { emoji, on ->
                 menuOpen = false; onReact(emoji, on)
             }
             // the message itself is on screen above: only when it was written (D-105)
@@ -2072,16 +2105,19 @@ internal fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors:
     }
 }
 
-/** F5.6: the quick reactions above a long-pressed message, and every other emoji behind the chevron. */
-@OptIn(ExperimentalLayoutApi::class)
+/** F5.6: the quick reactions above a long-pressed message, and every other emoji behind the
+ * chevron. Holding one chooses which members react with it (D-142). */
+@OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 private fun ReactionPicker(reactions: List<ChatReaction>, member: String?, expanded: Boolean,
-    onExpand: () -> Unit, onPick: (String, Boolean) -> Unit) {
+    onExpand: () -> Unit, onHold: ((String) -> Unit)?, onPick: (String, Boolean) -> Unit) {
     val p = LocalChorusPalette.current
     @Composable fun EmojiButton(emoji: String) {
         val chosen = ChatReactions.chosen(reactions, emoji, member)
         Box(Modifier.size(44.dp).clip(CircleShape).background(if (chosen) p.accentSoft else Color.Transparent)
-            .clickable(enabled = member != null) { onPick(emoji, !chosen) }.alpha(if (member != null) 1f else .4f)
+            .combinedClickable(enabled = member != null || onHold != null, onClick = { if (member != null) onPick(emoji, !chosen) },
+                onLongClick = onHold?.let { { it(emoji) } }, onLongClickLabel = "React as several members")
+            .alpha(if (member != null) 1f else .4f)
             .semantics { contentDescription = if (chosen) "Remove $emoji" else "React $emoji"; selected = chosen },
             contentAlignment = Alignment.Center) { Text(emoji, fontSize = 24.sp, lineHeight = 28.sp) }
     }
@@ -2101,11 +2137,12 @@ private fun ReactionPicker(reactions: List<ChatReaction>, member: String?, expan
     }
 }
 
-/** "❤️ 2" under a message: tap adds or removes the acting member's reaction, hold shows who. */
+/** "❤️ 2" under a message: tap adds or removes the acting member's reaction; hold chooses which
+ * of our members react with it ([onHold], D-142), or else shows who did. */
 @OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 private fun ReactionChips(reactions: List<ChatReaction>, member: String?, modifier: Modifier,
-    nameOf: (String) -> String, onToggle: ((String, Boolean) -> Unit)?) {
+    nameOf: (String) -> String, onToggle: ((String, Boolean) -> Unit)?, onHold: ((String) -> Unit)? = null) {
     val p = LocalChorusPalette.current
     FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         for (r in reactions) {
@@ -2115,7 +2152,8 @@ private fun ReactionChips(reactions: List<ChatReaction>, member: String?, modifi
             Box(Modifier.heightIn(min = 48.dp).combinedClickable(
                 onClickLabel = if (mine) "Remove your reaction" else "Add this reaction",
                 onClick = { if (onToggle != null && member != null) onToggle(r.emoji, !mine) else who = true },
-                onLongClick = { who = true }, onLongClickLabel = "Who reacted")
+                onLongClick = { if (onHold != null) onHold(r.emoji) else who = true },
+                onLongClickLabel = if (onHold != null) "React as several members" else "Who reacted")
                 .semantics { contentDescription = "${r.emoji} ${r.memberIds.size}: $names"; selected = mine },
                 contentAlignment = Alignment.Center) {
                 Text("${r.emoji} ${r.memberIds.size}", color = if (mine) p.accent else p.ink2, fontSize = 13.sp, lineHeight = 18.sp,

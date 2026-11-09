@@ -38,8 +38,8 @@
     if (!list) return;
     sync.create(selectedMembers.has(memberId) ? 'list.remove' : 'list.add', sync.accountScope, list.id, { member_id: memberId });
   }
-  function react(post: PostRow, emoji: string, add: boolean) {
-    if (speaker) sync.create(add ? 'post.react' : 'post.unreact', sync.accountScope, post.id, postReaction(post.id, emoji, speaker));
+  function react(post: PostRow, emoji: string, add: boolean, as = speaker) {
+    if (as) sync.create(add ? 'post.react' : 'post.unreact', sync.accountScope, post.id, postReaction(post.id, emoji, as));
   }
 </script>
 
@@ -55,7 +55,7 @@
     <div class="list-head"><div><h2>{list.name}</h2>{#if list.description}<p>{list.description}</p>{/if}</div>
       <button onclick={() => { sync.create('list.delete', sync.accountScope, list.id, {}); selected = ''; }}>Delete list</button></div>
     <fieldset><legend>Members</legend><div class="members">{#each people as member (member.id)}<label><input type="checkbox" checked={selectedMembers.has(member.id)} onchange={() => toggle(member.id)} /> {member.display_name ?? member.name}</label>{/each}</div></fieldset>
-    <div class="timeline">{#each timeline as post (post.id)}<PostCard {projection} {post} quote={quoteView(post.quote_post_id, postById, memberName)} people={byId} {dark} reactions={reacts.get(post.id) ?? new Map()} {speaker} {social} {saved} replyCount={social.replies.get(post.id) ?? 0} onreply={() => router.go(`/journal/post/${encodeURIComponent(post.id)}`)} onreact={(emoji, add) => react(post, emoji, add)} />{:else}<p class="muted">No posts from these members yet.</p>{/each}</div>
+    <div class="timeline">{#each timeline as post (post.id)}<PostCard {projection} {post} quote={quoteView(post.quote_post_id, postById, memberName)} people={byId} {dark} reactions={reacts.get(post.id) ?? new Map()} {speaker} {social} {saved} replyCount={social.replies.get(post.id) ?? 0} onreply={() => router.go(`/journal/post/${encodeURIComponent(post.id)}`)} onreact={(emoji, add, as) => react(post, emoji, add, as)} />{:else}<p class="muted">No posts from these members yet.</p>{/each}</div>
   {:else}<p class="muted">Create a list to start collecting posts.</p>{/if}
 </section>
 

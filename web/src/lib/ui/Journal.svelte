@@ -69,9 +69,9 @@
     post.quote_post_id && !postById.has(post.quote_post_id) ? remotePost(post.quote_post_id) : null);
   const memberName = name;
   const frontName = (e: { subject_id: string }) => subjectNames.get(e.subject_id) ?? 'Someone';
-  function react(post: PostRow, emoji: string, add: boolean) {
-    if (!speaker) return;
-    sync.create(add ? 'post.react' : 'post.unreact', sync.accountScope, post.id, postReaction(post.id, emoji, speaker));
+  function react(post: PostRow, emoji: string, add: boolean, as = speaker) {
+    if (!as) return;
+    sync.create(add ? 'post.react' : 'post.unreact', sync.accountScope, post.id, postReaction(post.id, emoji, as));
   }
 </script>
 
@@ -86,7 +86,7 @@
     {#each savedPostsList as post (post.id)}
       <PostCard {projection} {post} quote={quoteOf(post)} {people} {dark} reactions={reactionsOf(post.id)} reactorNames={theirNames} {speaker} compactEntry
         {social} {saved} replyCount={repliesTo(post.id)} replyToNames={post.reply_to ? byId.get(post.reply_to)?.authors.map(name).join(' & ') : undefined}
-        onreply={() => router.go(`/journal/post/${encodeURIComponent(post.id)}`)} onreact={(emoji, add) => react(post, emoji, add)} />
+        onreply={() => router.go(`/journal/post/${encodeURIComponent(post.id)}`)} onreact={(emoji, add, as) => react(post, emoji, add, as)} />
     {:else}<p class="empty">Nothing saved yet. Save a post with its bookmark to read it later; only your system sees what you save.</p>{/each}
   </div>
   {:else}
@@ -101,7 +101,7 @@
         <!-- replying opens the post's thread, where the reply box shows what it answers -->
         <PostCard {projection} post={original} quote={quoteOf(original)} {people} {dark} reactions={reactionsOf(original.id)} reactorNames={theirNames} {speaker} compactEntry
           {social} {saved} repostedBy={by} replyCount={repliesTo(original.id)} replyToNames={original.reply_to ? byId.get(original.reply_to)?.authors.map(name).join(' & ') : undefined}
-          onreply={() => router.go(`/journal/post/${encodeURIComponent(original.id)}`)} onreact={(emoji, add) => react(original, emoji, add)} />
+          onreply={() => router.go(`/journal/post/${encodeURIComponent(original.id)}`)} onreact={(emoji, add, as) => react(original, emoji, add, as)} />
         {/if}
       {:else if item.kind === 'switch'}
         <div class="event"><span class="event-icon">◌</span><span>{item.sw.retracted ? 'Undone switch' : `Front: ${item.sw.fronting.map(frontName).join(' & ') || 'no one'}`}</span><time>{new Date(item.at).toLocaleString()}</time></div>
