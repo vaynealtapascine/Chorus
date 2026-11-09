@@ -50,4 +50,66 @@ internal object EditorFormatting {
         return apply(value, listOf(Replacement(start, end, added, map)), TextRange(start + 1, start + 1 + label.length))
     }
     fun link(value: TextFieldValue, url: String) = mappedLink(value, url).value
+
+    private val linePrefixes = listOf("## ", "# ", ">> ", "> ")
+    private fun prefixOf(line: String) = linePrefixes.firstOrNull { line.startsWith(it) }.orEmpty()
+
+    /** Sets the paragraph style of the selected lines: "" body, "quote", "heading1", "heading2". */
+    fun style(value: TextFieldValue, style: String): TextFieldValue {
+        val wanted = when (style) { "quote" -> "> "; "heading1" -> "# "; "heading2" -> "## "; else -> "" }
+        val start = value.text.lastIndexOf('\n', (value.selection.min - 1).coerceAtLeast(-1)) + 1
+        val end = value.text.indexOf('\n', value.selection.max).takeIf { it >= 0 } ?: value.text.length
+        val lines = value.text.substring(start, end).split('\n')
+        // a heading is one line: style only the caret's line
+        val touched = if (wanted.startsWith("#")) 1 else lines.size
+        var shiftStart = 0; var shiftEnd = 0
+        val out = lines.mapIndexed { i, line ->
+            if (i >= touched) return@mapIndexed line
+            val old = prefixOf(line)
+            val next = wanted + line.removePrefix(old)
+            val delta = wanted.length - old.length
+            if (i == 0) shiftStart = delta
+            shiftEnd += delta
+            next
+        }.joinToString("\n")
+        val text = value.text.substring(0, start) + out + value.text.substring(end)
+        fun move(at: Int, delta: Int) = (at + delta).coerceIn(start, text.length)
+        val a = if (value.selection.start == value.selection.min) shiftStart else shiftEnd
+        val b = if (value.selection.end == value.selection.max) shiftEnd else shiftStart
+        return TextFieldValue(text, TextRange(move(value.selection.start, if (value.selection.collapsed) shiftStart else a),
+            move(value.selection.end, if (value.selection.collapsed) shiftStart else b)))
+    }
+
+    /** True when the caret is inside a ``` code block. */
+    fun inFence(value: TextFieldValue): Boolean {
+        val before = value.text.substring(0, value.selection.min.coerceIn(0, value.text.length))
+        return Regex("(^|\n)```").findAll(before).count() % 2 == 1
+    }
+
+    /** Wraps the selected lines in a ``` code block, or unwraps the block around the caret. */
+    fun fence(value: TextFieldValue): TextFieldValue {
+        if (inFence(value)) {
+            val open = value.text.lastIndexOf("```", value.selection.min - 1).takeIf { it >= 0 } ?: return value
+            val close = value.text.indexOf("```", value.selection.max).takeIf { it >= 0 } ?: return value
+            val openEnd = (value.text.indexOf('\n', open).takeIf { it in 0..close } ?: (open + 3)) + 1
+            val inner = value.text.substring(openEnd.coerceAtMost(close), close).removeSuffix("\n")
+            val after = (close + 3).let { if (value.text.getOrNull(it) == '\n') it + 1 else it }.coerceAtMost(value.text.length)
+            val text = value.text.substring(0, open) + inner + (if (after < value.text.length) "\n" else "") + value.text.substring(after)
+            return TextFieldValue(text, TextRange(open, open + inner.length))
+        }
+        val start = value.text.lastIndexOf('\n', (value.selection.min - 1).coerceAtLeast(-1)) + 1
+        val end = value.text.indexOf('\n', value.selection.max).takeIf { it >= 0 } ?: value.text.length
+        val inner = value.text.substring(start, end)
+        val text = value.text.substring(0, start) + "```\n" + inner + "\n```" + value.text.substring(end)
+        return TextFieldValue(text, TextRange(start + 4, start + 4 + inner.length))
+    }
+
+    /** Wraps the selected lines in one spoiler. */
+    fun spoilerBlock(value: TextFieldValue): TextFieldValue {
+        val start = value.text.lastIndexOf('\n', (value.selection.min - 1).coerceAtLeast(-1)) + 1
+        val end = value.text.indexOf('\n', value.selection.max).takeIf { it >= 0 } ?: value.text.length
+        val inner = value.text.substring(start, end)
+        val text = value.text.substring(0, start) + "||" + inner + "||" + value.text.substring(end)
+        return TextFieldValue(text, TextRange(start + 2, start + 2 + inner.length))
+    }
 }

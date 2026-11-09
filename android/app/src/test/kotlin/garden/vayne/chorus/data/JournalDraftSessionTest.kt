@@ -41,6 +41,29 @@ class JournalDraftSessionTest {
         assertEquals(large, JournalDraft.decode(large.encode(), f::id))
     }
 
+    @Test fun draftsGoOnTheShelfAndComeBackWithoutLosingTheComposer() = runBlocking {
+        val f = Fixture()
+        val session = f.session(); session.restore()
+        assertFalse("an empty composer has nothing to keep", session.shelve())
+        session.edit { copy(body = "first", title = "One") }
+        assertTrue(session.shelve())
+        assertEquals("", session.state.value.draft.body)
+        assertEquals(listOf("first"), session.shelf.value.map { it.body })
+        session.edit { copy(body = "second") }
+        val first = session.shelf.value.single().id
+        session.unshelve(first)
+        assertEquals("first", session.state.value.draft.body)
+        assertEquals("One", session.state.value.draft.title)
+        assertEquals("what the composer held is kept", listOf("second"), session.shelf.value.map { it.body })
+        session.checkpoint(); session.detach()
+        val again = f.session(); again.restore()
+        assertEquals("first", again.state.value.draft.body)
+        assertEquals(listOf("second"), again.shelf.value.map { it.body })
+        again.discardShelved(again.shelf.value.single().id)
+        assertTrue(again.shelf.value.isEmpty())
+        assertTrue(JournalDraftSession.decodeShelf("not json").single().recovery == "not json")
+    }
+
     @Test fun malformedMetadataSalvagesContentAndKeepsTheExactOriginalForReview() = runBlocking {
         val f = Fixture(); val original = full(f.id())
         val raw = JSONObject(original.encode()).put("authors", "broken").put("files", 7).toString()

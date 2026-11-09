@@ -23,6 +23,11 @@ class JournalDraftSession(private val storage: EditorDraftStore, val owner: Stri
     private val lease = storage.claim(key)
     private val mutable = MutableStateFlow(JournalDraftState(JournalDraft(newId())))
     val state: StateFlow<JournalDraftState> = mutable
+    /** Drafts kept for later (F6.2 "Drafts"), newest first; the composer holds one at a time. */
+    private val shelfKey = storage.key(owner, "journal-shelf", SHELF)
+    private val shelfLease = storage.claim(shelfKey)
+    private val shelved = MutableStateFlow<List<JournalDraft>>(emptyList())
+    val shelf: StateFlow<List<JournalDraft>> = shelved
     private val loadLock = Mutex()
     @Volatile private var attached = true
 
@@ -31,6 +36,8 @@ class JournalDraftSession(private val storage: EditorDraftStore, val owner: Stri
         try {
             val raw = withContext(Dispatchers.IO) { storage.load(key).get() }
             var draft = raw?.let { JournalDraft.decode(it, newId) } ?: state.value.draft
+            val kept = withContext(Dispatchers.IO) { storage.load(shelfKey).get() }
+            shelved.value = decodeShelf(kept)
             val post = draft.sendingPost
             if (post != null) draft = if (committed(post)) JournalDraft(newId(), launches = draft.launches, receipts = draft.receipts)
                 else draft.copy(sendingPost = null)
@@ -195,6 +202,40 @@ class JournalDraftSession(private val storage: EditorDraftStore, val owner: Stri
         return sent
     }
 
+    /** Put the composer's draft on the shelf and start a fresh one. The shelf is written before
+     * the composer, so a crash between the two keeps the draft twice, never zero times. */
+    @Synchronized fun shelve(): Boolean {
+        val before = state.value
+        if (!writable() || before.busy || before.draft.sendingPost != null || !before.draft.occupied) return false
+        saveShelf(listOf(before.draft.copy(editing = false, launches = emptyList(), receipts = emptyList())) + shelved.value)
+        accept(JournalDraft(newId(), revision = before.draft.revision + 1, editing = true,
+            launches = before.draft.launches, receipts = before.draft.receipts))
+        return true
+    }
+
+    /** Open a shelved draft in the composer; what the composer held goes onto the shelf. */
+    @Synchronized fun unshelve(id: String) {
+        val before = state.value
+        if (!writable() || before.busy || before.draft.sendingPost != null) return
+        val picked = shelved.value.find { it.id == id } ?: return
+        val rest = shelved.value.filter { it.id != id }
+        saveShelf(if (before.draft.occupied) listOf(before.draft.copy(editing = false, launches = emptyList(), receipts = emptyList())) + rest else rest)
+        accept(picked.copy(revision = before.draft.revision + 1, editing = true,
+            launches = before.draft.launches, receipts = before.draft.receipts))
+    }
+
+    @Synchronized fun discardShelved(id: String) {
+        if (!writable()) return
+        saveShelf(shelved.value.filter { it.id != id })
+    }
+
+    private fun saveShelf(drafts: List<JournalDraft>) {
+        val list = drafts.take(MAX_SHELF)
+        shelved.value = list
+        val raw = org.json.JSONArray(list.map { it.encode() }).toString()
+        storage.checkpointAsync(shelfKey, shelfLease) { raw }.get()
+    }
+
     private fun writable() = attached && state.value.loaded && owner == currentOwner() && storage.owns(key, lease)
     private fun matches(draft: JournalDraft) = state.value.draft.id == draft.id && state.value.draft.revision == draft.revision
     private fun checkCurrent(draft: JournalDraft) {
@@ -207,5 +248,18 @@ class JournalDraftSession(private val storage: EditorDraftStore, val owner: Stri
         }, lease = lease) { draft.encode() }
     }
 
-    companion object { private val REFERENCE = java.util.UUID.nameUUIDFromBytes("journal-composer".toByteArray()).toString() }
+    companion object {
+        private val REFERENCE = java.util.UUID.nameUUIDFromBytes("journal-composer".toByteArray()).toString()
+        private val SHELF = java.util.UUID.nameUUIDFromBytes("journal-shelf".toByteArray()).toString()
+        const val MAX_SHELF = 50
+
+        /** A damaged entry is kept as a recovery draft rather than dropped. */
+        fun decodeShelf(raw: String?): List<JournalDraft> {
+            if (raw == null) return emptyList()
+            val list = try { org.json.JSONArray(raw) } catch (_: Exception) {
+                return listOf(JournalDraft(java.util.UUID.randomUUID().toString(), body = raw, authors = emptyList(), recovery = raw))
+            }
+            return List(list.length()) { i -> JournalDraft.decode(list.optString(i), { java.util.UUID.randomUUID().toString() }) }
+        }
+    }
 }

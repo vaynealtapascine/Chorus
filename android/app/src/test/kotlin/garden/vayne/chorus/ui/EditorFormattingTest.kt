@@ -45,4 +45,28 @@ class EditorFormattingTest {
         assertEquals("1. first\n2. second", JSONObject(parseMarkup(list.text, "")).getString("text"))
         assertEquals("first\n> second", EditorFormatting.lines(TextFieldValue("first\nsecond", TextRange(9)), "> ").text)
     }
+
+    @Test fun paragraphStylesReplaceEachOtherOnTheCaretLine() {
+        val v = TextFieldValue("one\ntwo", TextRange(5))
+        val h1 = EditorFormatting.style(v, "heading1")
+        assertEquals("one\n# two", h1.text); assertEquals(TextRange(7), h1.selection)
+        assertEquals("heading1", lineStyle(h1))
+        val h2 = EditorFormatting.style(h1, "heading2")
+        assertEquals("one\n## two", h2.text); assertEquals("heading2", lineStyle(h2))
+        val quote = EditorFormatting.style(h2, "quote")
+        assertEquals("one\n> two", quote.text)
+        val body = EditorFormatting.style(quote, "")
+        assertEquals("one\ntwo", body.text); assertEquals(TextRange(5), body.selection)
+        val both = EditorFormatting.style(TextFieldValue("a\nb", TextRange(0, 3)), "quote")
+        assertEquals("> a\n> b", both.text)
+        assertEquals("a heading takes one line", "# a\nb", EditorFormatting.style(TextFieldValue("a\nb", TextRange(0, 3)), "heading1").text)
+    }
+
+    @Test fun codeBlocksAndSpoilerBlocksWrapWholeLines() {
+        val fenced = EditorFormatting.fence(TextFieldValue("say\nlet x", TextRange(5)))
+        assertEquals("say\n```\nlet x\n```", fenced.text)
+        assertTrue(EditorFormatting.inFence(fenced))
+        assertEquals("say\nlet x", EditorFormatting.fence(fenced).text)
+        assertEquals("||hide this||", EditorFormatting.spoilerBlock(TextFieldValue("hide this", TextRange(2))).text)
+    }
 }

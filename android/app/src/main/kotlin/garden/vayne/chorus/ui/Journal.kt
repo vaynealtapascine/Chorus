@@ -183,6 +183,28 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
         for (uri in uris) try { attachments = attachments + PendingAttachment.of(ctx, uri) }
         catch (e: Exception) { error = "Could not attach this file: ${e.message}" }
     }
+    var draftsOpen by remember { mutableStateOf(false) }
+    var formatOpen by remember { mutableStateOf(false) }
+    var linkOpen by remember { mutableStateOf(false) }
+    var emojiOpen by remember { mutableStateOf(false) }
+    var alertsOpen by remember { mutableStateOf(false) }
+    var cwOpen by rememberSaveable { mutableStateOf(false) }
+    val shelf by session.shelf.collectAsState()
+    var shot by rememberSaveable { mutableStateOf<String?>(null) }
+    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        val uri = shot?.let(android.net.Uri::parse)
+        shot = null
+        if (uri != null) {
+            if (ok) try { attachments = attachments + PendingAttachment.of(ctx, uri) }
+            catch (e: Exception) { error = "Could not attach this photo: ${e.message}" }
+            else DeviceGallery.discard(ctx, uri)
+        }
+    }
+    fun shootCamera() {
+        val uri = DeviceGallery.cameraTarget(ctx)
+        shot = uri.toString()
+        try { camera.launch(uri) } catch (_: Exception) { shot = null; error = "No camera app is available." }
+    }
     val missingFiles by produceState(emptyList<String>(), draftState.draft.files) {
         value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             draftState.draft.files.filterNot { it.readable(ctx) }.map { it.name }
@@ -335,12 +357,9 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
             }
         }
         Column(Modifier.fillMaxSize().background(p.bg).imePadding()) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                TextButton(enabled = !busy, onClick = { editing = false }) { Text("Cancel") }
-                Text(if (replyTo == null) "Draft" else "Write a reply", color = p.ink3,
-                    style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 14.dp))
-                Button(enabled = !busy && draftState.draft.recovery == null && author != null && (model.isPerson || selectedAuthors?.isEmpty() != true) && (body.isNotBlank() || attachments.isNotEmpty()), onClick = {
-                    val dev = chorus.device ?: return@Button
+            val canPost = !busy && draftState.draft.recovery == null && author != null && (model.isPerson || selectedAuthors?.isEmpty() != true) && (body.isNotBlank() || attachments.isNotEmpty())
+            ComposerTopBar(!busy, canPost, busy, if (replyTo == null) null else "Reply", { editing = false }, { draftsOpen = true }, onPost@{
+                    val dev = chorus.device ?: return@onPost
                     actions.launch {
                         val postId = session.send(prepare = { garden.vayne.chorus.data.JournalDraftSend.snapshot(chorus.model.value, dev.accountId, it) }, validate = { draft ->
                             validateJournalDraft(chorus, ctx, session.owner, dev.accountId, draft)
@@ -358,8 +377,7 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
                         })
                         if (postId != null) justPosted = postId
                     }
-                }) { Text(if (busy) "Posting…" else "Post") }
-            }
+            })
             Row(Modifier.padding(horizontal = 16.dp).heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
                 Row(Modifier.background(p.surface2, CircleShape)) {
                     JournalModeChoice("Post", kind == "note") { if (!busy) kind = "note" }
@@ -388,6 +406,8 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
                         textStyle = MaterialTheme.typography.bodyLarge.copy(color = p.ink, fontSize = 16.sp, lineHeight = 24.sp),
                         cursorBrush = SolidColor(p.accent), minLines = 4,
                         decorationBox = { inner -> Box {
+                            if (bodyFocused && !busy) SelectionToolbar(bodyValue, bodyLayout, onStyles = { formatOpen = true },
+                                onLink = { linkOpen = true }) { bodyValue = it }
                             if (body.isEmpty()) Text(if (kind == "entry") "Write your entry…" else if (quoteOf != null) "Add a comment…" else "What’s on your mind?", color = p.ink3,
                                 style = MaterialTheme.typography.bodyLarge)
                             inner()
@@ -409,12 +429,17 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
                             onRemove = { index -> attachments = attachments.filterIndexed { i, _ -> i != index } })
                     }
                 }
-                if (editorOptions && !busy) {
-                    item { ChorusField(cw, { cw = it }, label = { Text("Content warning (optional)") }, modifier = Modifier.fillMaxWidth()) }
-                    item { ChorusField(mood, { mood = it }, label = { Text("Mood (optional)") }, modifier = Modifier.fillMaxWidth()) }
-                    item { ChorusField(tags, { tags = it }, label = { Text("Tags, separated by commas") }, modifier = Modifier.fillMaxWidth()) }
-                    item { Column { JournalPollDraftFields(pollOn, { pollOn = it }, pollOptions, { pollOptions = it }, pollMultiple) { pollMultiple = it } } }
-                    item { PostAlertsChoice(alerts) { alerts = it } }
+                if (pollOn) item(key = "poll") {
+                    ComposerPoll(pollOptions, { pollOptions = it }, pollMultiple, { pollMultiple = it }, !busy) { pollOn = false }
+                }
+                if (cwOpen || cw.isNotBlank()) item(key = "cw") {
+                    ChorusField(cw, { cw = it }, label = { Text("Content warning") }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth())
+                }
+                if (editorOptions) item(key = "tags") {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ChorusField(tags, { tags = it }, label = { Text("Tags, separated by commas") }, enabled = !busy, modifier = Modifier.fillMaxWidth())
+                        ChorusField(mood, { mood = it }, label = { Text("Mood") }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth())
+                    }
                 }
                 if (draftState.draft.recovery != null) item {
                     Text("Recovered draft: check it before posting", color = p.danger)
@@ -433,6 +458,8 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
             }
             HorizontalDivider(color = p.line)
             Column(Modifier.fillMaxWidth().background(p.surface)) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 AudienceChip("This post", garden.vayne.chorus.data.Audience(audience, bucketIds), own = true, buckets = model.sharingBuckets, person = model.isPerson, enabled = !busy, onChange = { value ->
                     value?.let { session.edit { copy(audience = it.mode, buckets = it.buckets, audienceChosen = !it.same(defaultAudience)) } }
                 }, looks = model.bucketLooks, defaultAudience = defaultAudience, onUseByDefault = if (replyTo != null) null else ({ on: Boolean ->
@@ -446,18 +473,29 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
                         catch (_: Exception) { error = "Could not save your default audience. Try again." }
                     }
                 }))
-                HorizontalDivider(color = p.line, thickness = .5.dp)
-                JournalFormatToolbar(bodyValue, !busy) { bodyValue = it; bodyFocus.requestFocus() }
-                Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    ChatIconButton(R.drawable.ic_image, "Attach images or files") { if (!busy) picker.launch("*/*") }
-                    ChatIconButton(R.drawable.ic_more, if (editorOptions) "Hide post options" else "Warning, mood, tags and poll") { editorOptions = !editorOptions }
-                    Text(listOfNotNull("CW".takeIf { cw.isNotBlank() }, "Poll".takeIf { pollOn },
-                        "Delayed".takeIf { alerts == "delayed" }, "Silent".takeIf { alerts == "none" }, "${attachments.size} ${if (attachments.size == 1) "file" else "files"}".takeIf { attachments.isNotEmpty() }).joinToString(" · "),
-                        color = p.ink3, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                    Text("${body.trim().split(Regex("\\s+")).count { it.isNotBlank() }} words", color = p.ink3,
-                        style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(end = 12.dp))
+                    ComposerChip(if (alerts == "none") R.drawable.ic_bell_off else R.drawable.ic_bell,
+                        when (alerts) { "none" -> "Silent"; "delayed" -> "Delayed"; else -> "" }, !busy, alerts.isNotEmpty()) { alertsOpen = true }
+                    Spacer(Modifier.weight(1f))
+                    if (!busy && error == null) Text("Saved", color = p.ink3, fontSize = 13.sp)
                 }
+                ComposerFormatRow(bodyValue, !busy, headings = false, onStyles = { formatOpen = true }, onLink = { linkOpen = true }) {
+                    bodyValue = it; bodyFocus.requestFocus()
+                }
+                ComposerActionRow(!busy, pollOn, cwOpen || cw.isNotBlank(), editorOptions || tags.isNotBlank() || mood.isNotBlank(),
+                    body.trim().split(Regex("\\s+")).count { it.isNotBlank() },
+                    onImage = { picker.launch("*/*") }, onCamera = { shootCamera() },
+                    onPoll = { pollOn = !pollOn }, onEmoji = { emojiOpen = true },
+                    onCw = { if (cw.isNotBlank() || cwOpen) { cw = ""; cwOpen = false } else cwOpen = true },
+                    onTags = { editorOptions = !editorOptions })
             }
+            if (formatOpen) FormattingDrawer(bodyValue, headings = false, onDismiss = { formatOpen = false },
+                onLink = { formatOpen = false; linkOpen = true }) { bodyValue = it }
+            if (linkOpen) LinkDrawer(bodyValue, { linkOpen = false }) { bodyValue = it.value; bodyFocus.requestFocus() }
+            if (emojiOpen) EmojiDrawer({ emojiOpen = false }) { bodyValue = insertAtCaret(bodyValue, it); bodyFocus.requestFocus() }
+            if (alertsOpen) Drawer({ alertsOpen = false }, "Notify") { PostAlertsChoice(alerts) { alerts = it } }
+            if (draftsOpen) DraftsDrawer(draftState.draft, shelf, busy, { draftsOpen = false },
+                onKeep = { if (session.shelve()) draftsOpen = false }, onOpen = { session.unshelve(it); draftsOpen = false },
+                onDiscard = session::discardShelved)
         }
         return@ChorusScene
     }

@@ -20,8 +20,6 @@ internal fun JournalFormatToolbar(value: TextFieldValue, enabled: Boolean, onMap
     val p = LocalChorusPalette.current
     var linkOpen by remember { mutableStateOf(false) }
     var linkSelection by remember { mutableStateOf(value) }
-    var url by remember { mutableStateOf("") }
-    var linkError by remember { mutableStateOf<String?>(null) }
     val ready = enabled && value.composition == null
     LazyRow(Modifier.fillMaxWidth().background(p.surface), contentPadding = PaddingValues(horizontal = 4.dp)) {
         for ((icon, name, marker) in listOf(
@@ -33,19 +31,9 @@ internal fun JournalFormatToolbar(value: TextFieldValue, enabled: Boolean, onMap
         item { FormatButton(R.drawable.ic_format_quote, "Quote", ready) { change(EditorFormatting.mappedLines(value, "> ")) } }
         item { FormatButton(R.drawable.ic_format_list_ul, "Bulleted text", ready) { change(EditorFormatting.mappedLines(value, "• ")) } }
         item { FormatButton(R.drawable.ic_format_list_ol, "Numbered text", ready) { change(EditorFormatting.mappedLines(value, "", numbered = true)) } }
-        item { FormatButton(R.drawable.ic_link, "Insert link", ready) { linkSelection = value; url = ""; linkError = null; linkOpen = true } }
+        item { FormatButton(R.drawable.ic_link, "Insert link", ready) { linkSelection = value; linkOpen = true } }
     }
-    if (linkOpen) Drawer({ linkOpen = false }, "Insert link", footer = {
-        DrawerButton("Insert link", {
-            runCatching { EditorFormatting.mappedLink(linkSelection, url.trim()) }.onSuccess { change(it); linkOpen = false }
-                .onFailure { linkError = it.message }
-        }, enabled = url.isNotBlank())
-    }) {
-        ChorusField(url, { url = it; linkError = null }, label = { Text("Link URL") }, placeholder = { Text("https://") }, singleLine = true,
-            isError = linkError != null, modifier = Modifier.fillMaxWidth(),
-            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Uri))
-        if (linkError != null) FormNote(linkError.orEmpty(), warning = true)
-    }
+    if (linkOpen) LinkDrawer(linkSelection, { linkOpen = false }) { change(it) }
 }
 
 @Composable
