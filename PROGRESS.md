@@ -24,7 +24,7 @@ History: this file and `docs/NOTES.md` were compacted on 2026-11-05. The full lo
 
 - **In progress:** UI21
 - **Owner:** claude-opus-5.5, 2026-11-09
-- **Next concrete step:** Wave 5: Android More/Settings/Data/onboarding (F10.1, F10.2, F9.5, F9.1, F9.6, F10.4, F10.5, F1.x)
+- **Next concrete step:** Wave 6: Android Journal (composer WIP in the tree: JournalComposer.kt, EditorFormatting, JournalDraftSession), then D-135, D-134, D-136
 - **Notes:** Waves 1-3 live (Android 0.1.835 with UI22). Wave 4a: new message page, aside pill + audience bar, message actions + mentions; 4b: forward/reply-in, attach, search, chat info. Plan: docs/handoff/ui21-plan.md; design for approved features: docs/handoff/ui21-design.md.
 
 ### SEC1: what is done and what is left
@@ -187,3 +187,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`. Entries befo
 - 2026-11-08 gpt-6-sol — UI22 Implemented fixed two-thirds-width, bottom-right banner backgrounds in both clients, including friends member lists (D-140). Deployment requested; integrate latest main and run the full Android gate before shipping.
 - 2026-11-08 gemini-4-argon-medium — Deployed UI21 wave 3 (Android Members directory, Groups tab, Edit member, Who can see, Archive, Subsystem sheet/reorder: da99de1, d9c9d52, 12643cb) and UI22 (two-thirds-width Members banners on web and Android: c3a0acd, D-140) at a8839ac to ns2: server, web `index-GaV1UZH1.js`, Android 0.1.835.
 - 2026-11-09 claude-opus-5.5: UI21 wave 4 deployed (3a23a56, Android 0.1.845, server + web): Android chat New message / New shared space pages (F5.18, F5.10), aside pill + audience bar (F5.4, F5.16), eight message actions + mention list (F5.6, F5.13), Forward/Reply in grid with inline warning and comment (F5.20), attach sheet with caption (F5.8), search with tabs and chips (F5.9), chat info tiles + Polls + per-member unread (F5.26). Checked on the emulator against the 5301 demo. Web to fix later: a forward with the author hidden shows "Forwarded from " with nothing after it.
+- 2026-11-09 claude-opus-5.5: UI21 wave 5 deployed (12b8fda, Android 0.1.855, server + web): More/Settings/Appearance/bottom-bar editor (F10.1, F10.2), Trash with "Deleted by" (core `deleted_by_member_id`, F9.5), Insights (F9.1), On this device / Sync issues with Retry / update drawer with `android/whats-new.txt` (F9.6, F10.4, F10.5), one-screen welcome + Link a device QR (F1.1, F1.5, F1.6, new dep play-services-code-scanner), System settings, system setup + words (F1.2–F1.4). The first upload failed on a Tailscale SSH re-check; the owner approved it and the same bundle was installed by hand.
