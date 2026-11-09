@@ -64,6 +64,7 @@ import garden.vayne.chorus.data.FrontingDisplay
 import garden.vayne.chorus.data.FrontingDisplay.Preset
 import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.NamedFront
+import garden.vayne.chorus.data.Placement
 import garden.vayne.chorus.data.SceneLayer
 import garden.vayne.chorus.data.Subject
 import garden.vayne.chorus.designsystem.HankenGrotesk
@@ -154,7 +155,7 @@ private fun rememberFrontNote(chorus: Chorus, model: Model, frontId: String): St
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun Home(chorus: Chorus, model: Model, onFronts: () -> Unit = {}, onHistory: (String) -> Unit = {}, onLayers: (String) -> Unit = {},
+fun Home(chorus: Chorus, model: Model, onFronts: () -> Unit = {}, onHistory: (String) -> Unit = {}, onReview: (String) -> Unit = {}, onLayers: (String) -> Unit = {},
     onNewFront: () -> Unit = onFronts) {
     val p = LocalChorusPalette.current
     val accountId = chorus.device?.accountId.orEmpty()
@@ -179,6 +180,7 @@ fun Home(chorus: Chorus, model: Model, onFronts: () -> Unit = {}, onHistory: (St
     var switcher by remember { mutableStateOf<String?>(null) } // null closed, "" whole sheet, else a layer to add to
     var placing by remember { mutableStateOf<Subject?>(null) }
     var stateFor by remember { mutableStateOf<Subject?>(null) }
+    var rowMenu by remember { mutableStateOf<Subject?>(null) }
     var awayOpen by remember(frontId) { mutableStateOf(!view.collapseAway) }
     var expanded by remember(frontId) { mutableStateOf(setOf<String>()) }
     var menu by remember { mutableStateOf(false) }
@@ -191,11 +193,26 @@ fun Home(chorus: Chorus, model: Model, onFronts: () -> Unit = {}, onHistory: (St
 
     if (switcher != null) Switcher(chorus, model, if (named != null) frontId else null, addTo = switcher?.ifEmpty { null }) { switcher = null }
     placing?.let { s -> PlaceSheet(chorus, model, frontId, s, since[s.id], onState = { stateFor = s; placing = null }) { placing = null } }
-    stateFor?.let { s -> MemberStateSheet(chorus, model, s) { stateFor = null } }
+    stateFor?.let { s -> MemberStatePage(chorus, model, s) { stateFor = null } }
+    rowMenu?.let { s ->
+        val front = frontName(named?.fronts?.get(frontId))
+        MenuDrawer(true, { rowMenu = null }, s.name) {
+            if (s.type == "member") MenuRow("Set state", R.drawable.ic_emoji) { rowMenu = null; stateFor = s }
+            MenuRow("Move to another layer", R.drawable.ic_switch_arrows) { rowMenu = null; placing = s }
+            MenuRow("Remove from $front", R.drawable.ic_delete, danger = true) {
+                rowMenu = null
+                actions.launch {
+                    try { Front.placeOne(chorus, Placement(s.type, s.id, null, true), "${s.name} left $front", frontId.takeIf { named != null }); error = null }
+                    catch (e: Exception) { error = e.message }
+                }
+            }
+        }
+    }
 
     fun open(e: Entry) { model.subject(e.subjectType, e.subjectId)?.let { placing = it } }
+    fun options(e: Entry) { model.subject(e.subjectType, e.subjectId)?.let { rowMenu = it } }
     fun lineFor(e: Entry): String? {
-        val status = if (view.preset != Preset.Simple && e.subjectType == "member") model.accountPrefs.memberStatus[e.subjectId]?.text else null
+        val status = if (view.preset != Preset.Simple && e.subjectType == "member") model.accountPrefs.memberStatus[e.subjectId]?.takeIf { FrontingDisplay.statusShowing(it, since[e.subjectId]) }?.line(model.states) else null
         if (status != null) return status
         val pronouns = if (e.subjectType == "member") model.member(e.subjectId)?.pronouns?.takeIf { it.isNotBlank() } else null
         val at = since[e.subjectId]?.let { "since ${time.format(Date(it))}" }
@@ -259,11 +276,11 @@ fun Home(chorus: Chorus, model: Model, onFronts: () -> Unit = {}, onHistory: (St
                 }
             }
             error?.let { item { Text(it, color = p.danger, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) } }
-            // an unconfigured account's review cards (F3.6) are answered on Front history
+            // an unconfigured account's two-devices reviews (F3.6)
             val reviews = if (named == null) model.reviews.count { it.id !in model.resolvedReviews } else 0
             if (reviews > 0) item {
                 Row(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                    .background(p.surface).clickable { onHistory(frontId) }.padding(horizontal = 12.dp, vertical = 12.dp),
+                    .background(p.surface).clickable { onReview(frontId) }.padding(horizontal = 12.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Glyph(R.drawable.ic_history, p.warn, 18.dp)
                     Text(if (reviews == 1) "Two devices switched together · review" else "$reviews switches to review", color = p.ink,
@@ -276,7 +293,7 @@ fun Home(chorus: Chorus, model: Model, onFronts: () -> Unit = {}, onHistory: (St
                 val sizeMotion = if (rememberChorusMotion()) ChorusMotion.settle<androidx.compose.ui.unit.IntSize>() else androidx.compose.animation.core.snap()
                 Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp).animateContentSize(sizeMotion), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (view.preset == Preset.Simple) {
-                        SimpleCard(model, scene, frontSince, ::lineFor, ::took, ::open, time)
+                        SimpleCard(model, scene, frontSince, ::lineFor, ::took, ::open, ::options, time)
                         if (!display.hintDismissed) Row(Modifier.fillMaxWidth().background(p.surface2, RoundedCornerShape(16.dp)).padding(12.dp),
                             horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             Glyph(R.drawable.ic_layers, p.accent, 18.dp)
@@ -308,7 +325,7 @@ fun Home(chorus: Chorus, model: Model, onFronts: () -> Unit = {}, onHistory: (St
                         note?.let { Text(it, color = p.ink2, fontSize = 13.sp, lineHeight = 18.sp, modifier = Modifier.padding(horizontal = 4.dp)) }
                         val showEmpty = !view.hideEmpty || view.preset == Preset.Complete
                         val rings = scene.nested.filterIndexed { i, l -> i == 0 || showEmpty || l.entries.isNotEmpty() }
-                        if (rings.isNotEmpty()) Containment(model, rings, rings.lastIndex, ::lineFor, ::took, ::open) { layer -> switcher = layer }
+                        if (rings.isNotEmpty()) Containment(model, rings, rings.lastIndex, ::lineFor, ::took, ::open, ::options) { layer -> switcher = layer }
                         scene.separate.filter { showEmpty || it.entries.isNotEmpty() }.forEach { l ->
                             SeparateRow(model, l, l.id in expanded, ::open) { expanded = if (l.id in expanded) expanded - l.id else expanded + l.id }
                         }
@@ -372,7 +389,7 @@ fun Home(chorus: Chorus, model: Model, onFronts: () -> Unit = {}, onHistory: (St
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Containment(model: Model, rings: List<SceneLayer>, i: Int, line: (Entry) -> String?, took: (Entry) -> String?,
-    open: (Entry) -> Unit, onAdd: (String) -> Unit) {
+    open: (Entry) -> Unit, options: (Entry) -> Unit, onAdd: (String) -> Unit) {
     val p = LocalChorusPalette.current
     val l = rings[i]
     val ink = layerInk(l.style, parseHex(l.color), p)
@@ -399,7 +416,7 @@ private fun Containment(model: Model, rings: List<SceneLayer>, i: Int, line: (En
                             line(e)?.let { Text(it, color = p.ink3, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                         }
                         took(e)?.let { Text(it, color = p.ink3, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
-                        Box(Modifier.size(32.dp), contentAlignment = Alignment.Center) { Glyph(R.drawable.ic_more_vert, p.ink3, 18.dp, "${s.name} options") }
+                        Box(Modifier.size(32.dp).clip(CircleShape).clickable(role = Role.Button) { options(e) }, contentAlignment = Alignment.Center) { Glyph(R.drawable.ic_more_vert, p.ink3, 18.dp, "${s.name} options") }
                     }
                 }
             }
@@ -408,7 +425,7 @@ private fun Containment(model: Model, rings: List<SceneLayer>, i: Int, line: (En
     }
     LayerBox(ink, (16 + 2 * i).dp) {
         Column(Modifier.padding(bottom = 10.dp)) {
-            Containment(model, rings, i - 1, line, took, open, onAdd)
+            Containment(model, rings, i - 1, line, took, open, options, onAdd)
             Row(Modifier.fillMaxWidth().padding(start = 10.dp, end = 4.dp, top = 6.dp), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Column {
@@ -516,7 +533,7 @@ private fun OtherFrontRow(model: Model, f: NamedFront, accountId: String, onClic
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SimpleCard(model: Model, scene: FrontScene, since: Long?, line: (Entry) -> String?, took: (Entry) -> String?,
-    open: (Entry) -> Unit, time: DateFormat) {
+    open: (Entry) -> Unit, options: (Entry) -> Unit, time: DateFormat) {
     val p = LocalChorusPalette.current
     var more by remember { mutableStateOf(false) }
     val inner = scene.innermost
@@ -541,7 +558,7 @@ private fun SimpleCard(model: Model, scene: FrontScene, since: Long?, line: (Ent
                     line(e)?.let { Text(it, color = p.ink3, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 }
                 took(e)?.let { Text(it, color = p.ink3, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
-                Box(Modifier.size(32.dp), contentAlignment = Alignment.Center) { Glyph(R.drawable.ic_more_vert, p.ink3, 18.dp, "${s.name} options") }
+                Box(Modifier.size(32.dp).clip(CircleShape).clickable(role = Role.Button) { options(e) }, contentAlignment = Alignment.Center) { Glyph(R.drawable.ic_more_vert, p.ink3, 18.dp, "${s.name} options") }
             }
         }
         if (rest.isNotEmpty()) {

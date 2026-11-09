@@ -53,7 +53,6 @@ import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.Entry
 import garden.vayne.chorus.data.Front
-import garden.vayne.chorus.data.FrontReview
 import garden.vayne.chorus.data.FrontScene
 import garden.vayne.chorus.data.FrontState
 import garden.vayne.chorus.data.FrontStory
@@ -71,7 +70,6 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.launch
-import org.json.JSONObject
 
 /** A stretch of one subject on one layer, for the lane timeline. */
 private data class Span(val type: String, val id: String, val layer: String, val start: Long, val end: Long?)
@@ -84,7 +82,7 @@ private enum class Zoom(val label: String, val days: Int) { Day("Day", 1), Week(
  * be edited, undone or restored, and Log a past switch (F3.5). Read offline through shared core.
  */
 @Composable
-fun History(chorus: Chorus, model: Model, initialFront: String? = null, onBack: () -> Unit = {}) {
+fun History(chorus: Chorus, model: Model, initialFront: String? = null, openReview: Boolean = false, onBack: () -> Unit = {}) {
     val p = LocalChorusPalette.current
     val ctx = LocalContext.current
     val actions = rememberCoroutineScope()
@@ -139,6 +137,13 @@ fun History(chorus: Chorus, model: Model, initialFront: String? = null, onBack: 
     val rangeStart = rangeEnd - zoom.days * 86_400_000L
     val inRange = lines.filter { it.at in rangeStart until rangeEnd }.asReversed()
     val reviews = (if (configured) history?.reviews.orEmpty() else model.reviews).filter { it.id !in model.resolvedReviews }
+    var reviewing by rememberSaveable(openReview) { mutableStateOf(openReview) }
+    fun leaveReview() { reviewing = false; if (openReview) onBack() }
+    androidx.activity.compose.BackHandler(reviewing) { leaveReview() }
+    // the last one was just answered, or there was nothing to check
+    androidx.compose.runtime.LaunchedEffect(reviewing, reviews.isEmpty(), loading) { if (reviewing && reviews.isEmpty() && !loading) leaveReview() }
+    val answering = reviews.firstOrNull().takeIf { reviewing }
+    if (answering != null) { FrontReviewPage(chorus, model, answering, reviews.size, saved, front.takeIf { configured }, ::leaveReview); return }
     val dayLabel = SimpleDateFormat("EEEE d MMMM", Locale.getDefault())
 
     fun savedFor(line: StoryLine): SwitchRow? = if (!configured) saved.firstOrNull { it.id == line.changeId }
@@ -192,9 +197,14 @@ fun History(chorus: Chorus, model: Model, initialFront: String? = null, onBack: 
                     }
                 }
             }
-            reviews.forEach { r -> item(key = "review:${r.id}") {
-                ReviewCard(chorus, model, r, saved, front.takeIf { configured }) { e -> error = e }
-            } }
+            if (reviews.isNotEmpty()) item(key = "reviews") {
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(p.surface).clickable(role = Role.Button) { reviewing = true }
+                    .padding(horizontal = 12.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Glyph(R.drawable.ic_alert, p.warn, 18.dp)
+                    Text("${reviews.size} ${if (reviews.size == 1) "thing" else "things"} to check", color = p.ink, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    Glyph(R.drawable.ic_chevron_right, p.ink3, 18.dp)
+                }
+            }
             item {
                 Lanes(model, spans, scene, rangeStart, rangeEnd, now, zoom,
                     onPrev = { dayOffset += zoom.days }, onNext = { dayOffset = (dayOffset - zoom.days).coerceAtLeast(0) }, canNext = dayOffset > 0)
@@ -368,65 +378,4 @@ private fun Lanes(model: Model, spans: List<Span>, scene: FrontScene, from: Long
             }
         }
     }
-}
-
-/** Two devices switched at nearly the same time (Figma F3.6): keep both, keep one, or merge. */
-@Composable
-private fun ReviewCard(chorus: Chorus, model: Model, r: FrontReview, saved: List<SwitchRow>, frontId: String?, onError: (String?) -> Unit) {
-    val p = LocalChorusPalette.current
-    val actions = rememberCoroutineScope()
-    val a = saved.firstOrNull { it.id == r.switchA }
-    val b = saved.firstOrNull { it.id == r.switchB }
-    var pick by remember { mutableStateOf<String?>(null) }
-    val me = chorus.device?.deviceId
-    val time = DateFormat.getTimeInstance(DateFormat.SHORT)
-    fun device(s: SwitchRow?) = s?.deviceId?.let { model.deviceNames[it] ?: if (it == me) "This device" else null } ?: "Another device"
-    fun who(s: SwitchRow?) = s?.resultingFront?.joinToString(" & ") { model.subject(it.subjectType, it.subjectId)?.name ?: "?" }?.ifEmpty { "No one" } ?: "?"
-    fun run(block: suspend () -> Unit) = actions.launch { try { block(); onError(null) } catch (e: Exception) { onError(e.message) } }
-    suspend fun resolve(resolution: String) = chorus.create("front.review_resolve", null, JSONObject().put("review_id", r.id).put("resolution", resolution))
-    suspend fun retract(id: String) {
-        if (frontId != null) chorus.create("front.change", frontId, JSONObject().put("action", "retract").put("target_op_id", id))
-        else chorus.create("front.retract", chorus.newId(), JSONObject().put("target_op_id", id))
-    }
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(p.surface).padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Two devices switched within a minute", color = p.ink, fontSize = 14.sp)
-        listOf(a, b).forEach { s ->
-            val on = pick != null && pick == s?.id
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(p.surface2)
-                .border(1.dp, if (on) p.accent else p.line, RoundedCornerShape(12.dp)).clickable(enabled = s != null) { pick = s?.id }
-                .padding(horizontal = 16.dp, vertical = 12.dp)) {
-                Text("${device(s).uppercase()} · ${s?.let { time.format(Date(it.occurredAt)) } ?: ""}", color = p.ink2, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                Text(who(s), color = p.ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-            }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ReviewButton("Keep both") { run { resolve("keep_both") } }
-            ReviewButton(if (pick == null) "Keep one…" else "Keep this one", enabled = a != null && b != null) {
-                val keep = pick
-                if (keep == null) onError("Tap the one that was right, then Keep this one.")
-                else run { retract(if (keep == r.switchA) r.switchB else r.switchA); resolve(if (keep == r.switchA) "keep_a" else "keep_b") }
-            }
-            ReviewButton("Merge", enabled = a != null && b != null && !a.retracted && !b.retracted) {
-                run {
-                    val seen = HashSet<String>()
-                    val entries = (a!!.resultingFront + b!!.resultingFront).filter { seen.add("${it.subjectType}:${it.subjectId}") }
-                    if (frontId != null) {
-                        // history only, so following and any override stay as they were (D-083)
-                        chorus.create("front.change", frontId, Front.changePayload(entries, at = maxOf(a.occurredAt, b.occurredAt), historyOnly = true))
-                        retract(a.id); retract(b.id)
-                    } else chorus.create("front.switch", chorus.newId(), Front.switchPayload(entries, notify = "silent"),
-                        userTime = maxOf(a.occurredAt, b.occurredAt))
-                    resolve("merge")
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ReviewButton(label: String, enabled: Boolean = true, onClick: () -> Unit) {
-    val p = LocalChorusPalette.current
-    Text(label, color = if (enabled) p.ink else p.ink3, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-        modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(p.surface2).clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 10.dp))
 }

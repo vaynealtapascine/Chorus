@@ -47,7 +47,33 @@ class FrontingDisplayTest {
         assertEquals(Preset.Complete, prefs.frontingDisplay.front("acct").preset)
         assertEquals("Tired", prefs.memberStatus["fox"]?.text)
         assertFalse("ama" in prefs.memberStatus)
-        assertEquals(JSONObject.NULL, FrontingDisplay.statusPayload("fox", " ", 1).get("value"))
+        assertEquals(JSONObject.NULL, FrontingDisplay.statusPayload("fox", MemberStatus(note = " ")).get("value"))
+        assertEquals(JSONObject.NULL, FrontingDisplay.statusPayload("fox", null).get("value"))
+    }
+
+    @Test fun memberStatesHoldSeveralTagsAndANote() {
+        val states = listOf(CustomState("b1", "Blurry", null, null, null))
+        val written = FrontingDisplay.statusPayload("fox", MemberStatus(listOf("tired", "state:b1", "On a walk"), " Typing only ", 5, true)).getJSONObject("value")
+        val read = FrontingDisplay.status(written)!!
+        assertEquals(listOf("tired", "state:b1", "On a walk"), read.tags)
+        assertEquals("Typing only", read.note)
+        assertEquals(true, read.clearOnLeave)
+        assertEquals("Tired · Blurry · On a walk · Typing only", read.line(states))
+        // older readers still get a line of text, and an older value reads as a note
+        assertEquals("Tired · State · On a walk · Typing only", written.getString("text"))
+        val legacy = FrontingDisplay.status(JSONObject().put("text", "Resting").put("at", 3))!!
+        assertEquals(MemberStatus(emptyList(), "Resting", 3, false), legacy)
+    }
+
+    @Test fun aStateMeantToClearStaysGoneOnceTheyLeftAndCameBack() {
+        val clears = MemberStatus(listOf("tired"), null, 1_000_000, true)
+        assertTrue(FrontingDisplay.statusShowing(clears, 900_000))
+        assertTrue("a slow clock isn't a return", FrontingDisplay.statusShowing(clears, 1_030_000))
+        assertFalse(FrontingDisplay.statusShowing(clears, 2_000_000))
+        assertTrue(FrontingDisplay.statusShowing(clears, null))
+        assertTrue(FrontingDisplay.statusShowing(clears.copy(clearOnLeave = false), 2_000_000))
+        assertEquals("tired", FrontingDisplay.statusChoices(emptyList(), null).first())
+        assertTrue("On a walk" in FrontingDisplay.statusChoices(emptyList(), MemberStatus(listOf("On a walk"))))
     }
 
     @Test fun sceneSortsEntriesIntoNestedSeparateAndAway() {

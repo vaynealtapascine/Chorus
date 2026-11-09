@@ -213,7 +213,7 @@ internal fun HomeScreen(chorus: Chorus, model: Model, routes: HomeRoutes) {
     if (switcher && !person) Switcher(chorus, model, if (named != null) bodyId else null) { switcher = false }
     if (pins) WidgetPinsSheet(model, accountId) { pins = false }
     placing?.let { s -> PlaceSheet(chorus, model, bodyId, s, since[s.id], onState = { stateFor = s; placing = null }) { placing = null } }
-    stateFor?.let { s -> MemberStateSheet(chorus, model, s) { stateFor = null } }
+    stateFor?.let { s -> MemberStatePage(chorus, model, s) { stateFor = null } }
     if (editing) HomeSectionsDrawer(sections, reader?.shownName?.takeIf { !person }, onDismiss = { editing = false }) { next ->
         actions.launch {
             try { reordered = true; chorus.create("pref.set", null, HomeDashboard.payload(readerKey, next)); error = null }

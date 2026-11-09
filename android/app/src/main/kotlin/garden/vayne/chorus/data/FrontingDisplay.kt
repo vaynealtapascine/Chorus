@@ -6,9 +6,15 @@ import org.json.JSONObject
 /** A custom state that can front like a member ("Blurry", "Dissociated"; ENTITIES §2). */
 data class CustomState(val id: String, val name: String, val description: String?, val color: String?, val icon: String?)
 
-/** What a member is up to while here ("Tired", or their own words; F3.10). One account pref per
- * member, `member_status:<id>` = `{text, at}`; cleared with null. */
-data class MemberStatus(val text: String, val at: Long)
+/** What a member is up to while here (F3.10): built-in states, the system's own (`state:<id>`) or
+ * their own words, and a note. One account pref per member, `member_status:<id>`, cleared with
+ * null; an older `{text, at}` reads as a note, and `text` is still written for older readers. */
+data class MemberStatus(val tags: List<String> = emptyList(), val note: String? = null, val at: Long = 0, val clearOnLeave: Boolean = false) {
+    /** "Tired · Nonverbal · Typing only today, please" */
+    fun line(states: List<CustomState> = emptyList()): String =
+        (tags.map { FrontingDisplay.statusLabel(it, states) } + listOfNotNull(note)).joinToString(" · ")
+    val text: String get() = line()
+}
 
 /**
  * How Fronting shows each front (Figma F3.1, F3.4, F3.9, F3.11; D-122). One account pref,
@@ -103,12 +109,37 @@ object FrontingDisplay {
 
     fun payload(s: Settings): JSONObject = AccountPrefs.payload(PREF, toJson(s))
 
-    fun statusPayload(memberId: String, text: String?, at: Long): JSONObject =
-        AccountPrefs.payload(STATUS + memberId, text?.trim()?.takeIf { it.isNotEmpty() }?.let { JSONObject().put("text", it).put("at", at) } ?: JSONObject.NULL)
+    const val MAX_STATUS_TAG = 40
+    const val MAX_STATUS_NOTE = 200
+    private val BUILT_IN_STATUSES = listOf("tired" to "Tired", "nonverbal" to "Nonverbal", "busy" to "Busy", "low_spoons" to "Low spoons",
+        "needs_quiet" to "Needs quiet", "out_and_about" to "Out and about")
+
+    fun statusLabel(tag: String, states: List<CustomState>): String =
+        BUILT_IN_STATUSES.firstOrNull { it.first == tag }?.second
+            ?: tag.takeIf { it.startsWith("state:") }?.let { t -> states.firstOrNull { it.id == t.removePrefix("state:") }?.name ?: "State" }
+            ?: tag
+
+    /** What the state page offers: the built-in states, the system's own, and any words this one already has. */
+    fun statusChoices(states: List<CustomState>, current: MemberStatus?): List<String> =
+        (BUILT_IN_STATUSES.map { it.first } + states.map { "state:${it.id}" } + current?.tags.orEmpty()).distinct()
+
+    /** [states] name the system's own states in `text`, for readers that only know `text`. */
+    fun statusPayload(memberId: String, status: MemberStatus?, states: List<CustomState> = emptyList()): JSONObject =
+        AccountPrefs.payload(STATUS + memberId, status?.copy(note = status.note?.trim()?.ifEmpty { null })
+            ?.takeIf { it.tags.isNotEmpty() || it.note != null }?.let { s ->
+                JSONObject().put("tags", JSONArray(s.tags)).put("at", s.at).put("clear_on_leave", s.clearOnLeave).put("text", s.line(states))
+                    .also { o -> s.note?.let { o.put("note", it) } }
+            } ?: JSONObject.NULL)
 
     fun status(value: Any?): MemberStatus? = (value as? JSONObject)?.let { o ->
-        str(o, "text")?.let { MemberStatus(it.take(80), o.optLong("at")) }
+        val tags = strings(o.optJSONArray("tags")).take(8).map { it.take(MAX_STATUS_TAG) }
+        val note = (if (o.has("tags")) str(o, "note") else str(o, "text"))?.take(MAX_STATUS_NOTE)
+        if (tags.isEmpty() && note == null) null else MemberStatus(tags, note, o.optLong("at"), o.optBoolean("clear_on_leave"))
     }
+
+    /** Whether a state still shows for someone here since [since]: one meant to clear stays gone once
+     * they left and came back. A minute's slack for the clock of the device that set it. */
+    fun statusShowing(status: MemberStatus, since: Long?): Boolean = !status.clearOnLeave || since == null || since <= status.at + 60_000
 
     /** The default look of the layer at `index` among the nested (not separately listed) ones. */
     fun defaultStyle(index: Int): Style = when (index) { 0 -> Style.Solid; 1 -> Style.Dashed; else -> Style.Faint }

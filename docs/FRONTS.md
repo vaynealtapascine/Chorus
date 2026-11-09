@@ -229,7 +229,10 @@ Display choices are account prefs, so no server change and no new op kinds:
   back to: the first nested layer solid, the second dashed, the rest faint, separate layers plain;
   the original three layers have built-in descriptions; Body's icon is `target`, a template's
   name picks its icon, otherwise `layers`; Detailed with every switch on.
-- `member_status:<member id>` = `{text, at}` or null: a member's state while here (F3.10).
+- `member_status:<member id>` = `{tags, note, at, clear_on_leave, text}` or null: a member's states while here
+  (F3.10). `tags` are built-in keys (`tired`, `nonverbal`, `busy`, `low_spoons`, `needs_quiet`, `out_and_about`),
+  `state:<custom state id>` or the member's own words; `text` is the joined line, kept for older readers. An
+  older `{text, at}` reads as a note. With `clear_on_leave` the state stops showing once they left and came back.
 
 Parsers: Android `data/FrontingDisplay.kt` (with `FrontScene`, `FrontStory`), web
 `lib/fronting-display.ts`; both have matching unit tests (`FrontingDisplayTest`,

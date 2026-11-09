@@ -312,12 +312,12 @@ fun PlaceSheet(chorus: Chorus, model: Model, frontId: String, s: Subject, since:
                 }
             }
             if (s.type == "member") {
-                val status = model.accountPrefs.memberStatus[s.id]
+                val status = model.accountPrefs.memberStatus[s.id]?.takeIf { (here != null && FrontingDisplay.statusShowing(it, since)) || !it.clearOnLeave }
                 Row(Modifier.fillMaxWidth().clickable(onClick = onState).padding(horizontal = 20.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("State", color = p.ink, fontSize = 15.sp)
-                        status?.text?.let { Text(it, color = p.ink3, fontSize = 13.sp) }
+                        status?.line(model.states)?.let { Text(it, color = p.ink3, fontSize = 13.sp) }
                     }
                     Glyph(R.drawable.ic_chevron_right, p.ink3, 18.dp)
                 }
@@ -405,49 +405,6 @@ private fun ChoiceLine(title: String, about: String, on: Boolean, hidden: Boolea
         }
         Box(Modifier.size(22.dp).clip(CircleShape).border(2.dp, if (on) p.accent else p.line, CircleShape), contentAlignment = Alignment.Center) {
             if (on) Box(Modifier.size(10.dp).background(p.accent, CircleShape))
-        }
-    }
-}
-
-/** A member's state (Figma F3.10): a few common ones, the system's custom states, or their own words. */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-fun MemberStateSheet(chorus: Chorus, model: Model, s: Subject, onClose: () -> Unit) {
-    val p = LocalChorusPalette.current
-    val actions = rememberCoroutineScope()
-    val current = model.accountPrefs.memberStatus[s.id]?.text
-    val common = (listOf("Tired", "Nonverbal", "Busy") + model.states.map { it.name }).distinct()
-    var picked by remember { mutableStateOf(current?.let { c -> common.firstOrNull { it.equals(c, true) } }) }
-    var custom by remember { mutableStateOf(current?.takeIf { picked == null }.orEmpty()) }
-    var own by remember { mutableStateOf(current != null && picked == null) }
-    var error by remember { mutableStateOf<String?>(null) }
-    fun set(text: String?) = actions.launch {
-        try { chorus.create("pref.set", null, FrontingDisplay.statusPayload(s.id, text, System.currentTimeMillis())); onClose() }
-        catch (e: Exception) { error = e.message }
-    }
-    ChorusSheet(onDismissRequest = onClose, skipPartiallyExpanded = true, containerColor = p.surface) {
-        SheetHeader("Member state", s.name, onClose, lead = { Avatar(s.glyph, s.color, 40.dp, avatarBlob = s.avatarBlob, ring = false) })
-        FlowRow(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            (common + "Custom").forEach { name ->
-                val on = if (name == "Custom") own else picked == name && !own
-                Text(name.uppercase(), color = if (on) p.accent else p.ink2, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = .5.sp,
-                    modifier = Modifier.clip(CircleShape).background(if (on) p.accentSoft else p.surface2)
-                        .clickable(role = Role.RadioButton) { if (name == "Custom") own = true else { own = false; picked = name } }
-                        .padding(horizontal = 12.dp, vertical = 7.dp))
-            }
-        }
-        if (own) ChorusField(custom, { custom = it.take(80) }, label = { Text("In your own words") }, singleLine = true,
-            modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth())
-        error?.let { Text(it, color = p.danger, modifier = Modifier.padding(horizontal = 20.dp)) }
-        Row(Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            val text = if (own) custom.trim().ifEmpty { null } else picked
-            Box(Modifier.clip(RoundedCornerShape(10.dp)).background(if (text != null) p.accent else p.surface3)
-                .clickable(enabled = text != null) { set(text) }.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                Text("Set state", color = if (text != null) p.onAccent else p.ink3, fontWeight = FontWeight.SemiBold)
-            }
-            if (current != null) Box(Modifier.clip(RoundedCornerShape(10.dp)).border(1.dp, p.line, RoundedCornerShape(10.dp))
-                .clickable { set(null) }.padding(horizontal = 16.dp, vertical = 12.dp)) { Text("Clear", color = p.ink2, fontWeight = FontWeight.SemiBold) }
         }
     }
 }

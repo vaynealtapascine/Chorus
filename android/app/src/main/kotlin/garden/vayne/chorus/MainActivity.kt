@@ -287,6 +287,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
     var layersFront by rememberSaveable { mutableStateOf<String?>(null) }
     // the front Front history opens on (the one Fronting was showing)
     var historyFront by rememberSaveable { mutableStateOf<String?>(null) }
+    var historyReview by rememberSaveable { mutableStateOf(false) }
     var lastAccount by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(chorus.device?.accountId, status) {
         if (status == Status.Loading) return@LaunchedEffect
@@ -484,13 +485,14 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                             tab = Tab.Chat
                         },
                         onFriends = { route -> friendsRoute = route; tab = Tab.People },
-                        onHistory = { historyFront = null; tab = Tab.History },
+                        onHistory = { historyFront = null; historyReview = false; tab = Tab.History },
                         onJournal = { tab = Tab.Journal },
                         onPost = { id -> journalReplyPost = null; journalOpenPost = id; tab = Tab.Journal },
                         onReply = { id -> journalReplyPost = id; tab = Tab.Journal },
                         onWrite = { journalReplyPost = null; journalOpenPost = null; journalNewEntry = System.nanoTime(); tab = Tab.Journal },
                         onProfile = { id -> journalOpenProfile = id; journalOpenPost = null; tab = Tab.Journal }))
-                    Tab.Fronting -> Home(chorus, model, onFronts = { frontsOpen = true }, onHistory = { historyFront = it; tab = Tab.History },
+                    Tab.Fronting -> Home(chorus, model, onFronts = { frontsOpen = true }, onHistory = { historyFront = it; historyReview = false; tab = Tab.History },
+                        onReview = { historyFront = it; historyReview = true; tab = Tab.History },
                         onLayers = { layersFront = it }, onNewFront = { frontsNaming = true; frontsOpen = true })
                     Tab.Notifications -> Notifications(chorus, model, InboxRoutes(
                         onPost = { id -> journalReplyPost = null; journalOpenPost = id; tab = Tab.Journal },
@@ -499,7 +501,8 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                             chatMessage = message; chatSearchHit = null; tab = Tab.Chat
                         },
                         onFriends = { route -> friendsRoute = route; tab = Tab.People },
-                        onHistory = { tab = if (person) Tab.Journal else Tab.History },
+                        onHistory = { historyReview = false; tab = if (person) Tab.Journal else Tab.History },
+                        onReview = { historyFront = null; historyReview = true; tab = if (person) Tab.Journal else Tab.History },
                         onSettings = { openSettings(garden.vayne.chorus.ui.SettingsPage.Notifications) }))
                     Tab.Chat -> Chat(chorus, model, chatSpace, chatChannel, chatSearchHit,
                         onStageCapture = { chatStageCapture = it }, onDismissSearchHit = { chatSearchHit = null },
@@ -528,7 +531,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                     Tab.Members -> Members(chorus, model, onJournal = { member, post ->
                         journalOpenProfile = member; journalOpenPost = post; tab = Tab.Journal
                     }, onMessage = { space, channel -> chatSpace = space; chatChannel = channel; chatMessage = null; chatSearchHit = null; tab = Tab.Chat }, active = shownTab == activeTab, onFocusedRoute = { membersFocused = it })
-                    Tab.History -> History(chorus, model, historyFront, onBack = { tab = Tab.Fronting })
+                    Tab.History -> History(chorus, model, historyFront, historyReview, onBack = { historyReview = false; tab = Tab.Fronting })
                     Tab.More -> MoreScreen(chorus, model, destinations.filter { it != Tab.More }.map { it.key }, unread, garden.vayne.chorus.ui.MoreRoutes(
                         go = { key -> Tab.of(key)?.let { tab = it } }, onInsights = { insightsOpen = true }, onSettings = { openSettings(it) },
                         onSearch = { searchSection = "Messages"; searchOpen = true }, onEditBar = { editingBar = true }))

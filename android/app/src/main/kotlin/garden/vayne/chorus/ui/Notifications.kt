@@ -34,7 +34,7 @@ import org.json.JSONObject
 /** Where a notification leads: a post, a chat message, Friends, front history or settings. */
 internal class InboxRoutes(val onPost: (String) -> Unit, val onChat: (String, String?) -> Unit,
     /** Friends, opened at a page: its route stack (e.g. "friend:<account>", then "notify:<follow>"). */
-    val onFriends: (List<String>) -> Unit, val onHistory: () -> Unit, val onSettings: () -> Unit)
+    val onFriends: (List<String>) -> Unit, val onHistory: () -> Unit, val onReview: () -> Unit, val onSettings: () -> Unit)
 
 /** The member whose read marks the screen shows: whoever is fronting (a person: their own member). */
 internal fun inboxReader(model: Model, chosen: String?): Member? =
@@ -103,7 +103,7 @@ internal fun Notifications(chorus: Chorus, model: Model, routes: InboxRoutes) {
     fun open(item: InboxItem) {
         if (!item.needsYou) save(read.mark(item))
         when {
-            item.kind == "review" -> routes.onHistory()
+            item.kind == "review" -> routes.onReview()
             item.postId != null -> routes.onPost(item.postId)
             item.channelId != null -> routes.onChat(item.channelId, item.messageId)
             item.kind == "own_switch" -> routes.onHistory()
@@ -167,7 +167,7 @@ internal fun Notifications(chorus: Chorus, model: Model, routes: InboxRoutes) {
                                 PeopleApi.decidePostAlert(checkNotNull(chorus.device), item.memberId.orEmpty(), item.accountId.orEmpty(), false) } })
                             else -> null
                         },
-                        onReview = if (item.kind == "review") routes.onHistory else null)
+                        onReview = if (item.kind == "review") routes.onReview else null)
                 }
             }
         }
