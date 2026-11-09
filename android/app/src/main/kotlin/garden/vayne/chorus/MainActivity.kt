@@ -89,7 +89,9 @@ import garden.vayne.chorus.ui.InsightsScreen
 
 private data class OpenChatRequest(val id: Long, val spaceId: String?, val channelId: String)
 /** A tapped post alert (D-106): the post, or (no post) Friends for a request or its answer. */
-private data class OpenPostRequest(val id: Long, val postId: String?, val messageId: String? = null)
+/** Somewhere a link or a notification opens: a post, a message, a friend's page or a tab ("notifications", "history"). */
+private data class OpenPostRequest(val id: Long, val postId: String?, val messageId: String? = null,
+    val friend: String? = null, val tab: String? = null)
 
 class MainActivity : ComponentActivity() {
     companion object {
@@ -101,6 +103,10 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_OPEN_SPACE = "garden.vayne.chorus.OPEN_SPACE"
         const val EXTRA_OPEN_POST = "garden.vayne.chorus.OPEN_POST"
         const val EXTRA_OPEN_PEOPLE = "garden.vayne.chorus.OPEN_PEOPLE"
+        /** A friend's page (their account id): a friend's switch, an answered alert request. */
+        const val EXTRA_OPEN_FRIEND = "garden.vayne.chorus.OPEN_FRIEND"
+        /** A destination by name: "notifications" or "history". */
+        const val EXTRA_OPEN_TAB = "garden.vayne.chorus.OPEN_TAB"
     }
 
     private var inviteLink = mutableStateOf<String?>(null)
@@ -203,8 +209,10 @@ class MainActivity : ComponentActivity() {
             }
         }
         val post = i?.getStringExtra(EXTRA_OPEN_POST)?.takeIf { it.isNotBlank() }
-        if (post == null && i?.getBooleanExtra(EXTRA_OPEN_PEOPLE, false) != true) return null
-        return OpenPostRequest(++nextOpenChatId, post)
+        val friend = i?.getStringExtra(EXTRA_OPEN_FRIEND)?.takeIf { it.isNotBlank() }
+        val tab = i?.getStringExtra(EXTRA_OPEN_TAB)?.takeIf { it.isNotBlank() }
+        if (post == null && friend == null && tab == null && i?.getBooleanExtra(EXTRA_OPEN_PEOPLE, false) != true) return null
+        return OpenPostRequest(++nextOpenChatId, post, friend = friend, tab = tab)
     }
 
     private fun openChatFrom(i: Intent?): OpenChatRequest? {
@@ -338,7 +346,10 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
         } else if (req.postId != null) {
             journalReplyPost = null; journalOpenPost = req.postId
             tab = Tab.Journal
-        } else tab = Tab.People
+        } else if (req.friend != null) { friendsRoute = listOf("friend:${req.friend}"); tab = Tab.People }
+        else if (req.tab == "notifications") tab = Tab.Notifications
+        else if (req.tab == "history") tab = Tab.History
+        else tab = Tab.People
         onOpenPostConsumed()
     }
     BackHandler(sharedDraft != null || settingsOpen || searchOpen || insightsOpen || frontsOpen || layersFront != null) {
@@ -424,7 +435,6 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                 Text(if (searchOpen) "Search" else if (settingsOpen) "Settings" else if (insightsOpen) "Insights" else if (frontsOpen) "Fronts" else activeTab.label,
                     fontSize = 20.sp, fontWeight = FontWeight.Bold, color = p.ink, modifier = Modifier.weight(1f))
                 IconButton(onClick = { searchSection=if(activeTab==Tab.Journal) "Posts" else "Messages"; searchOpen = !searchOpen; settingsOpen = false; insightsOpen = false; frontsOpen = false; layersFront = null }) { ChorusIcon(if (searchOpen) AppIcon.Close else AppIcon.Search, if (searchOpen) "Close search" else "Search") }
-                if (!person) IconButton(onClick = { quickSwitchOpen = true }) { ChorusIcon(AppIcon.Swap, "Open switcher") }
                 IconButton(onClick = { settingsOpen = !settingsOpen; searchOpen = false; insightsOpen = false; frontsOpen = false; layersFront = null }) { ChorusIcon(if (settingsOpen) AppIcon.Close else AppIcon.Settings, if (settingsOpen) "Close settings" else "Settings") }
             }
             // changes waiting on this phone, on every screen (F2.5, F10.3)

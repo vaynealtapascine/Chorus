@@ -28,6 +28,8 @@ data class InboxItem(
     val accountId: String? = null, val memberId: String? = null,
     /** Follow request to accept (its follow id), alert request (member + account), or a review. */
     val followId: String? = null, val needsYou: Boolean = false,
+    /** [at] is only when it was read, not when it happened: no time is shown. */
+    val untimed: Boolean = false,
 )
 
 /** A reader's read marks: everything at or before [until], and [ids] read one by one after it. */
@@ -145,11 +147,11 @@ object Inbox {
 
     /** What waits on us: follow requests, alert requests and front reviews. Always unread. */
     fun needsYou(follows: FollowList?, alerts: List<JSONObject>, reviews: List<FrontReview>, person: Boolean,
-        memberName: (String) -> String?, now: Long): List<InboxItem> {
+        memberName: (String) -> String?, now: Long, review: (FrontReview) -> Pair<String, Long>? = { null }): List<InboxItem> {
         val out = ArrayList<InboxItem>()
         for (f in follows?.followers.orEmpty().filter { it.status == "requested" }) out += InboxItem("follow:${f.id}", "follow_request",
-            "friends", null, now, f.account.shownName, "${f.account.shownName} wants to follow ${if (person) "you" else "your system"}",
-            accountId = f.account.id, followId = f.id, needsYou = true)
+            "friends", null, f.createdAt.takeIf { it > 0 } ?: now, f.account.shownName, "${f.account.shownName} wants to follow ${if (person) "you" else "your system"}",
+            accountId = f.account.id, followId = f.id, needsYou = true, untimed = f.createdAt <= 0)
         for (a in alerts.filter { it.optString("status") == "requested" }) {
             val account = a.optJSONObject("account")
             val who = account?.text("display_name") ?: account?.text("handle")?.let { "@$it" } ?: "Someone"
@@ -158,8 +160,11 @@ object Inbox {
                 "$who wants to hear when ${memberName(member) ?: "a member"} posts", memberId = member, accountId = account?.text("id"),
                 needsYou = true)
         }
-        for (r in reviews) out += InboxItem("review:${r.id}", "review", "system", null, now, null,
-            "Two devices switched within a minute", detail = "Check which one is right", needsYou = true)
+        for (r in reviews) {
+            val said = review(r)
+            out += InboxItem("review:${r.id}", "review", "system", null, said?.second ?: now, null,
+                "Two devices switched within a minute", detail = said?.first, needsYou = true, untimed = said == null)
+        }
         return out
     }
 
@@ -199,7 +204,8 @@ object Inbox {
         val follows = soft { PeopleApi.list(dev) }
         val alerts = soft { PeopleApi.postAlerts(dev) }.orEmpty()
         val items = fromNotifications(notes) + fromActivity(activity) +
-            needsYou(follows, alerts, model.reviews, model.isPerson, { model.member(it)?.shownName }, System.currentTimeMillis())
+            needsYou(follows, alerts, model.reviews.filter { it.id !in model.resolvedReviews }, model.isPerson, { model.member(it)?.shownName },
+                System.currentTimeMillis()) { FrontReviews.summary(model, it, dev.deviceId) }
         // with nothing read at all (offline), keep what was there
         if (notes == null && activity == null && follows == null) return of(dev.accountId).orEmpty()
         latest.value = dev.accountId to items

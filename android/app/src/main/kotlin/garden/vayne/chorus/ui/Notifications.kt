@@ -204,7 +204,7 @@ internal fun Notifications(chorus: Chorus, model: Model, routes: InboxRoutes) {
             }
             item.shows?.let { key ->
                 val label = Inbox.SHOWS.first { it.first == key }.second
-                MenuRow("Hide ${label.lowercase()} here", R.drawable.ic_eye_off, "They still reach your devices as set in settings") {
+                MenuRow("Hide ${label.lowercase()} here", R.drawable.ic_eye_off) {
                     held = null
                     scope.launch { runCatching { chorus.create("pref.set", null, Inbox.showsPayload(shows, key, false)) } }
                 }
@@ -327,7 +327,7 @@ private fun InboxRow(item: InboxItem, unread: Boolean, model: Model, onOpen: () 
             }
         }
         Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (!item.needsYou) Text(compactAgo(item.at), color = p.ink3, style = MaterialTheme.typography.bodySmall)
+            if (!item.untimed) Text(compactAgo(item.at), color = p.ink3, style = MaterialTheme.typography.bodySmall)
             if (unread) Box(Modifier.size(8.dp).clip(CircleShape).background(p.accent))
         }
     }

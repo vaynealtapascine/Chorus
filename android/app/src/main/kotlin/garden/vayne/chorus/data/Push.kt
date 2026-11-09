@@ -507,7 +507,19 @@ object Push {
             val noteId = key.hashCode()
             val tap = Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP).apply {
                 if (kind == "post") putExtra(MainActivity.EXTRA_OPEN_POST, p.optString("post_id"))
-                if (kind == "alert") putExtra(MainActivity.EXTRA_OPEN_PEOPLE, true)
+                // a request waits for Allow in Notifications; a yes opens whose it was
+                if (kind == "alert") {
+                    val friend = p.optString("account_id")
+                    if (p.optString("kind") == "alert_accepted" && friend.isNotEmpty()) putExtra(MainActivity.EXTRA_OPEN_FRIEND, friend)
+                    else putExtra(MainActivity.EXTRA_OPEN_TAB, "notifications")
+                }
+                // a friend's switch opens their page; ours, front history
+                if (kind == "switch") {
+                    val friend = p.optString("account_id")
+                    if (friend.isNotEmpty() && friend != "own") putExtra(MainActivity.EXTRA_OPEN_FRIEND, friend)
+                    else putExtra(MainActivity.EXTRA_OPEN_TAB, "history")
+                }
+                if (kind == "own_switch") putExtra(MainActivity.EXTRA_OPEN_TAB, "history")
                 if (kind == "poll") {
                     if (pollPost != null) putExtra(MainActivity.EXTRA_OPEN_POST, pollPost)
                     else setAction(MainActivity.ACTION_OPEN_CHAT).putExtra(MainActivity.EXTRA_OPEN_CHANNEL, p.optString("channel_id"))

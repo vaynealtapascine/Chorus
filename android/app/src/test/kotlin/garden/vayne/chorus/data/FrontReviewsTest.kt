@@ -14,4 +14,9 @@ class FrontReviewsTest {
         assertEquals("Foxglove and Amarynthe fronted together", FrontReviews.together("Foxglove", "Amarynthe"))
         assertEquals("Foxglove fronted", FrontReviews.together("Foxglove", "Foxglove"))
     }
+
+    @Test fun disagreeSaysWhatEachDeviceRecorded() {
+        assertEquals("Phone says Foxglove, Laptop says Amarynthe", FrontReviews.disagree("Phone", "Foxglove", "Laptop", "Amarynthe"))
+        assertEquals("Pixel 8 says Foxglove, this device says Kit", FrontReviews.disagree("Pixel 8", "Foxglove", "This device", "Kit"))
+    }
 }
