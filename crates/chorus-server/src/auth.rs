@@ -16,6 +16,9 @@ use crate::ingest;
 
 pub const INVITE_TTL_MS: i64 = 7 * 24 * 3_600_000;
 pub const NONCE_TTL_MS: i64 = 5 * 60_000;
+/// How long a signed-out device keeps its local copy before erasing it, unless the person signing
+/// it out chose to erase it at once (D-152).
+pub const SIGNED_OUT_KEEP_MS: i64 = 2 * 24 * 3_600_000;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AuthError {
@@ -33,6 +36,10 @@ pub enum AuthError {
     KeyMismatch,
     #[error("unknown or revoked device")]
     UnknownDevice,
+    /// The device holding this key was signed out at `at`; it erases its copy at `wipe_at`
+    /// (D-152). Only answered after the signature verifies. `403 signed_out`.
+    #[error("this device was signed out")]
+    SignedOut { at: i64, wipe_at: i64 },
     #[error("session expired or unknown")]
     BadSession,
     #[error("bad request: {0}")]
@@ -356,11 +363,10 @@ pub fn authenticate(conn: &Connection, token: &str, now: i64, ttl_ms: i64) -> Re
 /// How often a session's use moves its expiry and its device's `last_seen_at` on.
 const TOUCH_EVERY_MS: i64 = 60_000;
 
+/// A nonce for a known device, signed out or not: a signed-out device that still holds its key
+/// learns so by answering it (D-152). An unknown device is `UnknownDevice`.
 pub fn challenge(conn: &Connection, device_id: &str, now: i64) -> Result<String, AuthError> {
-    let ok = conn
-        .query_row("SELECT 1 FROM device WHERE id = ?1 AND revoked_at IS NULL", [device_id], |_| Ok(()))
-        .optional()?
-        .is_some();
+    let ok = conn.query_row("SELECT 1 FROM device WHERE id = ?1", [device_id], |_| Ok(())).optional()?.is_some();
     if !ok {
         return Err(AuthError::UnknownDevice);
     }
@@ -407,10 +413,13 @@ pub fn verify(
     if found.is_none_or(|exp| exp < now) {
         return Err(AuthError::BadSignature);
     }
-    let key: Option<String> = conn
-        .query_row("SELECT public_key FROM device WHERE id = ?1 AND revoked_at IS NULL", [device_id], |r| r.get(0))
+    let device: Option<(String, Option<i64>, bool)> = conn
+        .query_row("SELECT public_key, revoked_at, wipe_on_signout FROM device WHERE id = ?1", [device_id], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        })
         .optional()?;
-    let key = parse_key(&key.ok_or(AuthError::UnknownDevice)?)?;
+    let (key, revoked_at, wipe) = device.ok_or(AuthError::UnknownDevice)?;
+    let key = parse_key(&key)?;
     let sig_bytes = decode_b64(signature_b64).ok_or(AuthError::BadSignature)?;
     let sig = Signature::from_slice(&sig_bytes)
         .or_else(|_| Signature::from_der(&sig_bytes))
@@ -419,6 +428,10 @@ pub fn verify(
     // key is not the one enrolled (D-153), which a client handles as signed out
     key.verify(challenge_message(nonce, device_id, instance_id).as_bytes(), &sig)
         .map_err(|_| AuthError::KeyMismatch)?;
+    // signed out: only now, to the key's holder, say when and when to erase; no session
+    if let Some(at) = revoked_at {
+        return Err(AuthError::SignedOut { at, wipe_at: if wipe { at } else { at + SIGNED_OUT_KEEP_MS } });
+    }
     Ok(new_session(conn, device_id, now, ttl_ms)?)
 }
 
@@ -427,8 +440,13 @@ pub fn device_active(conn: &Connection, device_id: &str) -> bool {
     conn.query_row("SELECT revoked_at IS NULL FROM device WHERE id = ?1", [device_id], |r| r.get(0)).unwrap_or(false)
 }
 
-pub fn revoke_device(conn: &Connection, device_id: &str, now: i64) -> anyhow::Result<()> {
-    conn.execute("UPDATE device SET revoked_at = ?2 WHERE id = ?1", params![device_id, now])?;
+/// Sign a device out; `wipe` asks it to erase its copy at once rather than after
+/// [`SIGNED_OUT_KEEP_MS`] (D-152).
+pub fn revoke_device(conn: &Connection, device_id: &str, now: i64, wipe: bool) -> anyhow::Result<()> {
+    conn.execute(
+        "UPDATE device SET revoked_at = ?2, wipe_on_signout = ?3 WHERE id = ?1",
+        params![device_id, now, wipe],
+    )?;
     conn.execute("DELETE FROM session WHERE device_id = ?1", [device_id])?;
     Ok(())
 }
@@ -581,8 +599,18 @@ pub(crate) mod tests {
         .unwrap();
         assert_eq!(e2.account_id, e.account_id);
         // revoke
-        revoke_device(&c, &e2.device_id, now).unwrap();
+        revoke_device(&c, &e2.device_id, now, false).unwrap();
         assert!(authenticate(&c, &e2.session, now, 1000).is_err());
+        // its key still learns when it was signed out (D-152), and gets no session
+        let n3 = challenge(&c, &e2.device_id, now).unwrap();
+        let (sk2, _) = key(8);
+        let sig2: Signature = sk2.sign(challenge_message(&n3, &e2.device_id, "inst").as_bytes());
+        let sig2 = base64::engine::general_purpose::STANDARD.encode(sig2.to_bytes());
+        assert!(matches!(
+            verify(&c, &e2.device_id, &n3, &sig2, "inst", now, 1000),
+            Err(AuthError::SignedOut { at, wipe_at }) if at == now && wipe_at == now + SIGNED_OUT_KEEP_MS
+        ));
+        assert!(matches!(challenge(&c, "nobody", now), Err(AuthError::UnknownDevice)));
     }
 
     #[test]

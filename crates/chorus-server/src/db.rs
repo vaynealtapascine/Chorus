@@ -29,6 +29,7 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
     ("0020_blob_holder", include_str!("../migrations/0020_blob_holder.sql")),
     ("0021_member_handles", include_str!("../migrations/0021_member_handles.sql")),
     ("0022_poll_close_nudge", include_str!("../migrations/0022_poll_close_nudge.sql")),
+    ("0023_device_wipe_on_signout", include_str!("../migrations/0023_device_wipe_on_signout.sql")),
 ];
 
 pub fn open(path: &Path) -> anyhow::Result<Connection> {

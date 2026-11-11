@@ -1319,6 +1319,55 @@ async fn a_key_that_no_longer_matches_is_bad_key() {
     assert_eq!((code, body["error"]["code"].as_str()), (403, Some("forbidden")));
 }
 
+/// D-152: a signed-out device that still holds its key learns when it was signed out and when
+/// to erase its copy: two days later, or at once if the person signing it out chose that. It
+/// gets no session, and only the key's holder learns it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_signed_out_device_learns_when_to_erase() {
+    let s = start().await;
+    let a = enrol(&s, auth::InviteKind::System, None, 101, "lanterns").await;
+    let acct = a["account_id"].as_str().unwrap().to_string();
+    let kept = enrol(&s, auth::InviteKind::Device, Some(&acct), 102, "").await;
+    let wiped = enrol(&s, auth::InviteKind::Device, Some(&acct), 103, "").await;
+    let dev = |e: &Value| e["device_id"].as_str().unwrap().to_string();
+    let revoke = |id: String, body: Option<Value>| {
+        let url = format!("http://{}/api/v1/devices/{id}/revoke", s.base);
+        let t = a["session"].as_str().unwrap().to_string();
+        async move {
+            let mut r = reqwest::Client::new().post(url).bearer_auth(t);
+            if let Some(b) = body {
+                r = r.json(&b);
+            }
+            r.send().await.unwrap().status().as_u16()
+        }
+    };
+    let revoked_at = |id: String| -> i64 {
+        let c = s.state.db.lock().unwrap();
+        c.query_row("SELECT revoked_at FROM device WHERE id = ?1", [id], |r| r.get(0)).unwrap()
+    };
+
+    assert_eq!(revoke(dev(&kept), None).await, 204);
+    assert_eq!(revoke(dev(&wiped), Some(json!({"wipe": true}))).await, 204);
+    let (code, body) = renew(&s, &dev(&kept), 102).await;
+    assert_eq!(code, 403, "{body}");
+    assert_eq!(body["error"], json!({"code": "signed_out", "message": "this device was signed out", "retry": false}));
+    let at = revoked_at(dev(&kept));
+    assert_eq!(body["signed_out"], json!({"at": at, "wipe_at": at + 2 * 24 * 3_600_000}));
+    assert!(body.get("session").is_none(), "no session");
+    let (code, body) = renew(&s, &dev(&wiped), 103).await;
+    let at = revoked_at(dev(&wiped));
+    assert_eq!((code, &body["signed_out"]), (403, &json!({"at": at, "wipe_at": at})));
+    // anyone without the key hears bad_key, and nothing about when
+    let (code, body) = renew(&s, &dev(&kept), 9).await;
+    assert_eq!((code, body["error"]["code"].as_str()), (401, Some("bad_key")));
+    assert!(body.get("signed_out").is_none());
+    // an explicit `false` is the default
+    let third = enrol(&s, auth::InviteKind::Device, Some(&acct), 104, "").await;
+    assert_eq!(revoke(dev(&third), Some(json!({"wipe": false}))).await, 204);
+    let at = revoked_at(dev(&third));
+    assert_eq!(renew(&s, &dev(&third), 104).await.1["signed_out"]["wipe_at"], at + 2 * 24 * 3_600_000);
+}
+
 /// A socket that never says Hello is closed, not held open (a public server gets strangers).
 #[tokio::test(flavor = "multi_thread")]
 async fn a_silent_socket_is_closed() {
