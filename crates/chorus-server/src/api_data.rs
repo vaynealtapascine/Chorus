@@ -156,7 +156,11 @@ fn subject_name(
     id: &str,
 ) -> rusqlite::Result<(Option<String>, Option<String>)> {
     let sql = match t {
-        "member" => "SELECT COALESCE(display_name, name), color FROM member WHERE id = ?1 AND account_id=?2",
+        "member" => concat!(
+            "SELECT ",
+            crate::profiles::shown_name_sql!(""),
+            ", color FROM member WHERE id = ?1 AND account_id=?2"
+        ),
         "group" => "SELECT name, color FROM member_group WHERE id = ?1 AND account_id=?2",
         _ => "SELECT name, color FROM custom_state WHERE id = ?1 AND account_id=?2",
     };

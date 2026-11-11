@@ -22,7 +22,11 @@ use crate::push;
 
 fn name_of(conn: &Connection, member: &str) -> anyhow::Result<Option<String>> {
     Ok(conn
-        .query_row("SELECT COALESCE(display_name, name) FROM member WHERE id = ?1", [member], |r| r.get(0))
+        .query_row(
+            concat!("SELECT ", crate::profiles::shown_name_sql!(""), " FROM member WHERE id = ?1"),
+            [member],
+            |r| r.get(0),
+        )
         .optional()?
         .flatten())
 }
@@ -503,7 +507,7 @@ fn author_card(conn: &Connection, member_id: &str) -> anyhow::Result<AuthorCard>
     let Some((name, display, color, sigil, avatar_blob)) = row else {
         return Ok(AuthorCard::default());
     };
-    let shown = display.filter(|s| !s.trim().is_empty()).or(name).unwrap_or_default();
+    let shown = crate::profiles::shown_name(display, name).unwrap_or_default();
     let glyph = sigil
         .filter(|s| !s.trim().is_empty())
         .or_else(|| (!shown.trim().is_empty()).then(|| first_glyph(&shown, false)));
@@ -669,7 +673,7 @@ fn own_switch(conn: &Connection, o: &Op, author: &str, now: i64) -> anyhow::Resu
 fn subject_name(conn: &Connection, kind: chorus_core::front::SubjectType, id: &str) -> anyhow::Result<String> {
     use chorus_core::front::SubjectType;
     let sql = match kind {
-        SubjectType::Member => "SELECT COALESCE(display_name, name) FROM member WHERE id = ?1",
+        SubjectType::Member => concat!("SELECT ", crate::profiles::shown_name_sql!(""), " FROM member WHERE id = ?1"),
         SubjectType::Group => "SELECT name FROM member_group WHERE id = ?1",
         SubjectType::State => "SELECT name FROM custom_state WHERE id = ?1",
     };
@@ -712,13 +716,15 @@ fn named_front_text(
 }
 
 fn legacy_front_text(conn: &Connection, account: &str) -> anyhow::Result<String> {
-    let mut st = conn.prepare_cached(
+    let mut st = conn.prepare_cached(concat!(
         "SELECT CASE subject_type
-                  WHEN 'member' THEN (SELECT COALESCE(display_name, name) FROM member WHERE id = subject_id)
+                  WHEN 'member' THEN (SELECT ",
+        crate::profiles::shown_name_sql!(""),
+        " FROM member WHERE id = subject_id)
                   WHEN 'group' THEN (SELECT name FROM member_group WHERE id = subject_id)
                   ELSE (SELECT name FROM custom_state WHERE id = subject_id) END, level
          FROM front_interval WHERE account_id = ?1 AND end_at IS NULL ORDER BY position",
-    )?;
+    ))?;
     let rows: Vec<(Option<String>, String)> =
         st.query_map([account], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<Result<_, _>>()?;
     let names = |level: &str| {

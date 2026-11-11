@@ -15,15 +15,16 @@ use crate::posts;
 pub fn profile(conn: &Connection, p: &Principal, member_id: &str) -> Result<Option<Value>, DataError> {
     need(p, "read:members")?;
     let Some(member) = crate::api_reads::member(conn, p, member_id)? else { return Ok(None) };
-    let mut st = conn.prepare(
-        "SELECT r.id, r.to_kind, r.to_id, r.to_label, r.note, r.type_id, t.name, t.inverse_name, t.is_symmetric,
-                coalesce(m.display_name, m.name)
+    let mut st = conn.prepare(concat!(
+        "SELECT r.id, r.to_kind, r.to_id, r.to_label, r.note, r.type_id, t.name, t.inverse_name, t.is_symmetric, ",
+        crate::profiles::shown_name_sql!("m."),
+        "
          FROM relationship r
          LEFT JOIN relationship_type t ON t.id = r.type_id AND t.account_id = r.account_id AND t.deleted_at IS NULL
          LEFT JOIN member m ON r.to_kind = 'member' AND m.id = r.to_id AND m.account_id = r.account_id
          WHERE r.account_id = ?1 AND r.from_member_id = ?2 AND r.deleted_at IS NULL
          ORDER BY t.name, r.created_at, r.id",
-    )?;
+    ))?;
     let relationships = st
         .query_map(params![p.account_id, member_id], |r| {
             Ok(json!({

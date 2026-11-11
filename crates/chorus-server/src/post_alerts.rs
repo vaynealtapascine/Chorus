@@ -64,9 +64,11 @@ fn account_name(conn: &Connection, account: &str) -> anyhow::Result<String> {
 
 fn member_name(conn: &Connection, member: &str) -> anyhow::Result<String> {
     Ok(conn
-        .query_row("SELECT COALESCE(NULLIF(trim(display_name), ''), name) FROM member WHERE id = ?1", [member], |r| {
-            r.get::<_, Option<String>>(0)
-        })
+        .query_row(
+            concat!("SELECT ", crate::profiles::shown_name_sql!(""), " FROM member WHERE id = ?1"),
+            [member],
+            |r| r.get::<_, Option<String>>(0),
+        )
         .optional()?
         .flatten()
         .unwrap_or_else(|| "Someone".into()))

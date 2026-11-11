@@ -251,7 +251,10 @@ fn names_for(conn: &Connection, account: &str, seen: &[&Seen]) -> anyhow::Result
                 .optional()?,
         };
         let (name, display, color, glyph) = row.unwrap_or((None, None, None, None));
-        out.insert(subject_id.clone(), (display.or(name).unwrap_or_else(|| "Someone".into()), color, glyph));
+        out.insert(
+            subject_id.clone(),
+            (crate::profiles::shown_name(display, name).unwrap_or_else(|| "Someone".into()), color, glyph),
+        );
     }
     Ok(out)
 }

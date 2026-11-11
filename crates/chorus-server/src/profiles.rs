@@ -20,6 +20,27 @@ use std::collections::HashSet;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
 
+/// A member's shown name in SQL: the display name unless it is blank, else the name. `$p` is the
+/// member table's prefix as a literal (`""` or `"m."`), so it also fits in `const` SQL through
+/// `concat!`. The one definition of this rule; [`shown_name`] is the same in Rust.
+macro_rules! shown_name_sql {
+    ($p:literal) => {
+        concat!("COALESCE(NULLIF(trim(", $p, "display_name), ''), ", $p, "name)")
+    };
+}
+pub(crate) use shown_name_sql;
+
+/// A display name that counts as one: not blank.
+pub(crate) fn display_shown(display: Option<&str>) -> Option<&str> {
+    display.filter(|s| !s.trim().is_empty())
+}
+
+/// A member's shown name, as [`shown_name_sql`] has it: the display name unless it is blank,
+/// else the name.
+pub(crate) fn shown_name(display: Option<String>, name: Option<String>) -> Option<String> {
+    if display_shown(display.as_deref()).is_some() { display } else { name }
+}
+
 /// The built-in profile parts that carry their own audience.
 pub const PARTS: &[&str] = &["name", "pronouns", "description", "birthday", "banner"];
 
@@ -147,7 +168,7 @@ impl Row {
         if self.part(v, key) { value.clone() } else { None }
     }
     fn display_name(&self) -> Option<&str> {
-        self.display_name.as_deref().filter(|s| !s.trim().is_empty())
+        display_shown(self.display_name.as_deref())
     }
     /// The complete name when the viewer may see it (the `name` part, private unless chosen),
     /// else the display name: what everyone who may see the member calls them.

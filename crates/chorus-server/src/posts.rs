@@ -50,7 +50,8 @@ pub(crate) fn audience_sql(viewer: &str, owner: &str, audience: &str) -> String 
 /// The first column after [`COLUMNS`] (search appends its score there).
 const SCORE: usize = 22;
 
-pub(crate) const COLUMNS: &str = "p.id,p.account_id,p.kind,p.title,p.text,p.entities,p.mood,p.tags,p.cw,
+pub(crate) const COLUMNS: &str = concat!(
+    "p.id,p.account_id,p.kind,p.title,p.text,p.entities,p.mood,p.tags,p.cw,
     p.reply_to_id,p.quote,p.repost_of_id,p.visibility,p.occurred_at,p.edited_at,
     COALESCE((SELECT json_group_array(member_id) FROM
        (SELECT member_id FROM post_author WHERE post_id=p.id ORDER BY position)), '[]'),
@@ -68,13 +69,16 @@ pub(crate) const COLUMNS: &str = "p.id,p.account_id,p.kind,p.title,p.text,p.enti
              WHERE ia.owner_type='post' AND ia.owner_id=p.id AND a.blob_hash IS NOT NULL
              ORDER BY ia.position,a.id)), '[]'),
     COALESCE((SELECT json_group_array(json_object('emoji',emoji,'member_id',member_id,'member_name',member_name))
-       FROM (SELECT r.emoji,r.member_id,COALESCE(m.display_name,m.name) AS member_name
+       FROM (SELECT r.emoji,r.member_id,",
+    crate::profiles::shown_name_sql!("m."),
+    " AS member_name
              FROM reaction r JOIN member m ON m.id=r.member_id
              WHERE r.target_type='post' AND r.target_id=p.id AND r.is_present
              ORDER BY r.emoji,r.member_id)), '[]'),
     p.poll,
     (SELECT json_object('counts',json(t.counts),'voters',t.voters) FROM poll_tally t WHERE t.poll_id=p.id),
-    (SELECT closed_at FROM poll_close WHERE poll_id=p.id)";
+    (SELECT closed_at FROM poll_close WHERE poll_id=p.id)"
+);
 
 #[derive(Default, Deserialize)]
 pub struct PostQuery {
@@ -244,13 +248,15 @@ pub fn activity(conn: &Connection, viewer: &str, before: Option<i64>, limit: usi
     }
     // reactions carry no time of their own: their clock's physical part is when they were added
     let mut reactions = serde_json::Map::new();
-    let mut st = conn.prepare_cached(
-        "SELECT r.target_id, r.emoji, r.member_id, COALESCE(m.display_name, m.name), m.account_id, r.added_hlc
+    let mut st = conn.prepare_cached(concat!(
+        "SELECT r.target_id, r.emoji, r.member_id, ",
+        crate::profiles::shown_name_sql!("m."),
+        ", m.account_id, r.added_hlc
          FROM reaction r JOIN post t ON t.id = r.target_id JOIN member m ON m.id = r.member_id
          WHERE r.target_type = 'post' AND r.is_present AND t.account_id = ?1 AND t.deleted_at IS NULL
            AND m.account_id <> ?1
-         ORDER BY r.added_hlc DESC",
-    )?;
+         ORDER BY r.added_hlc DESC"
+    ))?;
     let rows = st
         .query_map([viewer], |r| {
             Ok((

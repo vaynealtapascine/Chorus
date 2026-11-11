@@ -6,7 +6,7 @@ use chorus_core::hlc::Hlc;
 use chorus_core::id::new_id;
 use chorus_core::op::Op;
 use chorus_core::time::{ClockSample, TimeSource};
-use chorus_server::{db, ingest, notifier, spaces};
+use chorus_server::{db, ingest, notifier, posts, spaces};
 use rusqlite::Connection;
 use serde_json::{Value, json};
 
@@ -879,4 +879,42 @@ fn shared_chat_author_cards_carry_pronouns_only_under_the_profile_rule() {
     w.c.execute("UPDATE member SET field_visibility = '{\"pronouns\":{\"mode\":\"followers\"}}' WHERE id = ?1", [&kai])
         .unwrap();
     assert_eq!(card(&w)["pronouns"], "they/them");
+}
+
+/// One rule for a member's shown name: the display name unless it is blank, else the name, in
+/// notification titles and reaction lists alike (`profiles::shown_name_sql`).
+#[test]
+fn a_blank_display_name_falls_back_to_the_name() {
+    let mut w = W::new();
+    let (a, b, space) = (w.a.clone(), w.b.clone(), w.space.clone());
+    let kai = new_id(NOW as u64, [40; 10]);
+    let june = new_id(NOW as u64, [41; 10]);
+    w.push(&a, "member.create", &format!("account:{a}"), &kai, json!({"name": "Kai", "display_name": ""}));
+    w.push(&b, "member.create", &format!("account:{b}"), &june, json!({"name": "June", "display_name": " "}));
+    let mention = json!([{"type": "mention", "offset": 0, "length": 5, "target_type": "member", "target_id": june}]);
+    w.push(&a, "message.send", &space, &new_id(NOW as u64, [50; 10]), msg("@June hi", &[&kai], mention));
+    notifier::process_due(&w.c, NOW + 1_000_000).unwrap();
+    let items = notifier::list_for(&w.c, &b, None, 0, 10).unwrap()["items"].as_array().unwrap().clone();
+    assert_eq!(items[0]["title"], "Kai · Club");
+
+    // June hearts a post of the Stars: its reactions and the Stars' activity name her
+    let post = new_id(NOW as u64, [60; 10]);
+    w.push(
+        &a,
+        "post.create",
+        &format!("account:{a}"),
+        &post,
+        json!({"kind": "note", "authors": [kai], "text": "hello", "entities": [], "visibility": {"mode": "server"}}),
+    );
+    w.push(
+        &b,
+        "post.react",
+        &format!("account:{b}"),
+        &new_id(NOW as u64, [61; 10]),
+        json!({"target_type": "post", "target_id": post, "emoji": "💜", "member_id": june}),
+    );
+    let read = posts::one(&w.c, &a, &post).unwrap().unwrap();
+    assert_eq!(read["reactions"][0]["member_name"], "June");
+    let activity = posts::activity(&w.c, &a, None, 50).unwrap();
+    assert_eq!(activity["reactions"][&post][0]["member_name"], "June");
 }
