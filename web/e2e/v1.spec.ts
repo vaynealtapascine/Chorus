@@ -361,3 +361,25 @@ test('no console errors, CSP included', async () => {
   expect(page.headers()['content-security-policy']).toContain("default-src 'self'");
   expect(problems).toEqual([]);
 });
+
+// last: it signs `desk` out for good (D-148)
+test('a device signed out from another one says so and stops syncing', async () => {
+  await go(stars.page, '');
+  await stars.page.getByText('Devices and data', { exact: true }).click();
+  const devices = stars.page.locator('section[aria-label="Your devices"]');
+  stars.page.once('dialog', (d) => void d.accept());
+  await devices.getByRole('button', { name: 'Sign out' }).click();
+  await expect(devices).toHaveCount(0); // one device left
+  // the open socket learns it on its next frame: the heartbeat's ping, within ~25 s of quiet
+  const notice = desk.page.getByRole('alert').filter({ hasText: 'This browser was signed out from another device' });
+  await expect(notice).toBeVisible({ timeout: 45_000 });
+  await expect(desk.page.locator('.status[data-status=signed-out]')).toHaveCount(1);
+  await expect(fronting(desk.page)).toContainText('Rin'); // what it holds stays
+  // a reload asks once more and stays signed out
+  const sockets: string[] = [];
+  desk.page.on('websocket', (ws) => sockets.push(ws.url()));
+  await desk.page.reload();
+  await expect(notice).toBeVisible({ timeout: 30_000 });
+  await desk.page.waitForTimeout(5_000);
+  expect(sockets).toHaveLength(1);
+});
