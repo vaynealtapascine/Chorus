@@ -8,7 +8,9 @@ import org.json.JSONObject
 data class FollowInfo(val id: String, val account: SpaceAccount, val status: String,
     val prefs: JSONObject = JSONObject(), val createdAt: Long = 0)
 data class FollowList(val following: List<FollowInfo>, val followers: List<FollowInfo>)
-data class PostReaction(val emoji: String, val memberId: String, val memberName: String)
+/** A reaction on a post. [memberId] is null for a member of another account this account may not
+ * see (D-154): counted under its emoji, never one of ours, named "Someone". */
+data class PostReaction(val emoji: String, val memberId: String?, val memberName: String)
 data class SharedPost(val id: String, val kind: String, val title: String?, val text: String,
     val cw: String?, val occurredAt: Long, val authorNames: List<String>, val reactions: List<PostReaction> = emptyList(),
     val attachments: List<ChatAttachment> = emptyList(), val poll: Poll? = null, val pollTally: PollTally? = null,

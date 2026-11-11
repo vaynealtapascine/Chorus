@@ -42,6 +42,17 @@ class InboxTest {
         assertFalse(Inbox.chips(true).any { it.first == "system" })
     }
 
+    @Test fun reactorsWeMayNotSeeAreCountedButNotNamed() {
+        fun liked(vararg who: Pair<String?, String?>) = Inbox.fromActivity(JournalActivity(who.mapIndexed { i, (id, name) ->
+            ActivityItem("reaction", 50L + i, emoji = "💜", memberId = id, memberName = name, target = ActivityTarget("p", "note", "Tea", "", null))
+        })).single()
+        assertEquals("Someone liked “Tea”", liked(null to null).title)
+        assertEquals("Kit and someone else liked “Tea”", liked("kit" to "Kit", null to null).title)
+        assertEquals("2 people liked “Tea”", liked(null to null, null to null).title)
+        assertEquals("Kit and 2 others liked “Tea”", liked("kit" to "Kit", null to null, "jun" to "Juniper").title)
+        assertEquals(listOf("Kit"), liked("kit" to "Kit", null to "Leak").faces)
+    }
+
     @Test fun reactionsGroupAndRequestsNeedYou() {
         val activity = JournalActivity(listOf(
             ActivityItem("reaction", 50, emoji = "💜", memberId = "kit", memberName = "Kit", target = ActivityTarget("p", "note", "A quiet afternoon", "", null)),
