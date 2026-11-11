@@ -1368,6 +1368,39 @@ async fn a_signed_out_device_learns_when_to_erase() {
     assert_eq!(renew(&s, &dev(&third), 104).await.1["signed_out"]["wipe_at"], at + 2 * 24 * 3_600_000);
 }
 
+/// D-153: the peek of a device link names the account it is for, so a signed-out device can
+/// tell whether it is its own; nothing more for a new-account invite.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_device_invite_peek_names_its_account() {
+    let s = start().await;
+    let a = enrol(&s, auth::InviteKind::System, None, 101, "lanterns").await;
+    let acct = a["account_id"].as_str().unwrap().to_string();
+    let (device_code, system_code) = {
+        let c = s.state.db.lock().unwrap();
+        let now = chorus_server::now_ms();
+        (
+            auth::create_invite(&c, auth::InviteKind::Device, Some(&acct), "t", auth::INVITE_TTL_MS, 1, now).unwrap(),
+            auth::create_invite(&c, auth::InviteKind::System, None, "t", auth::INVITE_TTL_MS, 1, now).unwrap(),
+        )
+    };
+    let peek = |code: String| {
+        let url = format!("http://{}/api/v1/auth/invite", s.base);
+        async move {
+            reqwest::Client::new()
+                .post(url)
+                .json(&json!({"code": code}))
+                .send()
+                .await
+                .unwrap()
+                .json::<Value>()
+                .await
+                .unwrap()
+        }
+    };
+    assert_eq!(peek(device_code).await, json!({"kind": "device", "account_id": acct}));
+    assert_eq!(peek(system_code).await, json!({"kind": "system"}));
+}
+
 /// A socket that never says Hello is closed, not held open (a public server gets strangers).
 #[tokio::test(flavor = "multi_thread")]
 async fn a_silent_socket_is_closed() {

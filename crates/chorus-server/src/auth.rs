@@ -147,17 +147,30 @@ pub(crate) fn valid_handle(h: &str) -> bool {
     chorus_core::handles::valid_claim(h)
 }
 
+/// What [`peek_invite`] tells: the invite's kind and, for a `device` invite only, the account the
+/// new device would join (D-153: a signed-out device checks a link is for its own account).
+#[derive(Debug, PartialEq, Eq)]
+pub struct InvitePeek {
+    pub kind: String,
+    pub account_id: Option<String>,
+}
+
 /// What an invite is for, without using it (D-093): `system` or `person` for a new account (the
 /// onboarding asks which one the person is, starting from this answer), `device` for another device
 /// of an existing account. Unknown, expired and used-up codes are all `BadInvite`.
-pub fn peek_invite(conn: &Connection, code: &str, now: i64) -> Result<String, AuthError> {
-    let inv: Option<(String, i64, i64, i64)> = conn
-        .query_row("SELECT kind, expires_at, max_uses, uses FROM invite WHERE code_hash = ?1", [hash(code)], |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
-        })
+pub fn peek_invite(conn: &Connection, code: &str, now: i64) -> Result<InvitePeek, AuthError> {
+    let inv: Option<(String, Option<String>, i64, i64, i64)> = conn
+        .query_row(
+            "SELECT kind, account_id, expires_at, max_uses, uses FROM invite WHERE code_hash = ?1",
+            [hash(code)],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+        )
         .optional()?;
     match inv {
-        Some((kind, expires_at, max_uses, uses)) if expires_at >= now && uses < max_uses => Ok(kind),
+        Some((kind, account, expires_at, max_uses, uses)) if expires_at >= now && uses < max_uses => {
+            let account_id = if kind == "device" { account } else { None };
+            Ok(InvitePeek { kind, account_id })
+        }
         _ => Err(AuthError::BadInvite),
     }
 }
@@ -510,7 +523,10 @@ pub(crate) mod tests {
         let dev = DeviceIn { name: "Phone".into(), platform: "android".into(), public_key: pk };
         let joined = |c: &mut Connection, invite: InviteKind, kind: Option<&str>, handle: &str| {
             let code = create_invite(c, invite, None, "cli", INVITE_TTL_MS, 1, now).unwrap();
-            assert_eq!(peek_invite(c, &code, now).unwrap(), invite.as_str());
+            assert_eq!(
+                peek_invite(c, &code, now).unwrap(),
+                InvitePeek { kind: invite.as_str().into(), account_id: None }
+            );
             let acct = AccountIn { handle: Some(handle.into()), kind: kind.map(str::to_string), ..Default::default() };
             let e = redeem(c, &code, &dev, Some(&acct), now, 1000);
             // a used-up code peeks like an unknown one; a refused answer doesn't use it up

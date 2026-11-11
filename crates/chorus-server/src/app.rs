@@ -336,8 +336,13 @@ struct PeekIn {
 /// What an invite is for, before using it (D-093): onboarding asks "system or just you?" only for
 /// new accounts. Under the sign-in rate limit, like redeeming.
 async fn peek_invite(State(s): State<AppState>, Json(b): Json<PeekIn>) -> Result<Json<serde_json::Value>, ApiError> {
-    let kind = auth::peek_invite(&s.db(), &b.code, now_ms())?;
-    Ok(Json(json!({ "kind": kind })))
+    let peek = auth::peek_invite(&s.db(), &b.code, now_ms())?;
+    let mut out = json!({ "kind": peek.kind });
+    // a device link names its account (D-153), so a signed-out device can tell it is its own
+    if let Some(account) = peek.account_id {
+        out["account_id"] = json!(account);
+    }
+    Ok(Json(out))
 }
 
 #[derive(Deserialize)]
