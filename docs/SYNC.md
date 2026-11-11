@@ -249,8 +249,11 @@ Reviews are computed by the server (it knows `seq`) and sync down as rows.
 - `wss://chorus.<domain>/api/v1/sync`, JSON text frames, permessage-deflate. One connection per
   device (web: one per browser profile, elected with the Web Locks API; other tabs talk to the
   leader over `BroadcastChannel`).
-- Auth: `hello` carries a session token; if expired, the server replies `auth_challenge` and the
-  device signs `nonce‖device_id‖server_instance_id` with its key (API.md §2).
+- Auth: `hello` carries a session token; if it is expired or unknown, the server replies `error`
+  `unauthenticated` and closes, and the device renews over REST by signing
+  `nonce‖device_id‖server_instance_id` with its key (API.md §2), then connects again. A device
+  signed out from another one gets the same `error` mid-connection, on its next frame, and its
+  challenge is refused with `403 forbidden` (§6.5, D-148).
 - Fallback when WebSockets are blocked: `POST /api/v1/sync/push`, `GET /api/v1/sync/pull` long
   poll with the same payloads. Typing is WebSocket-only: the HTTP fallback ignores typing and never queues it.
 
@@ -390,6 +393,20 @@ user action
   scope (found by the simulator, §9.2).
 - **Backoff**: reconnect immediately on network change (Android `ConnectivityManager` callback,
   web `online` event) and on a push tickle; otherwise exponential 1 s → 5 min with ±30 % jitter.
+- **Liveness and sign-out (web, D-148)**: the connection is one state machine,
+  `web/src/lib/sync/lifecycle.ts` (`offline → connecting → live`, `renewing`, `signed-out`), and
+  every move goes through `SyncClient.move`, which owns the socket, the reconnect timer and the
+  heartbeat. While live, the syncing tab sends `ping` once **25 s** pass without any frame from
+  the server and gives the socket up (reconnecting with the backoff) if nothing at all arrives
+  in the **10 s** after it; any frame counts as life, so a busy socket never pings, and a
+  `pong` goes no further than that. A socket not welcomed within 35 s is given up too. An
+  `unauthenticated` error moves to `renewing`: no socket and no reconnect timer, one renewal at
+  a time, and the next connection only after it settles (straight away the first time; through
+  the backoff if the server refuses the new session again before a `welcome`). A renewal
+  refused with `403 forbidden` (the server no longer knows the device) ends in **`signed-out`**:
+  no socket, timer or retry on `online` or focus; the replica, outbox and device record stay
+  untouched, the other tabs learn it over the bus, and the app says so (CLIENTS §4.1). Network
+  errors, 5xx and rate limits back off as before. Android's OkHttp pings every 25 s.
 - **Android background**: WorkManager unique work `sync` with `NetworkType.CONNECTED`, expedited
   when the outbox is non-empty; the widget's switch op enqueues it.
 - **Windowed web replica** (R23, D-075): a browser tab not set to "keep everything" (CLIENTS
@@ -423,7 +440,7 @@ user action
 | Op rejected (e.g. lost permission while offline) | Shown in *Sync issues* with reason; local state reverted; user can copy text of a rejected message. Android's Retry (F10.4) writes the same op again under a new id (same kind, scope, entity, acting `member_id` and payload) before letting the refused one go; a retry the server takes shows under *Fixed* for a week (device-local, `Replica::op_status`). |
 | New device joins | Snapshot of each scope + views, then live. |
 | Newer client, older server | Server stores unknown kinds; if `core_min` > client core, client shows "Update Chorus" and stays read-only for sync (keeps queuing locally). |
-| Device revoked | Server closes the socket with `revoked`; device wipes local data after telling the user (Advanced: keep an export first). |
+| Device revoked | Server answers the device's next frame with `error` `unauthenticated` ("this device was signed out") and closes; the renewal's challenge is refused with `403 forbidden`. The device stops syncing and says it was signed out; its local data stays (D-148, §6.5). |
 | Server restored from an older backup | See §7.3. |
 
 ### 7.3 Epochs and restore

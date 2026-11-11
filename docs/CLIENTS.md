@@ -270,6 +270,18 @@ redraws it when the count or reader changes; a placed widget with no inbox read 
     of the metadata can't lose an op.
   - **A save that fails** (the browser's storage is full) is kept and tried again with the next
     one, and the app says so until one succeeds.
+  - **Ops not yet in IndexedDB** when a tab goes away are journalled to localStorage
+    (`chorus-unsaved-ops`) on `pagehide`. Tabs share the key, so each adds its ops to what is
+    there, by op id, instead of replacing it (a quitting browser hides every tab at once).
+  - **The connection** (SYNC §6.5, D-148): the syncing tab pings a socket that has been quiet for
+    25 s and drops it 10 s later if nothing came back, so a laptop waking from sleep or a dropped
+    idle socket doesn't stay "Live". A browser signed out from another device stops syncing for
+    good (status `signed-out`, no retries) and shows a quiet notice under the app bar: it was
+    signed out, what was written here stays in this browser, and a new link from a device that
+    is still signed in (*Devices and data* → *Link another device*) opened in a private window
+    or another browser brings Chorus back. Linking the same browser again over the data it holds
+    isn't built: enrolling replaces the device identity under an outbox of the old one.
+    Tested in a real browser at the end of `web/e2e/v1.spec.ts`.
   - Tested in a real browser with the server killed, a reload, a service-worker update, a
     closing tab and a full disk: `web/e2e/failure.spec.ts`.
 - IndexedDB through `idb`; object stores mirror DATA_MODEL tables with indexes for the hot
