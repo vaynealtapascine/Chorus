@@ -102,7 +102,7 @@
     connecting: 'Connecting…',
     offline: 'Offline · saved on this device',
     renewing: 'Connecting…',
-    'signed-out': 'Signed out · not syncing',
+    'signed-out': '', // onboarding shows instead
     'no-device': '',
   };
   // a person account has one member, themself, and no front to switch (D-003)
@@ -165,7 +165,8 @@
 
 <svelte:document onclick={openOwnLink} />
 
-{#if status === 'no-device'}
+<!-- signed out (D-153): onboarding, as for a browser with no device; the kept copy isn't shown -->
+{#if status === 'no-device' || status === 'signed-out'}
   <Onboarding />
 {:else if projection}
   <div class="shell" class:chat-page={router.route.name === 'chat'} class:nav-open={navOpen}>
@@ -210,15 +211,6 @@
         {/if}
         {#if !person && router.route.name !== 'home'}<button class="icon-button mobile-switch" onclick={() => (switching = true)} aria-label="Open switcher"><Icon name="swap" /></button>{/if}
       </header>
-    {#if status === 'signed-out'}
-      <!-- D-148: the server no longer knows this browser; what it holds stays here -->
-      <p class="signed-out" role="alert">
-        This browser was signed out from another device, so it doesn't sync any more. What was
-        written here since then stays in this browser. To use Chorus here again, make a new link on
-        a device that's still signed in (<em>Devices and data</em> at the foot of {person ? 'Home' : 'Fronting'},
-        then <em>Link another device</em>) and open it in a private window or another browser.
-      </p>
-    {/if}
     {#if storageFull}
       <p class="storage-full" role="alert">
         This browser's storage is full, so changes made here aren't saved on this device yet. They
@@ -332,7 +324,7 @@
   .chat-page main { padding: 0; max-width: none; }
   /* a page fades in when you go to it (owner, 2026-11-07) */
   main > :global(*) { animation: chorus-fade-in var(--t-fast) var(--ease); }
-  .storage-full, .signed-out { margin: 0; padding: 12px 24px; font-size: var(--fs-sm); background: var(--accent-soft); }
+  .storage-full { margin: 0; padding: 12px 24px; font-size: var(--fs-sm); background: var(--accent-soft); }
   /* wide screens: the sidebar and the page sit together in the middle; the sidebar keeps its width
      and takes the left margin as padding (it used to shrink to ~100 px past 1800 px) */
   @media (min-width: 1600px) {

@@ -362,8 +362,8 @@ test('no console errors, CSP included', async () => {
   expect(problems).toEqual([]);
 });
 
-// last: it signs `desk` out for good (D-148)
-test('a device signed out from another one says so and stops syncing', async () => {
+// last: it signs `desk` out, then links it again (D-148, D-153)
+test('a device signed out from another one goes back to onboarding, and can be linked again', async () => {
   await go(stars.page, '');
   await stars.page.getByText('Devices and data', { exact: true }).click();
   const devices = stars.page.locator('section[aria-label="Your devices"]');
@@ -371,15 +371,30 @@ test('a device signed out from another one says so and stops syncing', async () 
   await devices.getByRole('button', { name: 'Sign out' }).click();
   await expect(devices).toHaveCount(0); // one device left
   // the open socket learns it on its next frame: the heartbeat's ping, within ~25 s of quiet
-  const notice = desk.page.getByRole('alert').filter({ hasText: 'This browser was signed out from another device' });
-  await expect(notice).toBeVisible({ timeout: 45_000 });
-  await expect(desk.page.locator('.status[data-status=signed-out]')).toHaveCount(1);
-  await expect(fronting(desk.page)).toContainText('Rin'); // what it holds stays
-  // a reload asks once more and stays signed out
+  const line = desk.page.getByText('This browser was signed out from another device.');
+  await expect(line).toBeVisible({ timeout: 45_000 });
+  await expect(desk.page.getByRole('heading', { name: 'Welcome to Chorus' })).toBeVisible();
+  await expect(desk.page.locator('.shell')).toHaveCount(0); // the kept copy isn't shown
+  // a reload remembers it, and opens no socket
   const sockets: string[] = [];
   desk.page.on('websocket', (ws) => sockets.push(ws.url()));
   await desk.page.reload();
-  await expect(notice).toBeVisible({ timeout: 30_000 });
-  await desk.page.waitForTimeout(5_000);
-  expect(sockets).toHaveLength(1);
+  await expect(line).toBeVisible({ timeout: 30_000 });
+  await desk.page.waitForTimeout(3_000);
+  expect(sockets).toHaveLength(0);
+
+  // linked again with a device link of the same account: a server that says the account picks
+  // the copy up; one that doesn't (older) asks to erase it first
+  await stars.page.getByRole('button', { name: 'Link another device…' }).click();
+  const link = await stars.page.locator('section[aria-label="Link another device"] code').innerText();
+  await desk.page.getByLabel('Invite link or code').fill(link);
+  await desk.page.getByRole('button', { name: 'Continue' }).click();
+  await desk.page.getByRole('button', { name: 'Link this browser', exact: true }).click();
+  const erase = desk.page.getByRole('button', { name: 'Erase and link this browser' });
+  if (await erase.waitFor({ timeout: 3_000 }).then(() => true, () => false)) {
+    await expect(desk.page.getByRole('alert')).toContainText('including anything written here that never synced');
+    await erase.click();
+  }
+  await live(desk.page);
+  await expect(fronting(desk.page)).toContainText('Rin');
 });

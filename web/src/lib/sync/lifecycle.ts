@@ -38,8 +38,25 @@ export function heartbeat(now: number, heard: number, pinged: number | null): { 
   return now - heard >= PING_AFTER_MS ? { act: 'ping', next: now + PONG_GRACE_MS } : { act: 'wait', next: heard + PING_AFTER_MS };
 }
 
-/** A renewal the server refused for good: it no longer knows this device (signed out from another
- * one, API.md §2). A network error, a 5xx or a rate limit is worth trying again later. */
-export function refusesDevice(e: unknown): boolean {
-  return e instanceof ApiError && e.status === 403 && e.code === 'forbidden';
+/**
+ * A renewal the server refused for good, and what it said: signed out from another device
+ * (`403 signed_out`, with when, and when this copy is erased, D-152), a device it doesn't know
+ * (`403 forbidden`: an older server, or one that lost it) or a key that no longer matches
+ * (`401 bad_key`, D-153); the last two give no times, so nothing is erased on a timer. Null for
+ * anything worth trying again later: a network error, a 5xx, a rate limit, a stale nonce.
+ */
+export function signedOutBy(e: unknown): { at: number | null; wipe_at: number | null } | null {
+  if (!(e instanceof ApiError)) return null;
+  if (e.status === 403 && e.code === 'signed_out') {
+    const s = (e.body as { signed_out?: { at?: unknown; wipe_at?: unknown } } | null)?.signed_out;
+    const ms = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+    return { at: ms(s?.at), wipe_at: ms(s?.wipe_at) };
+  }
+  if ((e.status === 403 && e.code === 'forbidden') || (e.status === 401 && e.code === 'bad_key')) return { at: null, wipe_at: null };
+  return null;
+}
+
+/** How long until a signed-out copy is erased (≤ 0: now), by the server's clock; null: never on a timer. */
+export function wipeIn(s: { wipe_at: number | null; offset: number }, now: number): number | null {
+  return s.wipe_at === null ? null : s.wipe_at - (now + s.offset);
 }

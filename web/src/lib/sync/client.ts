@@ -2,7 +2,8 @@
 // Durable protocol logic is in chorus-core (WebReplica); ephemeral typing stays in TypeScript.
 import { WebReplica, newId } from '../core/pkg/chorus_wasm.js';
 import type { SwitchRow } from '../front.svelte';
-import { loadHead, loadOps, mergeJournal, save, saveSnapshot, type Changes, type DeviceRecord, type Snapshot } from './persist';
+import { loadHead, loadOps, mergeJournal, save, saveDevice, saveSnapshot, type Changes, type DeviceRecord, type SignedOut, type Snapshot } from './persist';
+import { eraseKeptCopy, erasedHere, forgetErased, forgetTab } from './erase';
 import { renew } from './device';
 import { applyDelta, type Delta } from './delta';
 import { readSnapshot } from './snapshot';
@@ -13,7 +14,7 @@ import { fillFiles, keepEverything } from './keep';
 import type { Entity } from '../core';
 import { TypingState, TypingThrottle, type TypingEntry, type TypingFrame, type TypingInput } from './typing';
 import type { CurrentFrontSystem } from '../core/fronts';
-import { heartbeat, MOVES, refusesDevice, WELCOME_WITHIN_MS, type Status } from './lifecycle';
+import { heartbeat, MOVES, signedOutBy, WELCOME_WITHIN_MS, wipeIn, type Status } from './lifecycle';
 
 export type { Status } from './lifecycle';
 
@@ -64,14 +65,17 @@ export interface Interval {
 }
 
 /** Between the tabs of one browser (SYNC §6.1): `ops` a tab made, for the syncing tab to send;
- * `changed` what the syncing tab saved; its `status`, asked for with `hello`. */
+ * `changed` what the syncing tab saved; its `status`, asked for with `hello`. A signed-out
+ * browser's copy was `erased`, or the browser was `relinked` (D-152, D-153): every tab starts again. */
 type BusMessage =
   | { t: 'typing-send'; frame: TypingInput }
   | { t: 'typing-receive'; frame: TypingFrame; offset: number }
   | { t: 'hello' }
   | { t: 'status'; status: Status }
   | { t: 'ops'; ops: { id: string }[] }
-  | { t: 'changed'; ops: { id: string }[]; removed: string[] };
+  | { t: 'changed'; ops: { id: string }[]; removed: string[] }
+  | { t: 'erased' }
+  | { t: 'relinked' };
 
 /** Two sets of changes as one save: the later copy of an op wins, and the latest metadata. */
 /** Where ops not yet in IndexedDB wait when the page goes away (`pagehide` allows only
@@ -186,6 +190,18 @@ export class SyncClient {
   private notSaved = new Map<string, { id: string }>();
   /** Saving on this device is failing: the app says so. */
   storageFull = false;
+  /** start() opened the replica (a signed-out start doesn't): enrolling again reloads the page */
+  private started = false;
+  /** this browser's signed-out copy is gone: nothing more is journalled from this tab */
+  private erased = false;
+  private wipeTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The page before erased a signed-out copy (onboarding says it was signed out). */
+  wasErased = false;
+
+  /** Signed out from another device (D-152, D-153): when, and when what is kept here is erased. */
+  get signedOut(): SignedOut | null {
+    return this.device?.signed_out ?? null;
+  }
 
   async start(): Promise<void> {
     // open-time marks (CLIENTS.md §4.3: a 100k-op device opens in ≤ 2 s); web/perf measures them
@@ -193,15 +209,26 @@ export class SyncClient {
     const p = await loadHead();
     performance.mark('chorus:loaded');
     this.device = p.device;
+    this.wasErased = erasedHere();
+    this.listen();
     if (!this.device) {
       this.status = 'no-device';
       this.emit();
       return;
     }
+    // signed out (D-153): onboarding, and nothing of the kept copy is opened; it waits on disk
+    // until `wipe_at` or the next enrolment
+    if (this.device.signed_out) {
+      this.status = 'signed-out';
+      this.watchWipe();
+      this.emit();
+      return;
+    }
+    this.started = true;
     // the replica and outbox are the only copy of offline work: ask not to be evicted
     void keepStorage();
     await restoreUnsaved();
-    addEventListener('pagehide', () => journalUnsaved([...this.notSaved.values()]));
+    addEventListener('pagehide', () => { if (!this.erased) journalUnsaved([...this.notSaved.values()]); });
     // Older saved devices predate the admin capability in the enrolment response.
     if (this.device.is_admin === undefined && navigator.onLine) {
       try { this.device = await renew(this.device); } catch { /* reconnect will retry auth later */ }
@@ -222,11 +249,15 @@ export class SyncClient {
       if (!document.hidden) this.reconnectNow();
       else if (this.snapshotDirty) this.writeSnapshot();
     });
-    this.bus = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('chorus-sync');
-    if (this.bus) this.bus.onmessage = (e) => this.onBus(e.data as BusMessage);
     const opened = this.openOps(snapshot).catch((e) => console.error('opening the replica failed', e));
     if (!snapshot) await opened;
     this.emit();
+  }
+
+  private listen(): void {
+    if (this.bus || typeof BroadcastChannel === 'undefined') return;
+    this.bus = new BroadcastChannel('chorus-sync');
+    this.bus.onmessage = (e) => this.onBus(e.data as BusMessage);
   }
 
   /** Read every persisted op into the core and index it, a slice at a time; then sync. */
@@ -306,6 +337,20 @@ export class SyncClient {
   }
 
   private onBus(m: BusMessage): void {
+    if (m.t === 'erased') {
+      this.erased = true;
+      forgetTab();
+      location.reload();
+      return;
+    }
+    if (m.t === 'relinked') {
+      location.reload();
+      return;
+    }
+    if (m.t === 'status' && m.status === 'signed-out' && !this.leader && this.status !== 'signed-out') {
+      void this.followSignedOut();
+      return;
+    }
     if (!this.replica) return;
     if (m.t === 'typing-receive' && !this.leader) {
       this.typingOffset = m.offset;
@@ -401,22 +446,94 @@ export class SyncClient {
     if (this.renewal || !this.device) return;
     const again = this.renewed;
     this.renewed = true;
-    this.renewal = renew(this.device)
-      .then(
-        (dev): Status => {
-          this.device = dev;
-          return again ? 'offline' : 'connecting';
-        },
-        (e): Status => {
-          if (refusesDevice(e)) return 'signed-out';
-          console.warn('session renewal failed', e);
-          return 'offline';
-        },
-      )
-      .then((to) => {
-        this.renewal = null;
-        if (this.status === 'renewing') this.move(to);
-      });
+    this.renewal = (async () => {
+      let to: Status;
+      try {
+        this.device = await renew(this.device!);
+        to = again ? 'offline' : 'connecting';
+      } catch (e) {
+        const out = signedOutBy(e);
+        if (!out) console.warn('session renewal failed', e);
+        else await this.keepSignedOut(out);
+        to = out ? 'signed-out' : 'offline';
+      }
+      this.renewal = null;
+      if (this.status !== 'renewing') return;
+      this.move(to);
+      if (to === 'signed-out') {
+        this.closeReplica();
+        this.watchWipe();
+      }
+    })();
+  }
+
+  /** Remember the sign-out with the device record (a reload shows onboarding without asking). */
+  private async keepSignedOut(out: { at: number | null; wipe_at: number | null }): Promise<void> {
+    this.device = { ...this.device!, signed_out: { ...out, offset: this.typingOffset } };
+    try {
+      await saveDevice(this.device);
+    } catch (e) {
+      console.warn('remembering the sign-out failed', e); // the next start asks the server again
+    }
+  }
+
+  /** Another tab learned this browser was signed out: show onboarding here too, with its dates. */
+  private async followSignedOut(): Promise<void> {
+    const dev = (await loadHead()).device;
+    if (dev?.signed_out) this.device = dev;
+    this.status = 'signed-out';
+    this.clearTyping();
+    this.closeReplica();
+    this.watchWipe();
+  }
+
+  /** Nothing of the kept copy is shown or written while signed out; it waits on disk. */
+  private closeReplica(): void {
+    if (this.snapshotTimer) clearTimeout(this.snapshotTimer);
+    if (this.heldTimer) clearTimeout(this.heldTimer);
+    this.snapshotTimer = this.heldTimer = null;
+    this.snapshotDirty = false;
+    this.replica = null;
+    this.cached = null;
+    this.emit();
+  }
+
+  /** Erase the kept copy once its `wipe_at` has passed: now, or on a timer while the page is open. */
+  private watchWipe(): void {
+    if (this.wipeTimer) clearTimeout(this.wipeTimer);
+    this.wipeTimer = null;
+    const s = this.signedOut;
+    const left = s ? wipeIn(s, Date.now()) : null;
+    if (left === null) return;
+    if (left <= 0) void this.eraseKept();
+    else this.wipeTimer = setTimeout(() => this.watchWipe(), Math.min(left, 2 ** 31 - 1));
+  }
+
+  /**
+   * Erase this browser's signed-out copy (D-152, D-153). Only for a `wipe_at` that has passed
+   * (`watchWipe`) or an enrolment the person confirmed that doesn't pick the copy up (onboarding).
+   * Another tab may have enrolled meanwhile: then nothing is erased and this tab starts again.
+   */
+  async eraseKept(): Promise<boolean> {
+    if (this.wipeTimer) clearTimeout(this.wipeTimer);
+    this.wipeTimer = null;
+    const held = (await loadHead()).device;
+    if (!held?.signed_out || held.device_id !== this.device?.device_id) {
+      location.reload();
+      return false;
+    }
+    this.erased = true;
+    this.closeReplica();
+    await this.saving.catch(() => {});
+    this.notSaved.clear();
+    this.unsaved = null;
+    await eraseKeptCopy();
+    this.bus?.postMessage({ t: 'erased' } satisfies BusMessage);
+    this.device = null;
+    this.status = 'no-device';
+    this.wasErased = true;
+    this.emit();
+    return true;
   }
 
   /** Only messages from the last WINDOW_DAYS on this device; older ones page in over REST. */
@@ -468,8 +585,15 @@ export class SyncClient {
     this.saving = this.saving.then(() => saveSnapshot(snapshot)).catch((e) => console.error('snapshot failed', e));
   }
 
-  /** After enrolment. */
+  /** After enrolment. A browser that was signed out starts again from what is saved: the kept
+   * copy under the new device (D-153), or an empty one after it was erased. */
   async adopt(dev: DeviceRecord): Promise<void> {
+    forgetErased();
+    if (this.started || this.status === 'signed-out' || this.wasErased) {
+      this.bus?.postMessage({ t: 'relinked' } satisfies BusMessage);
+      location.reload();
+      return;
+    }
     this.device = dev;
     await this.start();
   }
@@ -625,6 +749,7 @@ export class SyncClient {
   }
 
   private changed(): void {
+    if (!this.replica) return; // signed out: nothing more is written
     this.refresh();
     this.watchHeld();
     const fresh = JSON.parse(this.replica!.takeChanges()) as Changes;

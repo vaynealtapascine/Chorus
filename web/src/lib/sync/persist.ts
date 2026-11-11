@@ -10,6 +10,16 @@ export interface DeviceRecord {
   expires_at: number;
   /** Non-extractable CryptoKeyPair (structured-clonable into IndexedDB). */
   keys: CryptoKeyPair;
+  /** The server signed this device out (D-152, D-153): the browser shows onboarding, and keeps
+   * this copy until `wipe_at` (server time; `offset` = server − this clock when it was learned). */
+  signed_out?: SignedOut;
+}
+
+export interface SignedOut {
+  at: number | null;
+  /** null: nothing is erased on a timer (an older server, or a key that no longer matches) */
+  wipe_at: number | null;
+  offset: number;
 }
 
 export interface Changes {
@@ -137,6 +147,7 @@ export async function uploadedBlob(hash: string): Promise<void> {
   await (await db()).delete('blob_uploads', hash);
 }
 
+/** Every store of this browser's copy. Only `erase.ts` calls it (D-152). */
 export async function wipe(): Promise<void> {
   const d = await db();
   const tx = d.transaction(['ops', 'kv', 'blob_uploads'], 'readwrite');

@@ -16,7 +16,7 @@ async function post<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new ApiError(r.status, j?.error?.code ?? '', j?.error?.message ?? `HTTP ${r.status}`);
+  if (!r.ok) throw new ApiError(r.status, j?.error?.code ?? '', j?.error?.message ?? `HTTP ${r.status}`, j);
   return j as T;
 }
 
@@ -27,10 +27,16 @@ export function inviteCode(input: string): string {
   return m ? m[1] : s;
 }
 
+export interface InvitePeek {
+  kind: 'system' | 'person' | 'device' | null;
+  /** a `device` invite's account (D-153); null from a server that doesn't say */
+  account_id: string | null;
+}
+
 /** What an invite is for, without using it (D-093): `system`/`person` for a new account (the
- *  invite's suggestion; the person joining picks), `device` for another device of an account.
- *  Null when the server predates the question, so onboarding asks nothing. */
-export async function inviteKind(invite: string): Promise<'system' | 'person' | 'device' | null> {
+ *  invite's suggestion; the person joining picks), `device` for another device of an account,
+ *  with that account. Kind null when the server predates the question, so onboarding asks nothing. */
+export async function peekInvite(invite: string): Promise<InvitePeek> {
   const r = await apiFetch(`${apiBase()}/auth/invite`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -39,7 +45,21 @@ export async function inviteKind(invite: string): Promise<'system' | 'person' | 
   const j = await r.json().catch(() => ({}));
   if (r.status === 400) throw new Error(j?.error?.message ?? 'That invite has expired or was already used.');
   const kind = r.ok ? j?.kind : null;
-  return kind === 'system' || kind === 'person' || kind === 'device' ? kind : null;
+  return {
+    kind: kind === 'system' || kind === 'person' || kind === 'device' ? kind : null,
+    account_id: r.ok && typeof j?.account_id === 'string' ? j.account_id : null,
+  };
+}
+
+/** What enrolling with an invite does to a signed-out browser's kept copy (D-153): a device link of
+ * the same account picks it up; anything else erases it first, once the person has said so. */
+export type Relink = 'none' | 'pick-up' | 'other-account' | 'new-account' | 'unknown-account';
+
+export function relinkPlan(keptAccount: string | null, peek: InvitePeek | null): Relink {
+  if (!keptAccount) return 'none';
+  if (peek?.kind === 'device') return !peek.account_id ? 'unknown-account' : peek.account_id === keptAccount ? 'pick-up' : 'other-account';
+  // a new account, or a server too old to say what its invite is for
+  return peek?.kind ? 'new-account' : 'unknown-account';
 }
 
 export async function enrol(

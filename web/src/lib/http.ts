@@ -17,9 +17,9 @@ export class RateLimitedError extends Error {
 }
 
 /** An error response from the API (API.md §1): its HTTP status and `error.code`, with the
- * server's message to show. */
+ * server's message to show, and the whole body for what else it says. */
 export class ApiError extends Error {
-  constructor(readonly status: number, readonly code: string, message: string) {
+  constructor(readonly status: number, readonly code: string, message: string, readonly body: unknown = null) {
     super(message);
     this.name = 'ApiError';
   }
