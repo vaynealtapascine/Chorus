@@ -269,6 +269,7 @@ impl From<AuthError> for ApiError {
             }
             AuthError::HandleTaken => (StatusCode::CONFLICT, "conflict"),
             AuthError::BadSignature | AuthError::BadSession => (StatusCode::UNAUTHORIZED, "unauthenticated"),
+            AuthError::KeyMismatch => (StatusCode::UNAUTHORIZED, "bad_key"),
             AuthError::UnknownDevice => (StatusCode::FORBIDDEN, "forbidden"),
             AuthError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
         };

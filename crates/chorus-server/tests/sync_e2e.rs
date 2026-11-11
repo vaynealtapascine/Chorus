@@ -1266,6 +1266,59 @@ async fn a_lost_device_can_be_signed_out() {
     assert_eq!(me["devices"].as_array().unwrap().len(), 1);
 }
 
+/// Ask for a challenge for `device` and answer it signed with `seed`'s key → (status, body).
+async fn renew(s: &Server, device: &str, seed: u8) -> (u16, Value) {
+    use p256::ecdsa::signature::Signer as _;
+    let http = reqwest::Client::new();
+    let r = http
+        .post(format!("http://{}/api/v1/auth/challenge", s.base))
+        .json(&json!({"device_id": device}))
+        .send()
+        .await
+        .unwrap();
+    if r.status() != 200 {
+        return (r.status().as_u16(), r.json::<Value>().await.unwrap());
+    }
+    let c: Value = r.json().await.unwrap();
+    let nonce = c["nonce"].as_str().unwrap();
+    let sk = p256::ecdsa::SigningKey::from_slice(&[seed; 32]).unwrap();
+    let sig: p256::ecdsa::Signature =
+        sk.sign(auth::challenge_message(nonce, device, c["instance_id"].as_str().unwrap()).as_bytes());
+    let sig = base64::engine::general_purpose::STANDARD.encode(sig.to_bytes());
+    let r = http
+        .post(format!("http://{}/api/v1/auth/session", s.base))
+        .json(&json!({"device_id": device, "nonce": nonce, "signature": sig}))
+        .send()
+        .await
+        .unwrap();
+    (r.status().as_u16(), r.json::<Value>().await.unwrap())
+}
+
+/// D-153: a signature that doesn't verify against the device's key (the key was lost) is
+/// `bad_key`, so a client can tell it from a stale nonce (`unauthenticated`) or a slow network.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_key_that_no_longer_matches_is_bad_key() {
+    let s = start().await;
+    let a = enrol(&s, auth::InviteKind::System, None, 101, "lanterns").await;
+    let device = a["device_id"].as_str().unwrap();
+    assert_eq!(renew(&s, device, 101).await.0, 200);
+    let (code, body) = renew(&s, device, 9).await;
+    assert_eq!((code, body["error"]["code"].as_str()), (401, Some("bad_key")), "{body}");
+    assert_eq!(body["error"]["retry"], false);
+    // a nonce that was never given (or has expired) stays unauthenticated
+    let r = reqwest::Client::new()
+        .post(format!("http://{}/api/v1/auth/session", s.base))
+        .json(&json!({"device_id": device, "nonce": "nope", "signature": "AAAA"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 401);
+    assert_eq!(r.json::<Value>().await.unwrap()["error"]["code"], "unauthenticated");
+    // an unknown device gets no challenge
+    let (code, body) = renew(&s, "0192f8c2-0000-7000-8000-00000000dead", 101).await;
+    assert_eq!((code, body["error"]["code"].as_str()), (403, Some("forbidden")));
+}
+
 /// A socket that never says Hello is closed, not held open (a public server gets strangers).
 #[tokio::test(flavor = "multi_thread")]
 async fn a_silent_socket_is_closed() {

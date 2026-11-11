@@ -27,6 +27,10 @@ pub enum AuthError {
     BadKey,
     #[error("invalid signature")]
     BadSignature,
+    /// A well-formed signature over a valid nonce that the device's stored key doesn't verify:
+    /// the device has lost its key (D-153). `401 bad_key`.
+    #[error("this device's key no longer matches")]
+    KeyMismatch,
     #[error("unknown or revoked device")]
     UnknownDevice,
     #[error("session expired or unknown")]
@@ -411,8 +415,10 @@ pub fn verify(
     let sig = Signature::from_slice(&sig_bytes)
         .or_else(|_| Signature::from_der(&sig_bytes))
         .map_err(|_| AuthError::BadSignature)?;
+    // the nonce was this device's and the signature is well formed: if it doesn't verify, the
+    // key is not the one enrolled (D-153), which a client handles as signed out
     key.verify(challenge_message(nonce, device_id, instance_id).as_bytes(), &sig)
-        .map_err(|_| AuthError::BadSignature)?;
+        .map_err(|_| AuthError::KeyMismatch)?;
     Ok(new_session(conn, device_id, now, ttl_ms)?)
 }
 
@@ -550,7 +556,9 @@ pub(crate) mod tests {
         let n2 = challenge(&c, &e.device_id, now).unwrap();
         let bad: Signature = other.sign(challenge_message(&n2, &e.device_id, "inst").as_bytes());
         let bad = base64::engine::general_purpose::STANDARD.encode(bad.to_der().as_bytes());
-        assert!(matches!(verify(&c, &e.device_id, &n2, &bad, "inst", now, 1000), Err(AuthError::BadSignature)));
+        assert!(matches!(verify(&c, &e.device_id, &n2, &bad, "inst", now, 1000), Err(AuthError::KeyMismatch)));
+        // a nonce that isn't (or is no longer) this device's stays a plain bad signature
+        assert!(matches!(verify(&c, &e.device_id, "nope", &b64, "inst", now, 1000), Err(AuthError::BadSignature)));
         // asking over and over keeps only a few outstanding challenges
         for i in 0..20 {
             challenge(&c, &e.device_id, now + i).unwrap();
