@@ -351,7 +351,8 @@ async fn http_posts_enforce_audience_and_hide_front_snapshot() {
         .unwrap();
     assert_eq!(ids(&alice).len(), 8);
     let owner_server = alice["items"].as_array().unwrap().iter().find(|p| p["id"] == "server").unwrap();
-    assert_eq!(owner_server["reactions"][0]["member_id"], "bob");
+    // Bob's member isn't open to Alice: counted, not named (D-154)
+    assert_eq!(owner_server["reactions"][0], json!({"emoji": "💜", "member_id": null, "member_name": null}));
     assert_eq!(get("bob-session", "/private").send().await.unwrap().status(), 404);
     assert_eq!(get("carol-session", "/bucket").send().await.unwrap().status(), 404);
     assert_eq!(
@@ -461,7 +462,10 @@ fn post_reactions_require_an_owned_member_and_a_readable_existing_post() {
     let (valid, _) = ingest::accept(&conn, &session, make(3, "server", "bob"), now, false).unwrap();
     assert!(valid.error.is_none(), "{:?}", valid.error);
     let owner = posts::one(&conn, ALICE, "server").unwrap().unwrap();
-    assert!(owner["reactions"].as_array().unwrap().iter().any(|r| r["emoji"] == "🎉" && r["member_id"] == "bob"));
+    // counted; Bob's member isn't open to Alice, so not named (D-154)
+    assert!(owner["reactions"].as_array().unwrap().iter().any(|r| r["emoji"] == "🎉" && r["member_id"].is_null()));
+    let own = posts::one(&conn, BOB, "server").unwrap().unwrap();
+    assert!(own["reactions"].as_array().unwrap().iter().any(|r| r["emoji"] == "🎉" && r["member_id"] == "bob"));
 }
 
 #[tokio::test]
@@ -1120,8 +1124,9 @@ fn quotes_borrow_the_quoted_audience_and_activity_reaches_the_author() {
     let reply = activity["items"].as_array().unwrap().iter().find(|i| i["post"]["id"] == "bob-reply").unwrap();
     assert_eq!(reply["target"]["id"], "server");
     assert_eq!(activity["reply_counts"]["server"], 1);
-    // Carol's removed 👍 isn't counted; Alice's own members never are
-    assert_eq!(activity["reactions"]["server"], json!([{"emoji": "💜", "member_id": "bob", "member_name": "bob"}]));
+    // Carol's removed 👍 isn't counted; Alice's own members never are; Bob's member isn't open to
+    // Alice, so the reaction is counted without its member (D-154)
+    assert_eq!(activity["reactions"]["server"], json!([{"emoji": "💜", "member_id": null, "member_name": null}]));
     // Bob's activity: nothing of other accounts on his posts; paging stops before the given time
     assert_eq!(posts::activity(&conn, BOB, None, 50).unwrap()["items"], json!([]));
     assert!(

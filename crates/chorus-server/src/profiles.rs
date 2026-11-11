@@ -365,6 +365,23 @@ pub(crate) fn pronouns_for(conn: &Connection, viewer: &str, member: &str) -> rus
     Ok(m.card(&v)["pronouns"].as_str().map(str::to_string))
 }
 
+/// How a reaction's member appears to `viewer` (D-154): their shown name (the display name, else
+/// the name, D-126; never a full name behind a display name) for the reacting account itself or
+/// where the member's profile is open to `viewer` (`member.visibility`), else `None`: the
+/// reaction still counts, without saying whose it is.
+pub(crate) fn reaction_name_for(conn: &Connection, viewer: &str, member: &str) -> rusqlite::Result<Option<String>> {
+    let found = conn
+        .query_row(&format!("SELECT {COLUMNS}, account_id FROM member WHERE id = ?1"), [member], |r| {
+            Ok((row(r)?, r.get::<_, String>(13)?))
+        })
+        .optional()?;
+    let Some((m, owner)) = found else { return Ok(None) };
+    if owner != viewer && !m.open(&Viewer::of(conn, viewer, &owner)?) {
+        return Ok(None);
+    }
+    Ok(Some(m.display_name().unwrap_or(&m.name).to_string()))
+}
+
 /// Small cards only. Reuses exactly the profile-opening rule, without fetching relationships
 /// recursively or granting access to any target's other parts, history or files.
 pub fn visible_card(conn: &Connection, viewer: &str, member: &str) -> anyhow::Result<Option<Value>> {

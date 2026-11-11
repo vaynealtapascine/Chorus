@@ -890,14 +890,21 @@ fn a_blank_display_name_falls_back_to_the_name() {
     let kai = new_id(NOW as u64, [40; 10]);
     let june = new_id(NOW as u64, [41; 10]);
     w.push(&a, "member.create", &format!("account:{a}"), &kai, json!({"name": "Kai", "display_name": ""}));
-    w.push(&b, "member.create", &format!("account:{b}"), &june, json!({"name": "June", "display_name": " "}));
+    w.push(
+        &b,
+        "member.create",
+        &format!("account:{b}"),
+        &june,
+        json!({"name": "June", "display_name": " ", "visibility": {"mode": "server"}}),
+    );
     let mention = json!([{"type": "mention", "offset": 0, "length": 5, "target_type": "member", "target_id": june}]);
     w.push(&a, "message.send", &space, &new_id(NOW as u64, [50; 10]), msg("@June hi", &[&kai], mention));
     notifier::process_due(&w.c, NOW + 1_000_000).unwrap();
     let items = notifier::list_for(&w.c, &b, None, 0, 10).unwrap()["items"].as_array().unwrap().clone();
     assert_eq!(items[0]["title"], "Kai · Club");
 
-    // June hearts a post of the Stars: its reactions and the Stars' activity name her
+    // June (her profile open to all) hearts a post of the Stars: its reactions and the Stars'
+    // activity name her
     let post = new_id(NOW as u64, [60; 10]);
     w.push(
         &a,
@@ -1064,4 +1071,67 @@ fn forwards_notify_like_messages() {
     own["channel_id"] = json!(general);
     w.push(&a, "message.forward", &home, &new_id(NOW as u64, [54; 10]), own);
     assert_eq!(w.inbox(&a)[0], ("mention".to_string(), "@Rin look".to_string()));
+}
+
+/// D-154: a reaction from another account's member is always counted, but names its member only
+/// where that member's profile is open to the reader, and then by the shown name (display name),
+/// never a full name behind it. The reacting account sees its own members complete.
+#[test]
+fn reaction_names_follow_the_members_profile() {
+    let mut w = W::new();
+    let (a, b) = (w.a.clone(), w.b.clone());
+    let kai = new_id(NOW as u64, [40; 10]);
+    let hidden = new_id(NOW as u64, [41; 10]);
+    let open = new_id(NOW as u64, [42; 10]);
+    w.push(&a, "member.create", &format!("account:{a}"), &kai, json!({"name": "Kai"}));
+    w.push(&b, "member.create", &format!("account:{b}"), &hidden, json!({"name": "June Hidden"}));
+    w.push(
+        &b,
+        "member.create",
+        &format!("account:{b}"),
+        &open,
+        json!({"name": "Rin Fullname", "display_name": "Rin", "visibility": {"mode": "server"}}),
+    );
+    let post = new_id(NOW as u64, [60; 10]);
+    w.push(
+        &a,
+        "post.create",
+        &format!("account:{a}"),
+        &post,
+        json!({"kind": "note", "authors": [kai], "text": "hello", "entities": [], "visibility": {"mode": "server"}}),
+    );
+    for (n, member, emoji) in [(61u8, &hidden, "🌙"), (62, &open, "🌿")] {
+        w.push(
+            &b,
+            "post.react",
+            &format!("account:{b}"),
+            &new_id(NOW as u64, [n; 10]),
+            json!({"target_type": "post", "target_id": post, "emoji": emoji, "member_id": member}),
+        );
+    }
+    let by_emoji =
+        |list: &Value, emoji: &str| list.as_array().unwrap().iter().find(|r| r["emoji"] == emoji).cloned().unwrap();
+
+    // the Stars: both counted, the hidden one unnamed, the open one by display name
+    let read = posts::one(&w.c, &a, &post).unwrap().unwrap();
+    assert_eq!(read["reactions"].as_array().unwrap().len(), 2);
+    assert_eq!(by_emoji(&read["reactions"], "🌙"), json!({"emoji": "🌙", "member_id": null, "member_name": null}));
+    assert_eq!(by_emoji(&read["reactions"], "🌿"), json!({"emoji": "🌿", "member_id": open, "member_name": "Rin"}));
+    let activity = posts::activity(&w.c, &a, None, 50).unwrap();
+    assert_eq!(by_emoji(&activity["reactions"][&post], "🌙")["member_id"], Value::Null);
+    assert_eq!(by_emoji(&activity["reactions"][&post], "🌿")["member_name"], "Rin");
+    let items: Vec<&Value> = activity["items"].as_array().unwrap().iter().filter(|i| i["kind"] == "reaction").collect();
+    assert_eq!(items.len(), 2, "a hidden member's reaction still shows");
+    let moon = items.iter().find(|i| i["emoji"] == "🌙").unwrap();
+    assert_eq!((&moon["member_id"], &moon["member_name"]), (&Value::Null, &Value::Null));
+    let leaf = items.iter().find(|i| i["emoji"] == "🌿").unwrap();
+    assert_eq!((&leaf["member_id"], &leaf["member_name"]), (&json!(open), &json!("Rin")));
+
+    // Alex's account sees its own members complete
+    let own = posts::one(&w.c, &b, &post).unwrap().unwrap();
+    assert_eq!(
+        by_emoji(&own["reactions"], "🌙"),
+        json!({"emoji": "🌙", "member_id": hidden, "member_name": "June Hidden"})
+    );
+    assert_eq!(by_emoji(&own["reactions"], "🌿")["member_name"], "Rin");
 }

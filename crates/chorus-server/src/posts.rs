@@ -161,6 +161,15 @@ pub(crate) fn for_viewer(conn: &Connection, viewer: &str, item: &mut Value) -> r
             crate::handles::stamp(conn, &mut book, viewer, &owner, card)?;
         }
     }
+    // reactions name their member only where the reader may see them (D-154)
+    if let Some(reactions) = item["reactions"].as_array_mut() {
+        for r in reactions {
+            let Some(member) = r["member_id"].as_str().map(str::to_string) else { continue };
+            let name = crate::profiles::reaction_name_for(conn, viewer, &member)?;
+            r["member_id"] = if name.is_some() { json!(member) } else { Value::Null };
+            r["member_name"] = json!(name);
+        }
+    }
     Ok(())
 }
 
@@ -248,29 +257,28 @@ pub fn activity(conn: &Connection, viewer: &str, before: Option<i64>, limit: usi
     }
     // reactions carry no time of their own: their clock's physical part is when they were added
     let mut reactions = serde_json::Map::new();
-    let mut st = conn.prepare_cached(concat!(
-        "SELECT r.target_id, r.emoji, r.member_id, ",
-        crate::profiles::shown_name_sql!("m."),
-        ", m.account_id, r.added_hlc
+    let mut st = conn.prepare_cached(
+        "SELECT r.target_id, r.emoji, r.member_id, m.account_id, r.added_hlc
          FROM reaction r JOIN post t ON t.id = r.target_id JOIN member m ON m.id = r.member_id
          WHERE r.target_type = 'post' AND r.is_present AND t.account_id = ?1 AND t.deleted_at IS NULL
            AND m.account_id <> ?1
-         ORDER BY r.added_hlc DESC"
-    ))?;
+         ORDER BY r.added_hlc DESC",
+    )?;
     let rows = st
         .query_map([viewer], |r| {
             Ok((
                 r.get::<_, String>(0)?,
                 r.get::<_, String>(1)?,
                 r.get::<_, String>(2)?,
-                r.get::<_, Option<String>>(3)?,
-                r.get::<_, String>(4)?,
-                r.get::<_, Option<String>>(5)?,
+                r.get::<_, String>(3)?,
+                r.get::<_, Option<String>>(4)?,
             ))
         })?
         .collect::<Result<Vec<_>, _>>()?;
-    for (target, emoji, member, name, account, hlc) in rows {
-        let name = name.unwrap_or_else(|| "Someone".into());
+    for (target, emoji, member, account, hlc) in rows {
+        // named only where the reader may see the member (D-154); counted either way
+        let name = crate::profiles::reaction_name_for(conn, viewer, &member)?;
+        let member = name.as_ref().map(|_| member);
         let at = hlc.and_then(|h| h.parse::<chorus_core::hlc::Hlc>().ok()).map(|h| h.pt as i64).unwrap_or_default();
         reactions
             .entry(target.clone())
