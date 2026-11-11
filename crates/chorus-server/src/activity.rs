@@ -868,16 +868,24 @@ fn queue(
 /// Deliver due activity notifications; returns the pushes to send after the lock is released.
 pub fn process_due(conn: &Connection, now: i64) -> anyhow::Result<Vec<push::Outbound>> {
     let mut st = conn.prepare_cached(
-        "SELECT id, recipient_account_id, payload FROM notification
+        "SELECT id, recipient_account_id, payload, kind FROM notification
          WHERE kind IN ('mention', 'dm', 'reply', 'message', 'member_dm', 'own_switch', 'post', 'post_reply', 'poll_nudge', 'alert_request', 'alert_accepted')
            AND delivered_at IS NULL AND cancelled_at IS NULL AND due_at <= ?1
          ORDER BY due_at, id LIMIT 500",
     )?;
-    let rows: Vec<(String, String, String)> =
-        st.query_map([now], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<Result<_, _>>()?;
+    let rows: Vec<(String, String, String, String)> =
+        st.query_map([now], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?.collect::<Result<_, _>>()?;
     let mut pushes = Vec::new();
-    for (id, recipient, payload) in rows {
+    for (id, recipient, payload, kind) in rows {
         let mut p: Value = serde_json::from_str(&payload).unwrap_or(json!({}));
+        // a post alert or reply ping waits up to an hour (D-127): only if the post can still be
+        // read by its recipient then (D-106, D-147)
+        if matches!(kind.as_str(), "post" | "post_reply")
+            && !crate::post_alerts::still_deliverable(conn, &recipient, &kind, &p)?
+        {
+            conn.execute("UPDATE notification SET cancelled_at = ?2 WHERE id = ?1", params![id, now])?;
+            continue;
+        }
         if p.get("t").and_then(Value::as_str) == Some("own_switch") {
             let Some((title, text)) = own_switch_text(conn, &recipient, &p)? else {
                 conn.execute("UPDATE notification SET cancelled_at = ?2 WHERE id = ?1", params![id, now])?;
