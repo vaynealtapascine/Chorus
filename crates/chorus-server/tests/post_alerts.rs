@@ -169,11 +169,20 @@ fn asked_approved_and_then_each_readable_post_pings_once() {
     assert_eq!(w.inbox(ALEX).len(), 4);
     assert_eq!(w.inbox(ALEX)[0].2, "Content warning: spoilers");
 
-    // the follow ends: followers posts stop, server-wide ones still reach Alex
+    // the follow ends: followers posts stop, server-wide ones still reach Alex, and the alerts
+    // for followers posts Alex can't read any more leave the list (D-149)
     w.c.execute("UPDATE follow SET status = 'ended' WHERE follower_account_id = ?1", [ALEX]).unwrap();
     w.post(STARS, &kai, 9, json!({}));
     w.post(STARS, &kai, 10, json!({"visibility": {"mode": "server"}}));
-    assert_eq!(w.inbox(ALEX).len(), 5);
+    let kinds: Vec<String> = w.inbox(ALEX).into_iter().map(|(_, title, text)| format!("{title}: {text}")).collect();
+    assert_eq!(
+        kinds,
+        [
+            "Kai posted: post 10",
+            "Kai wrote a journal entry: A long day",
+            "Post alerts for Kai: Kai said yes: you'll hear when they post."
+        ]
+    );
 }
 
 #[test]

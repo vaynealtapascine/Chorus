@@ -954,3 +954,62 @@ Ash",
         assert_eq!(page["items"][0]["authors"], want, "GET /channels/{{id}}/messages for {who}");
     }
 }
+
+/// Q25/D-149: a delivered notification leaves the reader's list while its source is gone for
+/// them (deleted, or no longer theirs to read) and comes back with it; nothing is erased.
+#[test]
+fn a_delivered_notification_follows_its_source() {
+    let mut w = W::new();
+    let (a, b, space) = (w.a.clone(), w.b.clone(), w.space.clone());
+    let kai = new_id(NOW as u64, [40; 10]);
+    let june = new_id(NOW as u64, [41; 10]);
+    w.push(&a, "member.create", &format!("account:{a}"), &kai, json!({"name": "Kai"}));
+    w.push(&b, "member.create", &format!("account:{b}"), &june, json!({"name": "June"}));
+    let mention = json!([{"type": "mention", "offset": 0, "length": 5, "target_type": "member", "target_id": june}]);
+    let m = new_id(NOW as u64, [50; 10]);
+    w.push(&a, "message.send", &space, &m, msg("@June hi", &[&kai], mention));
+    assert_eq!(w.inbox(&b).len(), 1);
+    let rows = |w: &W| -> i64 {
+        w.c.query_row("SELECT count(*) FROM notification WHERE recipient_account_id = ?1", [&b], |r| r.get(0)).unwrap()
+    };
+
+    // deleted: gone from the list (and from what a phone without push asks for), not the table
+    w.push(&a, "message.delete", &space, &m, json!({}));
+    assert!(w.inbox(&b).is_empty());
+    assert!(notifier::list_for(&w.c, &b, Some("phone"), 0, 50).unwrap()["items"].as_array().unwrap().is_empty());
+    assert_eq!(rows(&w), 1);
+    w.push(&a, "message.restore", &space, &m, json!({}));
+    assert_eq!(w.inbox(&b).len(), 1, "restored, it is back");
+
+    // no longer allowed to view the channel: gone; allowed again: back
+    let deny =
+        |allow: Value, deny: Value| json!({"target_type": "account", "target_id": b, "allow": allow, "deny": deny});
+    w.push(&a, "channel.set_permission", &space, GENERAL, deny(json!([]), json!(["view"])));
+    assert!(w.inbox(&b).is_empty());
+    w.push(&a, "channel.set_permission", &space, GENERAL, deny(json!(["view"]), json!([])));
+    assert_eq!(w.inbox(&b).len(), 1);
+
+    // a reply to the Stars' post: gone while the reply can't be read by them, back after
+    let ash = new_id(NOW as u64, [42; 10]);
+    w.push(&b, "member.create", &format!("account:{b}"), &ash, json!({"name": "Ash"}));
+    let root = new_id(NOW as u64, [60; 10]);
+    let post = |authors: &str, extra: Value| {
+        let mut p = json!({"kind": "note", "authors": [authors], "text": "words", "entities": [],
+                           "visibility": {"mode": "server"}});
+        for (k, v) in extra.as_object().unwrap() {
+            p[k] = v.clone();
+        }
+        p
+    };
+    w.push(&a, "post.create", &format!("account:{a}"), &root, post(&kai, json!({})));
+    let reply = new_id(NOW as u64, [61; 10]);
+    w.push(&b, "post.create", &format!("account:{b}"), &reply, post(&ash, json!({"reply_to": root})));
+    let replies = |w: &W| w.inbox(&a).iter().filter(|(k, _)| k == "post_reply").count();
+    assert_eq!(replies(&w), 1);
+    w.push(&b, "post.set_visibility", &format!("account:{b}"), &reply, json!({"visibility": {"mode": "private"}}));
+    assert_eq!(replies(&w), 0);
+    w.push(&b, "post.set_visibility", &format!("account:{b}"), &reply, json!({"visibility": {"mode": "server"}}));
+    assert_eq!(replies(&w), 1);
+    w.push(&b, "post.delete", &format!("account:{b}"), &reply, json!({}));
+    assert_eq!(replies(&w), 0);
+}

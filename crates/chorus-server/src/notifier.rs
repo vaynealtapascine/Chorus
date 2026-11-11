@@ -920,6 +920,10 @@ pub fn list_for(
         if device.is_some() && p["from_device"].as_str() == device {
             continue;
         }
+        // its message or post gone for this reader: not listed while so (D-149)
+        if !source_available(conn, follower, &kind, &p)? {
+            continue;
+        }
         let mut item = json!({
             "id": id, "kind": kind, "title": p["title"], "text": p["text"],
             "channel_id": p["channel_id"], "message_id": p["message_id"], "scope": p["scope"], "reply_as": p["reply_as"],
@@ -942,6 +946,23 @@ pub fn list_for(
     items.sort_by_key(|i| std::cmp::Reverse(i["delivered_at"].as_i64().unwrap_or(0)));
     items.truncate(limit as usize);
     Ok(json!({"items": items}))
+}
+
+/// Whether a delivered notification's source can still be read by its recipient (D-149): the
+/// message (REST read rule, `messages::readable_by`) for chat kinds and a chat poll's nudge, the
+/// post (`post_alerts::post_readable`) for post alerts, reply pings and a post poll's nudge.
+/// Kinds without a source (alert requests, export and own-switch notices) always are.
+fn source_available(conn: &Connection, recipient: &str, kind: &str, p: &Value) -> anyhow::Result<bool> {
+    if !matches!(kind, "mention" | "dm" | "reply" | "message" | "member_dm" | "post" | "post_reply" | "poll_nudge") {
+        return Ok(true);
+    }
+    if let Some(message) = p["message_id"].as_str() {
+        return Ok(crate::messages::readable_by(conn, recipient, message)?);
+    }
+    if let Some(post) = p["post_id"].as_str() {
+        return crate::post_alerts::post_readable(conn, recipient, post);
+    }
+    Ok(true)
 }
 
 fn switch_items(conn: &Connection, follower: &str, after: i64, limit: i64) -> anyhow::Result<Vec<Value>> {

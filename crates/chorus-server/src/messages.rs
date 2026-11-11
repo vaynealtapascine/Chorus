@@ -41,6 +41,16 @@ fn readable() -> String {
     )
 }
 
+/// Whether `account` (a device session, not a token) may read message `id` here: the rule of
+/// every read in this module. Notifications use it to drop items whose message is gone (D-149).
+pub(crate) fn readable_by(conn: &Connection, account: &str, id: &str) -> rusqlite::Result<bool> {
+    let sql = format!(
+        "SELECT EXISTS(SELECT 1 FROM message m JOIN channel c ON c.id=m.channel_id WHERE m.id=?1 AND {})",
+        readable()
+    );
+    conn.prepare_cached(&sql)?.query_row(params![id, account, false], |r| r.get(0))
+}
+
 fn row(r: &Row<'_>) -> rusqlite::Result<Value> {
     let json_of = |s: Option<String>| s.and_then(|v| serde_json::from_str::<Value>(&v).ok());
     Ok(json!({

@@ -360,6 +360,12 @@ pub(crate) fn still_deliverable(
     Ok(conn.prepare_cached(&sql)?.query_row(params![recipient, post_id], |r| r.get(0))?)
 }
 
+/// Whether `account` may read post `id` now: it exists undeleted and `posts::readable_sql` lets
+/// them (its author always may). Also what keeps a delivered notification listed (D-149).
+pub(crate) fn post_readable(conn: &Connection, account: &str, id: &str) -> anyhow::Result<bool> {
+    still_deliverable(conn, account, "post_reply", &json!({"post_id": id}))
+}
+
 /// A reply to another account's post tells that account (D-127, kind `post_reply`), if it may read
 /// the reply and hasn't turned journal replies off (`notify_chat.post_reply`). Opens the reply.
 #[allow(clippy::too_many_arguments)]
