@@ -27,6 +27,11 @@ struct W {
 
 impl W {
     fn new() -> W {
+        W::with_space("shared")
+    }
+
+    /// A two-account space of `kind` (`shared`, `dm`) with a #general.
+    fn with_space(kind: &str) -> W {
         let mut c = db::open_memory().unwrap();
         db::migrate(&mut c).unwrap();
         let a = new_id(1, [1; 10]);
@@ -45,7 +50,7 @@ impl W {
             W { c, a: a.clone(), b: b.clone(), space: space.clone(), n: 0, last_op: String::new(), written: None };
         // a real shared space with a #general, so channel permissions (perms.rs) have rows to read
         let id = space.strip_prefix("space:").unwrap().to_string();
-        w.push(&a, "space.create", &space, &id, json!({"kind": "shared", "name": "Club"}));
+        w.push(&a, "space.create", &space, &id, json!({"kind": kind, "name": "Club"}));
         for who in [&a, &b] {
             w.push(&a, "space.join", &space, &id, json!({"account_id": who}));
         }
@@ -773,4 +778,70 @@ fn chat_and_sender_icons_follow_space_channel_and_dm_rules() {
     assert_eq!(items[0]["chat"]["color"], "#8FB8E8");
     assert_eq!(items[0]["chat"]["avatar_blob"], chan_avatar);
     assert_eq!(items[0]["chat"]["direct"], false);
+}
+
+/// A thread is as private as its parent (`visibility::PUBLIC_MESSAGE_SQL`): what the Stars say in a
+/// thread under their own system-only aside never reaches Alex's account, as sync never sends it.
+#[test]
+fn a_thread_under_a_private_aside_notifies_nobody_else() {
+    let mut w = W::with_space("dm");
+    let (a, b, space) = (w.a.clone(), w.b.clone(), w.space.clone());
+    let space_id = space.strip_prefix("space:").unwrap().to_string();
+    let kai = new_id(NOW as u64, [40; 10]);
+    let june = new_id(NOW as u64, [41; 10]);
+    w.push(&a, "member.create", &format!("account:{a}"), &kai, json!({"name": "Kai"}));
+    w.push(&b, "member.create", &format!("account:{b}"), &june, json!({"name": "June"}));
+    let mention = json!([{"type": "mention", "offset": 0, "length": 5, "target_type": "member", "target_id": june}]);
+    let thread_under = |w: &mut W, parent: &str, n: u8| -> String {
+        let thread = new_id(NOW as u64, [n; 10]);
+        w.push(
+            &a,
+            "channel.create",
+            &space,
+            &thread,
+            json!({"space_id": space_id, "kind": "thread", "name": "t", "parent_message_id": parent}),
+        );
+        thread
+    };
+    let in_thread = |text: &str, thread: &str, entities: Value| {
+        let mut m = msg(text, &[&kai], entities);
+        m["channel_id"] = json!(thread);
+        m
+    };
+
+    let aside = new_id(NOW as u64, [50; 10]);
+    let mut p = msg("just us", &[&kai], json!([]));
+    p["visibility"] = json!({"mode": "system_only"});
+    w.push(&a, "message.send", &space, &aside, p);
+    let hidden = thread_under(&mut w, &aside, 60);
+    // a plain message (a DM's "dm" kind) and a mention of June, both inside the hidden thread
+    w.push(&a, "message.send", &space, &new_id(NOW as u64, [51; 10]), in_thread("thread chatter", &hidden, json!([])));
+    w.push(
+        &a,
+        "message.send",
+        &space,
+        &new_id(NOW as u64, [52; 10]),
+        in_thread("@June secret", &hidden, mention.clone()),
+    );
+    assert!(w.inbox(&b).is_empty(), "{:?}", w.inbox(&b));
+    let rows: i64 =
+        w.c.query_row("SELECT count(*) FROM notification WHERE recipient_account_id = ?1", [&b], |r| r.get(0)).unwrap();
+    assert_eq!(rows, 0);
+
+    // under a public message the thread notifies as usual
+    let open = new_id(NOW as u64, [53; 10]);
+    w.push(&a, "message.send", &space, &open, msg("hello", &[&kai], json!([])));
+    let shown = thread_under(&mut w, &open, 61);
+    w.push(&a, "message.send", &space, &new_id(NOW as u64, [54; 10]), in_thread("in the open", &shown, json!([])));
+    w.push(&a, "message.send", &space, &new_id(NOW as u64, [55; 10]), in_thread("@June look", &shown, mention));
+    let mut got = w.inbox(&b);
+    got.sort();
+    assert_eq!(
+        got,
+        [
+            ("dm".to_string(), "hello".to_string()),
+            ("dm".to_string(), "in the open".to_string()),
+            ("mention".to_string(), "@June look".to_string()),
+        ]
+    );
 }

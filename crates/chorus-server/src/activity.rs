@@ -8,7 +8,9 @@
 //!
 //! Queued on live ingest of `message.send` and `front.*` (never on rebuild), delivered by the
 //! notifier loop within seconds, as an inbox row plus an encrypted push. In a shared space the
-//! author's own account is never notified. Restricted (not public) messages notify nobody.
+//! author's own account is never notified. Another account hears only about a message sync would
+//! send it (`visibility::op_visible_to`): restricted (not public) messages, and messages in a
+//! thread under one, notify nobody else.
 
 use std::collections::BTreeMap;
 
@@ -239,10 +241,12 @@ pub fn on_op(conn: &Connection, o: &Op, now: i64) -> anyhow::Result<()> {
     }
     let mut st = conn.prepare_cached("SELECT account_id FROM scope_access WHERE scope = ?1 AND account_id <> ?2")?;
     let mut others: Vec<String> = st.query_map(params![o.scope, author], |r| r.get(0))?.collect::<Result<_, _>>()?;
-    // only accounts that may view the channel hear about it (perms.rs)
+    // only accounts sync would send the message to hear about it (`visibility::op_visible_to`):
+    // public, in a channel they may view (perms.rs), and not in a thread under a message they
+    // can't see (a thread is as private as its parent, D-147)
     let mut viewers = Vec::with_capacity(others.len());
     for a in others.drain(..) {
-        if crate::perms::can(conn, &a, channel_id, "view")? {
+        if crate::visibility::op_visible_to(conn, &a, o)? {
             viewers.push(a);
         }
     }
