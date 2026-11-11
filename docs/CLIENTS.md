@@ -222,6 +222,13 @@ android/
 See NOTIFICATIONS.md §7. Avatars for `Person` icons are pre-rendered circular bitmaps with the
 member ring, cached by `(blob_hash, color)`.
 
+The Notifications list, its badge and the unread widget come from one full read
+(`Inbox.refresh`, `GET /notifications` without `after=`) that replaces the list each time, so a
+notification whose message or post was deleted or stopped being readable leaves at the next read
+(D-149; the server filters at read time). Only `NotifyCheck`'s look for new pushes is incremental
+(`?after=`). Offline, the last read stays until a read succeeds; system notifications already shown
+are left as they are.
+
 ## 3. The quick-switch widget (RemoteViews, D-058)
 
 ### 3.1 Layout

@@ -212,7 +212,9 @@ object Inbox {
 
     fun of(accountId: String?): List<InboxItem>? = latest.value?.takeIf { it.first == accountId }?.second
 
-    /** Read every source again. One failing source leaves the others standing. */
+    /** Read every source again. One failing source leaves the others standing. Always a full read
+     * that replaces the list, never newer items added to kept ones: a notification the server stops
+     * returning (its message or post deleted or no longer readable, D-149) leaves at the next read. */
     suspend fun refresh(dev: DeviceRecord, model: Model): List<InboxItem> {
         suspend fun <T> soft(read: suspend () -> T): T? = try { read() }
             catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { null }
