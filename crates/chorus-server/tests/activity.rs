@@ -1013,3 +1013,55 @@ fn a_delivered_notification_follows_its_source() {
     w.push(&b, "post.delete", &format!("account:{b}"), &reply, json!({}));
     assert_eq!(replies(&w), 0);
 }
+
+/// Q27/D-151: a forward notifies like a message. Its text is the forwarder's own comment, or a
+/// neutral line, never the forwarded text (the snapshot).
+#[test]
+fn forwards_notify_like_messages() {
+    let mut w = W::with_space("dm");
+    let (a, b, space) = (w.a.clone(), w.b.clone(), w.space.clone());
+    let kai = new_id(NOW as u64, [40; 10]);
+    let june = new_id(NOW as u64, [41; 10]);
+    w.push(&a, "member.create", &format!("account:{a}"), &kai, json!({"name": "Kai"}));
+    w.push(&b, "member.create", &format!("account:{b}"), &june, json!({"name": "June"}));
+    let original = new_id(NOW as u64, [50; 10]);
+    w.push(&a, "message.send", &space, &original, msg("the original words", &[&kai], json!([])));
+    let base = w.inbox(&b).len();
+    let forward = |text: &str, entities: Value| {
+        let mut p = msg(text, &[&kai], entities);
+        p["forward_of_id"] = json!(original);
+        p["forward_snapshot"] = json!([{"message_id": original, "authors": [kai], "text": "the original words",
+                                        "entities": [], "occurred_at": NOW}]);
+        p
+    };
+    w.push(&a, "message.forward", &space, &new_id(NOW as u64, [51; 10]), forward("", json!([])));
+    let got = w.inbox(&b);
+    assert_eq!(got.len(), base + 1);
+    assert_eq!(got[0], ("dm".to_string(), "Forwarded a message".to_string()));
+    // a comment is the text; a mention in it is a mention
+    let mention = json!([{"type": "mention", "offset": 0, "length": 5, "target_type": "member", "target_id": june}]);
+    w.push(&a, "message.forward", &space, &new_id(NOW as u64, [52; 10]), forward("@June see this", mention));
+    assert_eq!(w.inbox(&b)[0], ("mention".to_string(), "@June see this".to_string()));
+    // never from a system-only aside
+    let mut aside = forward("just us", json!([]));
+    aside["visibility"] = json!({"mode": "system_only"});
+    w.push(&a, "message.forward", &space, &new_id(NOW as u64, [53; 10]), aside);
+    assert_eq!(w.inbox(&b).len(), base + 2);
+
+    // in the system's own space, under each member's rule like a message
+    let home_id = new_id(1, [4; 10]);
+    let home = format!("space:{home_id}");
+    ingest::grant(&w.c, &a, &home).unwrap();
+    w.push(&a, "space.create", &home, &home_id, json!({"kind": "internal", "name": "Home"}));
+    let rin = new_id(NOW as u64, [42; 10]);
+    w.push(&a, "member.create", &format!("account:{a}"), &rin, json!({"name": "Rin"}));
+    let general = new_id(NOW as u64, [30; 10]);
+    w.push(&a, "channel.create", &home, &general, json!({"space_id": home_id, "kind": "text", "name": "general"}));
+    let mut own = forward(
+        "@Rin look",
+        json!([{"type": "mention", "offset": 0, "length": 4, "target_type": "member", "target_id": rin}]),
+    );
+    own["channel_id"] = json!(general);
+    w.push(&a, "message.forward", &home, &new_id(NOW as u64, [54; 10]), own);
+    assert_eq!(w.inbox(&a)[0], ("mention".to_string(), "@Rin look".to_string()));
+}

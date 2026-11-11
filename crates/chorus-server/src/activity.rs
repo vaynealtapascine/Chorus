@@ -6,7 +6,7 @@
 //! Also, if asked for, the account's own switches made on another device; post alerts
 //! (`post_alerts.rs`, D-106); and nudges to vote on a poll (D-136).
 //!
-//! Queued on live ingest of `message.send` and `front.*` (never on rebuild), delivered by the
+//! Queued on live ingest of `message.send`, `message.forward` and `front.*` (never on rebuild), delivered by the
 //! notifier loop within seconds, as an inbox row plus an encrypted push. In a shared space the
 //! author's own account is never notified. Another account hears only about a message sync would
 //! send it (`visibility::op_visible_to`): restricted (not public) messages, and messages in a
@@ -221,7 +221,8 @@ pub fn on_op(conn: &Connection, o: &Op, now: i64) -> anyhow::Result<()> {
     if o.kind == "poll.nudge" {
         return poll_nudge(conn, o, author, now);
     }
-    if o.kind != "message.send" {
+    // a forward notifies like a message (D-151), with its own comment as the text
+    if !matches!(o.kind.as_str(), "message.send" | "message.forward") {
         return Ok(());
     }
     let p = &o.payload;
@@ -796,6 +797,9 @@ fn sender_of(name: &str, card: &AuthorCard) -> Value {
     sender
 }
 
+/// A forward's notification text when its forwarder added no comment.
+const FORWARDED: &str = "Forwarded a message";
+
 fn queue(
     conn: &Connection,
     o: &Op,
@@ -820,7 +824,11 @@ fn queue(
         None => AuthorCard::default(),
     };
     let sender = sender_of(&who, &first_author);
-    let text: String = p.get("text").and_then(Value::as_str).unwrap_or_default().chars().take(280).collect();
+    let own_text = p.get("text").and_then(Value::as_str).unwrap_or_default();
+    // a forward says only what its forwarder wrote; the forwarded words (its snapshot) are the
+    // original's, which the recipient may not be able to see
+    let own_text = if o.kind == "message.forward" && own_text.trim().is_empty() { FORWARDED } else { own_text };
+    let text: String = own_text.chars().take(280).collect();
     for (recipient, kind) in why {
         let (title, chat) =
             chat_visual(conn, meta, channel_id, &recipient, o.account_id.as_deref(), &who, &first_author)?;
