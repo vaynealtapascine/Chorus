@@ -1,0 +1,1240 @@
+{
+  "_doc": "Which chats are shown (D-097 members' private chats in the system's own space, D-098 private chats kept to some members in a DM, D-110 a chat with a subsystem includes everyone inside it, D-102 the front exactly as switched), shared by web chat-visible.fixture.test.ts (chat-list.ts isPrivate / privateVisible) and Android ChatVisibleFixtureTest (ChatOrganize.isPrivate / privateVisible). Expected values come from the decisions, not from either client. `is_private` is D-097's private chat (the one chat.hide_private hides); a D-098 chat is kept by the listed members of our side instead. `own` are our member ids; `front` the front's entries; `front_switched` the front exactly as switched where it differs (null: the same); `inside` maps a subsystem member to the members directly inside it, expanded recursively and never upward.",
+  "cases": [
+    {
+      "name": "internal channel, nobody listed",
+      "why": "D-097: an ordinary channel is nobody's private chat",
+      "space": "internal",
+      "channel": {
+        "kind": "text",
+        "member_ids": [],
+        "invalid_membership": false
+      },
+      "own": [
+        "kai",
+        "rin",
+        "june",
+        "garden",
+        "grove",
+        "fern",
+        "moss"
+      ],
+      "front": [
+        {
+          "subject_type": "member",
+          "subject_id": "june",
+          "level": "front"
+        }
+      ],
+      "front_switched": null,
+      "viewing_as": null,
+      "hide_private": true,
+      "inside": {},
+      "is_private": false,
+      "visible": true
+    },
+    {
+      "name": "internal channel, nobody fronting",
+      "why": "D-097: shown whatever the front",
+      "space": "internal",
+      "channel": {
+        "kind": "text",
+        "member_ids": [],
+        "invalid_membership": false
+      },
+      "own": [
+        "kai",
+        "rin",
+        "june",
+        "garden",
+        "grove",
+        "fern",
+        "moss"
+      ],
+      "front": [],
+      "front_switched": null,
+      "viewing_as": null,
+      "hide_private": true,
+      "inside": {},
+      "is_private": false,
+      "visible": true
+    },
+    {
+      "name": "members' DM, a listed member fronts",
+      "why": "D-097: shown while one of its members fronts",
+      "space": "internal",
+      "channel": {
+        "kind": "member_dm",
+        "member_ids": [
+          "kai",
+          "rin"
+        ],
+        "invalid_membership": false
+      },
+      "own": [
+        "kai",
+        "rin",
+        "june",
+        "garden",
+        "grove",
+        "fern",
+        "moss"
+      ],
+      "front": [
+        {
+          "subject_type": "member",
+          "subject_id": "kai",
+          "level": "front"
+        }
+      ],
+      "front_switched": null,
+      "viewing_as": null,
+      "hide_private": true,
+      "inside": {},
+      "is_private": true,
+      "visible": true
+    },
+    {
+      "name": "members' DM, a listed member is co-conscious",
+      "why": "D-097: or is co-conscious",
+      "space": "internal",
+      "channel": {
+        "kind": "member_dm",
+        "member_ids": [
+          "kai",
+          "rin"
+        ],
+        "invalid_membership": false
+      },
+      "own": [
+        "kai",
+        "rin",
+        "june",
+        "garden",
+        "grove",
+        "fern",
+        "moss"
+      ],
+      "front": [
+        {
+          "subject_type": "member",
+          "subject_id": "june",
+          "level": "front"
+        },
+        {
+          "subject_type": "member",
+          "subject_id": "kai",
+          "level": "cocon"
+        }
+      ],
+      "front_switched": null,
+      "viewing_as": null,
+      "hide_private": true,
+      "inside": {},
+      "is_private": true,
+      "visible": true
+    },
+    {
+      "name": "members' DM, a listed member only present",
+      "why": "D-097: present is neither fronting nor co-conscious",
+      "space": "internal",
+      "channel": {
+        "kind": "member_dm",
+        "member_ids": [
+          "kai",
+          "rin"
+        ],
+        "invalid_membership": false
+      },
+      "own": [
+        "kai",
+        "rin",
+        "june",
+        "garden",
+        "grove",
+        "fern",
+        "moss"
+      ],
+      "front": [
+        {
+          "subject_type": "member",
+          "subject_id": "june",
+          "level": "front"
+        },
+        {
+          "subject_type": "member",
+          "subject_id": "kai",
+          "level": "present"
+        }
+      ],
+      "front_switched": null,
+      "viewing_as": null,
+      "hide_private": true,
+      "inside": {},
+      "is_private": true,
+      "visible": false
+    },
+    {
+      "name": "members' DM, its members absent",
+      "why": "D-097: hidden while none of them is here",
+      "space": "internal",
+      "channel": {
+        "kind": "member_dm",
+        "member_ids": [
+          "kai",
+          "rin"
+        ],
+        "invalid_membership": false
+      },
+      "own": [
+        "kai",
+        "rin",
+        "june",
+        "garden",
+        "grove",
+        "fern",
+        "moss"
+      ],
+      "front": [
+        {
+          "subject_type": "member",
+          "subject_id": "june",
+          "level": "front"
+        }
+      ],
+      "front_switched": null,
+      "viewing_as": null,
+      "hide_private": true,
+      "inside": {},
+      "is_private": true,
+      "visible": false
+    },
+    {
+      "name": "members' DM, absent but read as one of them",
+      "why": "D-097: or while reading as one of them",
+      "space": "internal",
+      "channel": {
+        "kind": "member_dm",
+        "member_ids": [
+          "kai",
+          "rin"
+        ],
+        "invalid_membership": false
+      },
+      "own": [
+        "kai",
+        "rin",
+        "june",
+        "garden",
+        "grove",
+        "fern",
+        "moss"
+      ],
+      "front": [
+        {
+          "subject_type": "member",
+          "subject_id": "june",
+          "level": "front"
+        }
+      ],
+      "front_switched": null,
+      "viewing_as": "rin",
+      "hide_private": true,
+      "inside": {},
+      "is_private": true,
+      "visible": true
+    },
+    {
+      "name": "members' DM, read as someone not in it",
+      "why": "D-097: reading as someone else doesn't open it",
+      "space": "internal",
+      "channel": {
+        "kind": "member_dm",
+        "member_ids": [
+          "kai",
+          "rin"
+        ],
+        "invalid_membership": false
+      },
+      "own": [
+        "kai",
+        "rin",
+        "june",
+        "garden",
+        "grove",
+        "fern",
+        "moss"
+      ],
+      "front": [
+        {
+          "subject_type": "member",
+          "subject_id": "rin",
+          "level": "present"
+        }
+      ],
+      "front_switched": null,
+      "viewing_as": "june",
+      "hide_private": true,
+      "inside": {},
+      "is_private": true,
+      "visible": false
+    },
+    {
+      "name": "members' DM, hide_private off",
+      "why": "D-097: chat.hide_private off shows it",
+      "space": "internal",
+      "channel": {
+        "kind": "member_dm",
+        "member_ids": [
+          "kai",
+          "rin"
+        ],
+        "invalid_membership": false
+      },
+      "own": [
+        "kai",
+        "rin",
+        "june",
+        "garden",
+        "grove",
+        "fern",
+        "moss"
+      ],
+      "front": [
+        {
+          "subject_type": "member",
+          "subject_id": "june",
+          "level": "front"
+        }
+      ],
+      "front_switched": null,
+      "viewing_as": null,
+      "hide_private": false,
+      "inside": {},
+      "is_private": true,
+      "visible": true
+    },
+    {
+      "name": "internal channel kept to a member, they are absent",
+      "why": "D-097/D-099: a channel kept to some members is private",
+      "space": "internal",
+      "channel": {
+        "kind": "text",
+        "member_ids": [
+          "kai"
+        ],
+        "invalid_membership": false
+      },
+      "own": [
+        "kai",
+        "rin",
+        "june",
+        "garden",
+        "grove",
+        "fern",
+        "moss"
+      ],
+      "front": [
+        {
+          "subject_type": "member",
+          "subject_id": "june",
+          "level": "front"
+        }
+      ],
+      "front_switched": null,
+      "viewing_as": null,
+      "hide_private": true,
+      "inside": {},
+      "is_private": true,
+      "visible": false
+    },
+    {
+      "name": "internal channel kept to a member, they front",
+      "why": "D-097/D-099",
+      "space": "internal",
+      "channel": {
+        "kind": "text",
+        "member_ids": [
+          "kai"
+        ],
+        "invalid_membership": false
+      },
+      "own": [
+        "kai",
+        "rin",
+        "june",
+        "garden",
+        "grove",
+        "fern",
+        "moss"
+      ],
+      "front": [
+        {
+          "subject_type": "member",
+          "subject_id": "kai",
+          "level": "front"
+        }
+      ],
+      "front_switched": null,
+      "viewing_as": null,
+      "hide_private": true,
+      "inside": {},
+      "is_private": true,
+      "visible": true
+    },
+    {
+      "name": "internal channel kept to a member, hide_private off",
+      "why": "D-097",
+      "space": "internal",
+      "channel": {
+        "kind": "text",
+        "member_ids": [
+          "kai"
+        ],
+        "invalid_membership": false
+      },
+      "own": [
+        "kai",
+        "rin",
+        "june",
+        "garden",
+        "grove",
+        "fern",
+        "moss"
+      ],
+      "front": [],
+      "front_switched": null,
+      "viewing_as": null,
+      "hide_private": false,
+      "inside": {},
+      "is_private": true,
+      "visible": true
+    },
+    {
+      "name": "DM chat kept to one of ours, who fronts",
+      "why": "D-098: shows while one of them fronts by the recorded front",
+      "space": "dm",
+      "channel": {
+        "kind": "member_dm",
+        "member_ids": [
+          "kai"
+        ],
+        "invalid_membership": false
+      },
+      "own": [
+        "kai",
+        "rin",
+        "june",
+        "garden",
+        "grove",
+        "fern",
+        "moss"
+      ],
+      "front": [
+        {
+          "subject_type": "member",
+          "subject_id": "kai",
+          "level": "front"
+        }
+      ],
+      "front_switched": null,
+      "viewing_as": null,
+      "hide_private": true,
+      "inside": {},
+      "is_private": false,
+      "visible": true
+    },
+    {
+      "name": "DM chat kept to one of ours, who is co-conscious",
+      "why": "D-098: or is co-conscious",
+      "space": "dm",
+      "channel": {
+        "kind": "member_dm",
+        "member_ids": [
+          "kai",
+          "robin"
+        ],
+        "invalid_membership": false
+      },
+      "own": [
+        "kai",
+        "rin",
+        "june",
+        "garden",
+        "grove",
+        "fern",
+        "moss"
+      ],
+      "front": [
+        {
+          "subject_type": "member",
+          "subject_id": "june",
+          "level": "front"
+        },
+        {
+          "subject_type": "member",
+          "subject_id": "kai",
+          "level": "cocon"
+        }
+      ],
+      "front_switched": null,
+      "viewing_as": null,
+      "hide_private": true,
+      "inside": {},
+      "is_private": false,
+      "visible": true
+    },
+    {
+      "name": "DM chat kept to one of ours, who is only present",
+      "why": "D-098",
+      "space": "dm",
+      "channel": {
+        "kind": "member_dm",
+        "member_ids": [
+          "kai",
+          "robin"
+        ],
+        "invalid_membership": false
+      },
+      "own": [
+        "kai",
+        "rin",
+        "june",
+        "garden",
+        "grove",
+        "fern",
+        "moss"
+      ],
+      "front": [
+        {
+          "subject_type": "member",
+          "subject_id": "june",
+          "level": "front"
+        },
+        {
+          "subject_type": "member",
+          "subject_id": "kai",
+          "level": "present"
+        }
+      ],
+      "front_switched": null,
+      "viewing_as": null,
+      "hide_private": true,
+      "inside": {},
+      "is_private": false,
+      "visible": false
+    },
+    {
+      "name": "DM chat kept to one of ours, who is not fronting",
+      "why": "D-098",
+      "space": "dm",
+      "channel": {
+        "kind": "member_dm",
+        "member_ids": [
+          "kai",
+          "robin"
+        ],
+        "invalid_membership": false
+      },
+      "own": [
+        "kai",
+        "rin",
+        "june",
+        "garden",
+        "grove",
+        "fern",
+        "moss"
+      ],
+      "front": [
+        {
+          "subject_type": "member",
+          "subject_id": "june",
+          "level": "front"
+        }
+      ],
+      "front_switched": null,
+      "viewing_as": null,
+      "hide_private": true,
+      "inside": {},
+      "is_private": false,
+      "visible": false
+    },
+    {
+      "name": "DM chat kept to one of ours, not fronting but read as",
+      "why": "D-098: not by Read as",
+      "space": "dm",
+      "channel": {
+        "kind": "member_dm",
+        "member_ids": [
+          "kai",
+          "robin"
+        ],
+        "invalid_membership": false
+      },
+      "own": [
+        "kai",
+        "rin",
+        "june",
+        "garden",
+        "grove",
+        "fern",
+        "moss"
+      ],
+      "front": [
+        {
+          "subject_type": "member",
+          "subject_id": "june",
+          "level": "front"
+        }
+      ],
+      "front_switched": null,
+      "viewing_as": "kai",
+      "hide_private": true,
+      "inside": {},
+      "is_private": false,
+      "visible": false
+    },
+    {
+      "name": "DM chat kept to one of ours, not fronting, hide_private off",
+      "why": "D-098: chat.hide_private doesn't turn it off",
+      "space": "dm",
+      "channel": {
+        "kind": "member_dm",
+        "member_ids": [
+          "kai",
+          "robin"
+        ],
+        "invalid_membership": false
+      },
+      "own": [
+        "kai",
+        "rin",
+        "june",
+        "garden",
+        "grove",
+        "fern",
+        "moss"
+      ],
+      "front": [
+        {
+          "subject_type": "member",
+          "subject_id": "june",
+          "level": "front"
+        }
+      ],
+      "front_switched": null,
+      "viewing_as": null,
+      "hide_private": false,
+      "inside": {},
+      "is_private": false,
+      "visible": false
+    },
+    {
+      "name": "DM chat kept to one of ours, fronting only in a front that isn't the switched one",
+      "why": "D-098 by the recorded front, D-102 the front exactly as switched",
+      "space": "dm",
+      "channel": {
+        "kind": "member_dm",
+        "member_ids": [
+          "kai",
+          "robin"
+        ],
+        "invalid_membership": false
+      },
+      "own": [
+        "kai",
+        "rin",
+        "june",
+        "garden",
+        "grove",
+        "fern",
+        "moss"
+      ],
+      "front": [
+        {
+          "subject_type": "member",
+          "subject_id": "kai",
+          "level": "front"
+        }
+      ],
+      "front_switched": [
+        {
+          "subject_type": "member",
+          "subject_id": "june",
+          "level": "front"
+        }
+      ],
+      "viewing_as": null,
+      "hide_private": true,
+      "inside": {},
+      "is_private": false,
+      "visible": false
+    },
+    {
+      "name": "DM chat listing only the other account's members",
+      "why": "D-098: an account with nobody listed sees it as any DM",
+      "space": "dm",
+      "channel": {
+        "kind": "member_dm",
+        "member_ids": [
+          "robin"
+        ],
+        "invalid_membership": false
+      },
+      "own": [
+        "kai",
+        "rin",
+        "june",
+        "garden",
+        "grove",
+        "fern",
+        "moss"
+      ],
+      "front": [],
+      "front_switched": null,
+      "viewing_as": null,
+      "hide_private": true,
+      "inside": {},
+      "is_private": false,
+      "visible": true
+    },
+    {
+      "name": "DM chat listing only the other account's members, hide_private on, ours absent",
+      "why": "D-098",
+      "space": "dm",
+      "channel": {
+        "kind": "member_dm",
+        "member_ids": [
+          "robin",
+          "sam"
+        ],
+        "invalid_membership": false
+      },
+      "own": [
+        "kai",
+        "rin",
+        "june",
+        "garden",
+        "grove",
+        "fern",
+        "moss"
+      ],
+      "front": [
+        {
+          "subject_type": "member",
+          "subject_id": "june",
+          "level": "front"
+        }
+      ],
+      "front_switched": null,
+      "viewing_as": null,
+      "hide_private": true,
+      "inside": {},
+      "is_private": false,
+      "visible": true
+    },
+    {
+      "name": "DM chat kept on both sides, seen by the other account, their member absent",
+      "why": "D-098: either side's listed members keep it",
+      "space": "dm",
+      "channel": {
+        "kind": "member_dm",
+        "member_ids": [
+          "kai",
+          "robin"
+        ],
+        "invalid_membership": false
+      },
+      "own": [
+        "robin",
+        "sam"
+      ],
+      "front": [
+        {
+          "subject_type": "member",
+          "subject_id": "sam",
+          "level": "front"
+        }
+      ],
+      "front_switched": null,
+      "viewing_as": null,
+      "hide_private": true,
+      "inside": {},
+      "is_private": false,
+      "visible": false
+    },
+    {
+      "name": "DM chat kept on both sides, seen by the other account, their member fronts",
+      "why": "D-098",
+      "space": "dm",
+      "channel": {
+        "kind": "member_dm",
+        "member_ids": [
+          "kai",
+          "robin"
+        ],
+        "invalid_membership": false
+      },
+      "own": [
+        "robin",
+        "sam"
+      ],
+      "front": [
+        {
+          "subject_type": "member",
+          "subject_id": "robin",
+          "level": "front"
+        }
+      ],
+      "front_switched": null,
+      "viewing_as": null,
+      "hide_private": true,
+      "inside": {},
+      "is_private": false,
+      "visible": true
+    },
+    {
+      "name": "members' DM with a subsystem, someone inside fronts",
+      "why": "D-110",
+      "space": "internal",
+      "channel": {
+        "kind": "member_dm",
+        "member_ids": [
+          "garden",
+          "rin"
+        ],
+        "invalid_membership": false
+      },
+      "own": [
+        "kai",
+        "rin",
+        "june",
+        "garden",
+        "grove",
+        "fern",
+        "moss"
+      ],
+      "front": [
+        {
+          "subject_type": "member",
+          "subject_id": "moss",
+          "level": "front"
+        }
+      ],
+      "front_switched": null,
+      "viewing_as": null,
+      "hide_private": true,
+      "inside": {
+        "garden": [
+          "moss"
+        ]
+      },
+      "is_private": true,
+      "visible": true
+    },
+    {
+      "name": "members' DM with a subsystem, someone two levels inside is co-conscious",
+      "why": "D-110: recursively",
+      "space": "internal",
+      "channel": {
+        "kind": "member_dm",
+        "member_ids": [
+          "garden",
+          "rin"
+        ],
+        "invalid_membership": false
+      },
+      "own": [
+        "kai",
+        "rin",
+        "june",
+        "garden",
+        "grove",
+        "fern",
+        "moss"
+      ],
+      "front": [
+        {
+          "subject_type": "member",
+          "subject_id": "june",
+          "level": "front"
+        },
+        {
+          "subject_type": "member",
+          "subject_id": "fern",
+          "level": "cocon"
+        }
+      ],
+      "front_switched": null,
+      "viewing_as": null,
+      "hide_private": true,
+      "inside": {
+        "garden": [
+          "grove"
+        ],
+        "grove": [
+          "fern"
+        ]
+      },
+      "is_private": true,
+      "visible": true
+    },
+    {
+      "name": "members' DM with a subsystem, read as someone inside",
+      "why": "D-110: or is read as",
+      "space": "internal",
+      "channel": {
+        "kind": "member_dm",
+        "member_ids": [
+          "garden",
+          "rin"
+        ],
+        "invalid_membership": false
+      },
+      "own": [
+        "kai",
+        "rin",
+        "june",
+        "garden",
+        "grove",
+        "fern",
+        "moss"
+      ],
+      "front": [],
+      "front_switched": null,
+      "viewing_as": "moss",
+      "hide_private": true,
+      "inside": {
+        "garden": [
+          "moss"
+        ]
+      },
+      "is_private": true,
+      "visible": true
+    },
+    {
+      "name": "members' DM with someone inside a subsystem, only the subsystem fronts",
+      "why": "D-110 never upward; D-102 the front as switched",
+      "space": "internal",
+      "channel": {
+        "kind": "member_dm",
+        "member_ids": [
+          "moss",
+          "rin"
+        ],
+        "invalid_membership": false
+      },
+      "own": [
+        "kai",
+        "rin",
+        "june",
+        "garden",
+        "grove",
+        "fern",
+        "moss"
+      ],
+      "front": [
+        {
+          "subject_type": "member",
+          "subject_id": "garden",
+          "level": "front"
+        }
+      ],
+      "front_switched": null,
+      "viewing_as": null,
+      "hide_private": true,
+      "inside": {
+        "garden": [
+          "moss"
+        ]
+      },
+      "is_private": true,
+      "visible": false
+    },
+    {
+      "name": "DM chat kept to a subsystem of ours, someone inside fronts",
+      "why": "D-110 applies to D-098 chats",
+      "space": "dm",
+      "channel": {
+        "kind": "member_dm",
+        "member_ids": [
+          "garden",
+          "robin"
+        ],
+        "invalid_membership": false
+      },
+      "own": [
+        "kai",
+        "rin",
+        "june",
+        "garden",
+        "grove",
+        "fern",
+        "moss"
+      ],
+      "front": [
+        {
+          "subject_type": "member",
+          "subject_id": "moss",
+          "level": "front"
+        }
+      ],
+      "front_switched": null,
+      "viewing_as": null,
+      "hide_private": true,
+      "inside": {
+        "garden": [
+          "moss"
+        ]
+      },
+      "is_private": false,
+      "visible": true
+    },
+    {
+      "name": "DM chat kept to someone inside a subsystem, only the subsystem fronts",
+      "why": "D-110 never upward",
+      "space": "dm",
+      "channel": {
+        "kind": "member_dm",
+        "member_ids": [
+          "moss",
+          "robin"
+        ],
+        "invalid_membership": false
+      },
+      "own": [
+        "kai",
+        "rin",
+        "june",
+        "garden",
+        "grove",
+        "fern",
+        "moss"
+      ],
+      "front": [
+        {
+          "subject_type": "member",
+          "subject_id": "garden",
+          "level": "front"
+        }
+      ],
+      "front_switched": null,
+      "viewing_as": null,
+      "hide_private": true,
+      "inside": {
+        "garden": [
+          "moss"
+        ]
+      },
+      "is_private": false,
+      "visible": false
+    },
+    {
+      "name": "members' DM, a group with a listed member's id fronts",
+      "why": "D-097: a member fronts; a group entry isn't one",
+      "space": "internal",
+      "channel": {
+        "kind": "member_dm",
+        "member_ids": [
+          "kai",
+          "rin"
+        ],
+        "invalid_membership": false
+      },
+      "own": [
+        "kai",
+        "rin",
+        "june",
+        "garden",
+        "grove",
+        "fern",
+        "moss"
+      ],
+      "front": [
+        {
+          "subject_type": "group",
+          "subject_id": "kai",
+          "level": "front"
+        }
+      ],
+      "front_switched": null,
+      "viewing_as": null,
+      "hide_private": true,
+      "inside": {},
+      "is_private": true,
+      "visible": false
+    },
+    {
+      "name": "members' DM, a custom state with a listed member's id fronts",
+      "why": "D-097",
+      "space": "internal",
+      "channel": {
+        "kind": "member_dm",
+        "member_ids": [
+          "kai",
+          "rin"
+        ],
+        "invalid_membership": false
+      },
+      "own": [
+        "kai",
+        "rin",
+        "june",
+        "garden",
+        "grove",
+        "fern",
+        "moss"
+      ],
+      "front": [
+        {
+          "subject_type": "state",
+          "subject_id": "rin",
+          "level": "cocon"
+        }
+      ],
+      "front_switched": null,
+      "viewing_as": null,
+      "hide_private": true,
+      "inside": {},
+      "is_private": true,
+      "visible": false
+    },
+    {
+      "name": "DM chat kept to one of ours, a group with their id fronts",
+      "why": "D-098",
+      "space": "dm",
+      "channel": {
+        "kind": "member_dm",
+        "member_ids": [
+          "kai",
+          "robin"
+        ],
+        "invalid_membership": false
+      },
+      "own": [
+        "kai",
+        "rin",
+        "june",
+        "garden",
+        "grove",
+        "fern",
+        "moss"
+      ],
+      "front": [
+        {
+          "subject_type": "group",
+          "subject_id": "kai",
+          "level": "front"
+        }
+      ],
+      "front_switched": null,
+      "viewing_as": null,
+      "hide_private": true,
+      "inside": {},
+      "is_private": false,
+      "visible": false
+    },
+    {
+      "name": "members' DM with invalid membership, a listed member fronts",
+      "why": "invalid membership is never shown",
+      "space": "internal",
+      "channel": {
+        "kind": "member_dm",
+        "member_ids": [
+          "kai",
+          "rin"
+        ],
+        "invalid_membership": true
+      },
+      "own": [
+        "kai",
+        "rin",
+        "june",
+        "garden",
+        "grove",
+        "fern",
+        "moss"
+      ],
+      "front": [
+        {
+          "subject_type": "member",
+          "subject_id": "kai",
+          "level": "front"
+        }
+      ],
+      "front_switched": null,
+      "viewing_as": null,
+      "hide_private": true,
+      "inside": {},
+      "is_private": true,
+      "visible": false
+    },
+    {
+      "name": "ordinary channel with invalid membership, hide_private off",
+      "why": "invalid membership is never shown",
+      "space": "internal",
+      "channel": {
+        "kind": "text",
+        "member_ids": [],
+        "invalid_membership": true
+      },
+      "own": [
+        "kai",
+        "rin",
+        "june",
+        "garden",
+        "grove",
+        "fern",
+        "moss"
+      ],
+      "front": [
+        {
+          "subject_type": "member",
+          "subject_id": "june",
+          "level": "front"
+        }
+      ],
+      "front_switched": null,
+      "viewing_as": null,
+      "hide_private": false,
+      "inside": {},
+      "is_private": false,
+      "visible": false
+    },
+    {
+      "name": "DM chat kept to one of ours with invalid membership, they front",
+      "why": "invalid membership is never shown",
+      "space": "dm",
+      "channel": {
+        "kind": "member_dm",
+        "member_ids": [
+          "kai",
+          "robin"
+        ],
+        "invalid_membership": true
+      },
+      "own": [
+        "kai",
+        "rin",
+        "june",
+        "garden",
+        "grove",
+        "fern",
+        "moss"
+      ],
+      "front": [
+        {
+          "subject_type": "member",
+          "subject_id": "kai",
+          "level": "front"
+        }
+      ],
+      "front_switched": null,
+      "viewing_as": null,
+      "hide_private": true,
+      "inside": {},
+      "is_private": false,
+      "visible": false
+    }
+  ]
+}

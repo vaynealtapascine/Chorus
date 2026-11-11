@@ -107,6 +107,8 @@ tasks.withType<Test>().configureEach {
     systemProperty("chorus.fixtures", fixtures.absolutePath)
     inputs.file(fixtures.resolve("front_runtime/channel_pools.json"))
         .withPropertyName("chorusFrontRuntimeFixture").withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.file(fixtures.resolve("ui_chat_visible.json"))
+        .withPropertyName("chorusChatVisibleFixture").withPathSensitivity(PathSensitivity.RELATIVE)
 }
 
 kapt {
