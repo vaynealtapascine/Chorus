@@ -108,7 +108,10 @@ pub fn stamp(
 }
 
 /// Whether a handle is free for `account` (its own account handle) or for `member` of `account`
-/// (a claim): no other account has it as its handle and no other member claims it.
+/// (a claim): no other account has it as its handle and no other member claims it. A deleted
+/// member's claims count (D-146): deleting is a restorable tombstone, so freeing them would let a
+/// restore put two live members on one handle. Restoring the member and removing the claim, or a
+/// purge, frees it.
 pub fn taken(conn: &Connection, handle: &str, account: &str, member: Option<&str>) -> rusqlite::Result<bool> {
     let account_has = conn
         .query_row(
@@ -124,7 +127,7 @@ pub fn taken(conn: &Connection, handle: &str, account: &str, member: Option<&str
     Ok(conn
         .query_row(
             "SELECT 1 FROM member m, json_each(CASE WHEN json_valid(m.handles) THEN m.handles ELSE '[]' END) h
-             WHERE h.value = ?1 AND m.id IS NOT ?2 AND m.deleted_at IS NULL LIMIT 1",
+             WHERE h.value = ?1 AND m.id IS NOT ?2 LIMIT 1",
             params![handle, member],
             |_| Ok(()),
         )

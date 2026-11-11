@@ -173,7 +173,7 @@ Merge column: **LWW-F** = field-level last-writer-wins by HLC · **SET** = LWW e
 | `account.set` | `{fields}` display_name, handle, avatar, settings; the server writes one `{handle}` at enrolment (and once for older accounts) so devices know it offline (D-126) | LWW-F |
 | `system.set` | `{fields}` name, tag, description, colour, terminology, timezone | LWW-F |
 | `member.create` | full initial fields | APP (then LWW-F) |
-| `member.set` | `{fields}` any subset of member columns; `handles` must be ≤5 distinct claims, each unique on the server (ingest acks `conflict`, D-126) | LWW-F |
+| `member.set` | `{fields}` any subset of member columns; `handles` must be ≤5 distinct claims, each unique on the server, a deleted member's claims included (ingest acks `conflict`, D-126, D-146) | LWW-F |
 | `member.archive` / `member.unarchive` | `{}` | LWW-F on `archived_at` |
 | `member.delete` | `{}` tombstone; content authored stays, shows "deleted member" | LWW-F |
 | `group.create` / `group.set` / `group.delete` | fields incl. `parent_id` | LWW-F (cycle guard §5.3 of SYNC) |
