@@ -367,8 +367,13 @@ test('a device signed out from another one goes back to onboarding, and can be l
   await go(stars.page, '');
   await stars.page.getByText('Devices and data', { exact: true }).click();
   const devices = stars.page.locator('section[aria-label="Your devices"]');
-  stars.page.once('dialog', (d) => void d.accept());
-  await devices.getByRole('button', { name: 'Sign out' }).click();
+  await devices.getByRole('button', { name: 'Sign out', exact: true }).click();
+  const asking = devices.getByRole('group', { name: /^Sign out / });
+  await expect(asking).toContainText('erased from it two days from now');
+  await expect(asking.getByLabel('Erase its copy now instead')).not.toBeChecked(); // off unless chosen
+  const revoke = stars.page.waitForRequest((r) => r.url().endsWith('/revoke'));
+  await asking.getByRole('button', { name: /^Sign out .+/ }).click();
+  expect((await revoke).postData()).toBeNull(); // no `wipe`: erased in two days
   await expect(devices).toHaveCount(0); // one device left
   // the open socket learns it on its next frame: the heartbeat's ping, within ~25 s of quiet
   const line = desk.page.getByText('This browser was signed out from another device.');
@@ -397,4 +402,14 @@ test('a device signed out from another one goes back to onboarding, and can be l
   }
   await live(desk.page);
   await expect(fronting(desk.page)).toContainText('Rin');
+
+  // signed out again, asking for its copy to go at once (D-152)
+  await stars.page.reload();
+  await stars.page.getByText('Devices and data', { exact: true }).click();
+  await devices.getByRole('button', { name: 'Sign out', exact: true }).click();
+  await asking.getByLabel('Erase its copy now instead').check();
+  const wiped = stars.page.waitForRequest((r) => r.url().endsWith('/revoke'));
+  await asking.getByRole('button', { name: /^Sign out .+/ }).click();
+  expect(JSON.parse((await wiped).postData() ?? 'null')).toEqual({ wipe: true });
+  await expect(devices).toHaveCount(0);
 });
