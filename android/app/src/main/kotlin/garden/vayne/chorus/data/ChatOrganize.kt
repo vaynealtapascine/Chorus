@@ -25,16 +25,17 @@ object ChatOrganize {
         space.kind == "internal" && (channel.kind == "member_dm" || channel.memberIds.isNotEmpty())
 
     /**
-     * A private chat in a DM kept to some of our members (D-098; [own] says who is ours) shows only
-     * while one of them is here by the front exactly as switched ([switched]), never by "Read as",
-     * whatever `chat.hide_private` says. A chat with a subsystem is everyone inside's too ([inside],
-     * [Subsystems.including]).
+     * Both rules go by [front], the front exactly as switched (D-102, D-155). A members' private chat
+     * in our own space (D-097) shows while one of its members is here, or while reading as one of
+     * them. A private chat in a DM kept to some of our members (D-098; [own] says who is ours) shows
+     * only while one of them is here, never by "Read as", whatever `chat.hide_private` says. A chat
+     * with a subsystem is everyone inside's too ([inside], [Subsystems.including]).
      */
     fun privateVisible(channel: ChatChannel, space: ChatSpace, front: List<Entry>, viewingAs: String?, hidePrivate: Boolean,
-        own: Set<String>? = null, switched: List<Entry> = front, inside: (List<String>) -> List<String> = { it }): Boolean {
+        own: Set<String>? = null, inside: (List<String>) -> List<String> = { it }): Boolean {
         if (channel.invalidMembership) return false
         val mine = own?.let { ChatManage.sides(channel, space, it)?.mine }
-        if (!mine.isNullOrEmpty()) return here(switched, inside(mine))
+        if (!mine.isNullOrEmpty()) return here(front, inside(mine))
         if (!hidePrivate || !isPrivate(channel, space)) return true
         val members = inside(channel.memberIds)
         if (viewingAs != null && viewingAs in members) return true

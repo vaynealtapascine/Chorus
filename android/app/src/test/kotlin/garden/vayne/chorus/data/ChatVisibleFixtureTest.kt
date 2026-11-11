@@ -7,7 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Which chats are shown (D-097, D-098, D-110, D-102): `fixtures/ui_chat_visible.json`, the same
+ * Which chats are shown (D-097, D-098, D-110, D-102, D-155): `fixtures/ui_chat_visible.json`, the same
  * cases web's chat-visible.fixture.test.ts runs through chat-list.ts.
  */
 class ChatVisibleFixtureTest {
@@ -45,8 +45,9 @@ class ChatVisibleFixtureTest {
             val switched = c.optJSONArray("front_switched")?.let(::entries) ?: front
             val viewingAs = if (c.isNull("viewing_as")) null else c.getString("viewing_as")
             val private = ChatOrganize.isPrivate(channel, space)
-            val visible = ChatOrganize.privateVisible(channel, space, front, viewingAs, c.getBoolean("hide_private"),
-                strings(c.getJSONArray("own")).toSet(), switched, including(c.getJSONObject("inside")))
+            // both rules go by the front as switched (D-155)
+            val visible = ChatOrganize.privateVisible(channel, space, switched, viewingAs, c.getBoolean("hide_private"),
+                strings(c.getJSONArray("own")).toSet(), including(c.getJSONObject("inside")))
             if (private != c.getBoolean("is_private")) wrong += "${c.getString("name")}: is_private $private"
             if (visible != c.getBoolean("visible")) wrong += "${c.getString("name")}: visible $visible"
         }

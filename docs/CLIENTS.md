@@ -25,7 +25,8 @@ chorus-core (UniFFI / wasm) ── ops ──▶ local op table + outbox
 - Paging for long lists (messages, timeline) from the local DB; beyond the local window, REST
   pages are fetched and cached.
 - Which chats are shown (D-097 members' private chats, D-098 private chats in a DM, D-110 chats
-  with a subsystem, D-102 the front as switched) is written on each client (web `chat-list.ts`
+  with a subsystem, D-102 the front as switched; D-155: both by the front as switched, and D-098 for
+  DM spaces only, so a channel kept to some members in a shared space is ordinary) is written on each client (web `chat-list.ts`
   `privateVisible`, Android `ChatOrganize.privateVisible`) and held together by
   `fixtures/ui_chat_visible.json`: each case's space, channel, our members, front, Read as,
   `chat.hide_private` and subsystem expansion, with the expected `is_private` and `visible`.

@@ -16,6 +16,8 @@ describe('chat management', () => {
     const own = (id: string) => id.startsWith('ours:');
     expect(privateSides({ member_ids: ['ours:kai', 'robin'] }, { kind: 'dm' }, own)).toEqual({ mine: ['ours:kai'], theirs: ['robin'] });
     expect(privateSides({ member_ids: ['ours:kai'] }, { kind: 'internal' }, own)).toBeNull();
+    // D-098 is for DM spaces only (D-155): kept to a member in a shared space is an ordinary channel
+    expect(privateSides({ member_ids: ['ours:kai', 'robin'] }, { kind: 'shared' }, own)).toBeNull();
     expect(privateSides({}, { kind: 'dm' }, own)).toBeNull();
   });
   it('finds an existing private chat or members’ chat instead of making another', () => {

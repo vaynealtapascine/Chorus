@@ -11,7 +11,8 @@ export function privateSides(
   space: { kind: string } | undefined,
   own: (memberId: string) => boolean,
 ): { mine: string[]; theirs: string[] } | null {
-  if (!space || space.kind === 'internal' || !channel.member_ids?.length) return null;
+  // D-098 is for DM spaces only (D-155): a channel kept to some members in a shared space is ordinary
+  if (space?.kind !== 'dm' || !channel.member_ids?.length) return null;
   return { mine: channel.member_ids.filter(own), theirs: channel.member_ids.filter((m) => !own(m)) };
 }
 

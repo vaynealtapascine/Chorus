@@ -163,10 +163,12 @@ type FrontEntry = { subject_type: string; subject_id: string; level: string };
 const hereIn = (front: FrontEntry[], members: string[]) =>
   front.some((e) => e.subject_type === 'member' && (e.level === 'front' || e.level === 'cocon') && members.includes(e.subject_id));
 
-/** Shown while one of its members fronts or is co-conscious, or while reading as one of them.
- * A private chat in a DM kept to some of our members (D-098; `own` says who is ours) shows only
- * while one of them is here by the front exactly as switched (`switched`, default `front`), never
- * by "Read as", whatever `chat.hide_private` says. */
+/** Both rules go by the front exactly as switched (D-102, D-155): `switched`, which is `front`
+ * unless a caller passes both (they are the same; the parameter stays for callers that still do).
+ * A members' private chat in our own space (D-097) shows while one of its members fronts or is
+ * co-conscious, or while reading as one of them. A private chat in a DM kept to some of our
+ * members (D-098; `own` says who is ours) shows only while one of them is here, never by "Read
+ * as", whatever `chat.hide_private` says. */
 export function privateVisible(
   channel: { kind: string; member_ids?: string[]; invalid_membership?: boolean },
   space: { kind: string } | undefined,
@@ -183,7 +185,7 @@ export function privateVisible(
   if (!hidePrivate || !isPrivate(channel, space)) return true;
   const members = inside(channel.member_ids ?? []);
   if (viewingAs && members.includes(viewingAs)) return true;
-  return hereIn(front, members);
+  return hereIn(switched, members);
 }
 
 // ─── the reply jump trail (D-112; Android's ChatJump.kt) ──────────────────────────────────────────

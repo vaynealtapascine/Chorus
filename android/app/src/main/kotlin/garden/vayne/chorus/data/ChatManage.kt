@@ -11,9 +11,10 @@ object ChatManage {
     /** The sides of a private chat: our members it is kept to, and the other account's. */
     data class Sides(val mine: List<String>, val theirs: List<String>)
 
-    /** A channel outside our own space whose `member_ids` name someone; null when it isn't one. */
+    /** A channel in a DM space whose `member_ids` name someone; null when it isn't one. D-098 is for
+     * DMs only (D-155): a channel kept to some members in a shared space is an ordinary channel. */
     fun sides(channel: ChatChannel, space: ChatSpace?, own: Set<String>): Sides? {
-        if (space == null || space.kind == "internal" || channel.memberIds.isEmpty()) return null
+        if (space?.kind != "dm" || channel.memberIds.isEmpty()) return null
         val (mine, theirs) = channel.memberIds.partition { it in own }
         return Sides(mine, theirs)
     }

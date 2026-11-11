@@ -1,5 +1,5 @@
 {
-  "_doc": "Which chats are shown (D-097 members' private chats in the system's own space, D-098 private chats kept to some members in a DM, D-110 a chat with a subsystem includes everyone inside it, D-102 the front exactly as switched), shared by web chat-visible.fixture.test.ts (chat-list.ts isPrivate / privateVisible) and Android ChatVisibleFixtureTest (ChatOrganize.isPrivate / privateVisible). Expected values come from the decisions, not from either client. `is_private` is D-097's private chat (the one chat.hide_private hides); a D-098 chat is kept by the listed members of our side instead. `own` are our member ids; `front` the front's entries; `front_switched` the front exactly as switched where it differs (null: the same); `inside` maps a subsystem member to the members directly inside it, expanded recursively and never upward.",
+  "_doc": "Which chats are shown (D-097 members' private chats in the system's own space, D-098 private chats kept to some members in a DM, D-110 a chat with a subsystem includes everyone inside it, D-102 the front exactly as switched, D-155 D-097 by the front as switched and D-098 for DM spaces only), shared by web chat-visible.fixture.test.ts (chat-list.ts isPrivate / privateVisible) and Android ChatVisibleFixtureTest (ChatOrganize.isPrivate / privateVisible). Expected values come from the decisions, not from either client. `is_private` is D-097's private chat (the one chat.hide_private hides); a D-098 chat is kept by the listed members of our side instead. `own` are our member ids; `front` the front's entries; `front_switched` the front exactly as switched where it differs (null: the same), which both rules go by (D-155); `inside` maps a subsystem member to the members directly inside it, expanded recursively and never upward.",
   "cases": [
     {
       "name": "internal channel, nobody listed",
@@ -313,6 +313,47 @@
       "inside": {},
       "is_private": true,
       "visible": true
+    },
+    {
+      "name": "members' DM, a listed member fronts only in a front that isn't the switched one",
+      "why": "D-155: D-097 chats go by the front as switched too",
+      "space": "internal",
+      "channel": {
+        "kind": "member_dm",
+        "member_ids": [
+          "kai",
+          "rin"
+        ],
+        "invalid_membership": false
+      },
+      "own": [
+        "kai",
+        "rin",
+        "june",
+        "garden",
+        "grove",
+        "fern",
+        "moss"
+      ],
+      "front": [
+        {
+          "subject_type": "member",
+          "subject_id": "kai",
+          "level": "front"
+        }
+      ],
+      "front_switched": [
+        {
+          "subject_type": "member",
+          "subject_id": "june",
+          "level": "front"
+        }
+      ],
+      "viewing_as": null,
+      "hide_private": true,
+      "inside": {},
+      "is_private": true,
+      "visible": false
     },
     {
       "name": "internal channel kept to a member, they are absent",
@@ -786,6 +827,69 @@
           "level": "front"
         }
       ],
+      "front_switched": null,
+      "viewing_as": null,
+      "hide_private": true,
+      "inside": {},
+      "is_private": false,
+      "visible": true
+    },
+    {
+      "name": "shared space channel kept to one of ours, who is absent",
+      "why": "D-155: not a D-098 chat in a shared space; an ordinary channel",
+      "space": "shared",
+      "channel": {
+        "kind": "text",
+        "member_ids": [
+          "kai"
+        ],
+        "invalid_membership": false
+      },
+      "own": [
+        "kai",
+        "rin",
+        "june",
+        "garden",
+        "grove",
+        "fern",
+        "moss"
+      ],
+      "front": [
+        {
+          "subject_type": "member",
+          "subject_id": "june",
+          "level": "front"
+        }
+      ],
+      "front_switched": null,
+      "viewing_as": null,
+      "hide_private": true,
+      "inside": {},
+      "is_private": false,
+      "visible": true
+    },
+    {
+      "name": "shared space channel kept to one of ours, read as nobody, hide_private on",
+      "why": "D-155",
+      "space": "shared",
+      "channel": {
+        "kind": "member_dm",
+        "member_ids": [
+          "kai",
+          "robin"
+        ],
+        "invalid_membership": false
+      },
+      "own": [
+        "kai",
+        "rin",
+        "june",
+        "garden",
+        "grove",
+        "fern",
+        "moss"
+      ],
+      "front": [],
       "front_switched": null,
       "viewing_as": null,
       "hide_private": true,
