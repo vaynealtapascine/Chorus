@@ -40,11 +40,10 @@ import kotlinx.coroutines.delay
 
 /**
  * The strip under the title on every screen while changes can't reach the server (F2.5 away,
- * F10.3 asleep with Retry), or since this phone was signed out from another device, with a way to
- * link it again (D-148). It waits a moment before showing, so a quick reconnect doesn't flash it.
+ * F10.3 asleep with Retry). It waits a moment before showing, so a quick reconnect doesn't flash it.
  */
 @Composable
-internal fun ConnectionBanner(chorus: Chorus, onRelink: () -> Unit) {
+internal fun ConnectionBanner(chorus: Chorus) {
     val p = LocalChorusPalette.current
     val status by chorus.status.collectAsState()
     val failures by chorus.connectFailures.collectAsState()
@@ -61,15 +60,13 @@ internal fun ConnectionBanner(chorus: Chorus, onRelink: () -> Unit) {
         enter = if (motion) expandVertically(ChorusMotion.tween(true)) + fadeIn(ChorusMotion.tween(true)) else androidx.compose.animation.EnterTransition.None,
         exit = if (motion) shrinkVertically(ChorusMotion.tween(true)) + fadeOut(ChorusMotion.tween(true)) else androidx.compose.animation.ExitTransition.None) {
         val asleep = shown == Notices.Connection.Asleep
-        val signedOut = shown == Notices.Connection.SignedOut
         val tone = if (asleep) p.danger else p.warn
         Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).background(tone.copy(alpha = .15f))
             .semantics { liveRegion = LiveRegionMode.Polite }.padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Glyph(if (asleep) R.drawable.ic_moon else if (signedOut) R.drawable.ic_link else R.drawable.ic_wifi_off, tone, 18.dp)
-            Text(text.orEmpty(), color = p.ink, fontSize = 13.sp, lineHeight = 18.sp, maxLines = if (signedOut) 3 else 2, modifier = Modifier.weight(1f))
+            Glyph(if (asleep) R.drawable.ic_moon else R.drawable.ic_wifi_off, tone, 18.dp)
+            Text(text.orEmpty(), color = p.ink, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 2, modifier = Modifier.weight(1f))
             if (asleep) TextButton(onClick = { chorus.reconnectNow() }) { Text("Retry", color = tone, fontWeight = FontWeight.SemiBold) }
-            if (signedOut) TextButton(onClick = onRelink) { Text("Link again", color = tone, fontWeight = FontWeight.SemiBold) }
         }
     }
 }

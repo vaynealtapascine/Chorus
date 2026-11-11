@@ -31,14 +31,4 @@ class WelcomingTest {
         assertFalse(Welcoming.ready(link, "device", "", "", ""))
         assertFalse(Welcoming.ready("nope", "device", "", "", "Pixel"))
     }
-
-    @Test
-    fun linkingAgainTakesADeviceLinkOfTheSameAccount() {
-        assertNull(Welcoming.relinkRefusal("device"))
-        assertNull(Welcoming.relinkRefusal("")) // an older server can't say; the account is checked after
-        assertTrue(Welcoming.relinkRefusal("system")!!.contains("new account"))
-        assertTrue(Welcoming.relinkRefusal("person") != null)
-        assertNull(Welcoming.relinkAccountRefusal("acc", "acc"))
-        assertTrue(Welcoming.relinkAccountRefusal("acc", "other")!!.contains("different account"))
-    }
 }

@@ -6,9 +6,9 @@ package garden.vayne.chorus.data
  * a renewal in flight never disagree across the main and store threads. Sockets are numbered: a
  * frame or close from a socket that is no longer the current one changes nothing.
  *
- * A server that refuses this device outright (`forbidden` from `/auth/challenge` or
- * `/auth/session`: it was signed out from another device) leaves it [Status.SignedOut] (D-148):
- * no socket, no retries, everything local kept, until it is linked again.
+ * A server that refuses this device for good (signed out from another device, or its key no
+ * longer matching; [SignedOut.refusal]) leaves it [Status.SignedOut] (D-148, D-153): no socket and
+ * no retries until it is linked again; [Chorus] keeps when, and erases on time (D-152).
  */
 object SyncLink {
     const val FIRST_BACKOFF = 1_000L
@@ -60,8 +60,6 @@ object SyncLink {
         data object Renew : Effect
         /** The socket is gone: forget typing, tell core, nothing is caught up. */
         data object Disconnected : Effect
-        /** Keep on disk that this phone was signed out, so a cold start doesn't ask the server again. */
-        data object RememberSignedOut : Effect
     }
 
     data class Step(val state: State, val effects: List<Effect> = emptyList())
@@ -112,8 +110,7 @@ object SyncLink {
                 if (s.status == Status.StorageError || s.status == Status.NoDevice) Step(s.copy(renewing = false))
                 else {
                     val (closed, effects) = drop(s, "signed out")
-                    Step(closed.copy(status = Status.SignedOut, renewing = false),
-                        effects + Effect.CancelRetry + if (s.status == Status.SignedOut) emptyList() else listOf(Effect.RememberSignedOut))
+                    Step(closed.copy(status = Status.SignedOut, renewing = false), effects + Effect.CancelRetry)
                 }
             // a renewal another call made changes nothing here
             Renewal.Renewed -> if (!s.renewing) Step(s) else reduce(s.copy(renewing = false), Event.ConnectNow)

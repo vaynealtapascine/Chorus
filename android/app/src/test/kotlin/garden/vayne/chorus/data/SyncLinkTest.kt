@@ -38,7 +38,6 @@ class SyncLinkTest {
         val step = SyncLink.reduce(renewing, Event.RenewalDone(Renewal.Refused))
         assertEquals(Status.SignedOut, step.state.status)
         assertFalse(step.state.renewing)
-        assertTrue(Effect.RememberSignedOut in step.effects)
         assertTrue(step.effects.none { it is Effect.Open || it is Effect.Retry })
         // and nothing brings a socket back: not the network, the app in front, a work lease or a due retry
         for (e in listOf(Event.ConnectNow, Event.Wanted(true), Event.RetryDue, Event.Dropped(1), Event.Welcome(1))) {

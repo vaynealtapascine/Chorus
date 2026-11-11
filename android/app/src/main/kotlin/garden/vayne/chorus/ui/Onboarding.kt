@@ -36,6 +36,8 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.Api
+import garden.vayne.chorus.data.InvitePeek
+import garden.vayne.chorus.data.SignedOut
 import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.DeviceLinks
 import garden.vayne.chorus.data.Setup
@@ -51,16 +53,18 @@ import kotlinx.coroutines.launch
  * kind sets it). A link for another device of an account needs only the link: **Link device**
  * scans the QR on that account's Link a device screen and joins at once.
  *
- * With [relinkAccount] it links a phone signed out from another device again (D-148): only a
- * device link of that account, everything kept on the phone syncing as before; [onBack] leaves.
+ * A phone signed out from another device comes back here too (D-153), with one quiet line. A
+ * device link of the account it kept picks that copy back up; any other invite erases the kept
+ * copy first, once the person has agreed (D-152).
  */
 @Composable
-fun Onboarding(chorus: Chorus, initialLink: String?, relinkAccount: String? = null, onBack: (() -> Unit)? = null) {
+fun Onboarding(chorus: Chorus, initialLink: String?) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var link by remember { mutableStateOf(initialLink.orEmpty()) }
-    // null: not looked at yet; "system"/"person": a new account; "device": another device; "": an older server
-    var invite by remember { mutableStateOf<String?>(null) }
+    // null: not looked at yet; kind "system"/"person": a new account; "device": another device; "": an older server
+    var peek by remember { mutableStateOf<InvitePeek?>(null) }
+    val invite = peek?.kind
     var plural by remember { mutableStateOf(true) }
     var name by remember { mutableStateOf("") }
     var handle by remember { mutableStateOf("") }
@@ -69,43 +73,50 @@ fun Onboarding(chorus: Chorus, initialLink: String?, relinkAccount: String? = nu
     var looking by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var scanned by remember { mutableStateOf(false) }
+    var confirmErase by remember { mutableStateOf(false) }
+    val signedOut by chorus.signedOutRecord.collectAsState()
     val valid = Api.parseInvite(link) != null
-    val relink = relinkAccount != null
-    val forDevice = invite == "device" || relink
-    // linking again needs no account details: the link alone decides (Welcoming.relinkRefusal)
-    val readyInvite = if (relink && invite != null) "device" else invite
+    val forDevice = invite == "device"
 
-    fun join() {
-        if (busy || !Welcoming.ready(link, readyInvite, name, handle, device)) return
-        if (relink) Welcoming.relinkRefusal(invite)?.let { error = it; return }
+    fun enrol(eraseFirst: Boolean) {
         busy = true; error = null
         val account = !forDevice
         scope.launch {
             try {
+                if (eraseFirst) chorus.eraseKept()
                 val dev = Api.enrol(link, name.takeIf { account }, handle.takeIf { account },
                     (if (plural) "system" else "person").takeIf { account && invite != "" }, device.trim())
-                if (relinkAccount != null) Welcoming.relinkAccountRefusal(relinkAccount, dev.accountId)?.let { error = it; return@launch }
                 // a new system goes through setup next (F1.2–F1.4), which also names it
                 if (account && plural) Setup.begin(ctx, dev.accountId, name.trim())
                 chorus.adopt(dev)
+                confirmErase = false
             } catch (e: Exception) {
                 error = e.message ?: "Couldn't reach the server."
             } finally { busy = false }
         }
     }
 
+    fun join() {
+        if (busy || !Welcoming.ready(link, invite, name, handle, device)) return
+        // the invite was peeked before it is used, so a kept copy is never left behind (D-153)
+        when (SignedOut.enrol(chorus.keptAccount, peek)) {
+            SignedOut.Enrol.EraseFirst -> confirmErase = true
+            SignedOut.Enrol.Fresh, SignedOut.Enrol.PickUp -> enrol(eraseFirst = false)
+        }
+    }
+
     // look at the invite as soon as it's a link (D-093's peek): the toggle follows it; a scanned
     // device link joins straight away
     LaunchedEffect(link) {
-        invite = null
+        peek = null
         if (Api.parseInvite(link) == null) return@LaunchedEffect
         delay(300)
         looking = true; error = null
         try {
-            val k = Api.inviteKind(link)
-            if (k == "system" || k == "person") plural = k == "system"
-            invite = k ?: ""
-            if (k == "device" && scanned) join()
+            val k = Api.peekInvite(link)
+            if (k.kind == "system" || k.kind == "person") plural = k.kind == "system"
+            peek = k
+            if (k.kind == "device" && scanned) join()
         } catch (e: Exception) {
             error = e.message ?: "Couldn't reach the server."
         } finally { looking = false; scanned = false }
@@ -119,9 +130,10 @@ fun Onboarding(chorus: Chorus, initialLink: String?, relinkAccount: String? = nu
             ChorusWordmark()
             Spacer(Modifier.weight(1f).heightIn(min = 40.dp))
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (relink) Text("This phone was signed out from another device. Everything on it is still here. " +
-                    "To sync again, open Link a device on one of your other devices and scan its code.",
-                    color = Welcome.Cream, fontSize = 14.sp, lineHeight = 20.sp, modifier = Modifier.fillMaxWidth())
+                signedOut?.let { record ->
+                    Text(SignedOut.notice(record) { at -> wipeDate(at - record.offset) },
+                        color = Welcome.Cream, fontSize = 14.sp, lineHeight = 20.sp, modifier = Modifier.fillMaxWidth())
+                }
                 WelcomeField("Invite code", link, { link = it.trim(); error = null }, "chrs.…/i/…",
                     done = valid && invite != null, busy = looking, enabled = !busy, keyboard = KeyboardType.Uri,
                     shown = Welcoming.code(link), paste = {
@@ -136,7 +148,7 @@ fun Onboarding(chorus: Chorus, initialLink: String?, relinkAccount: String? = nu
                         done = handle.length >= 2, enabled = !busy, keyboard = KeyboardType.Ascii, prefix = if (handle.isEmpty()) null else "@")
                 }
                 WelcomeField("This device", device, { device = it.take(60) }, "Pixel 8", done = device.isNotBlank(), enabled = !busy)
-                if (!forDevice && invite != "" && !relink) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                if (!forDevice && invite != "") Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     PluralToggle(plural, enabled = !busy) { plural = it }
                 }
                 error?.let {
@@ -144,18 +156,23 @@ fun Onboarding(chorus: Chorus, initialLink: String?, relinkAccount: String? = nu
                         .clip(RoundedCornerShape(12.dp)).background(Welcome.Cream).padding(horizontal = 12.dp, vertical = 8.dp))
                 }
                 Row(Modifier.fillMaxWidth().padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (onBack != null) WelcomeButton("Back", R.drawable.ic_back, plain = true, enabled = !busy, onClick = onBack)
                     WelcomeButton("Link device", R.drawable.ic_scan, outlined = true, enabled = !busy) {
                         Welcoming.scan(ctx, onLink = { scanned = true; link = it }, onError = { error = it })
                     }
                     Spacer(Modifier.weight(1f))
                     WelcomeButton(if (forDevice) "Link" else "Continue", R.drawable.ic_arrow_right, enabled = !busy &&
-                        Welcoming.ready(link, readyInvite, name, handle, device), busy = busy, trailing = true, onClick = ::join)
+                        Welcoming.ready(link, invite, name, handle, device), busy = busy, trailing = true, onClick = ::join)
                 }
             }
         }
     }
+    if (confirmErase) ConfirmDrawer("Erase what this phone kept?", SignedOut.eraseFirstText(peek), "Erase and continue",
+        onConfirm = { enrol(eraseFirst = true) }, onDismiss = { confirmErase = false }, danger = true, busy = busy)
 }
+
+/** A server time on this phone's calendar, for the signed-out line (D-152). */
+private fun wipeDate(at: Long): String =
+    java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.LONG, java.text.DateFormat.SHORT).format(java.util.Date(at))
 
 /** F1.1's cream field: a small caps label over the text, a teal check once it's filled. */
 @Composable

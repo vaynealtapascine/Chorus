@@ -24,21 +24,6 @@ object Welcoming {
             (invite == "device" || (name.isNotBlank() && (handle.isEmpty() || handle.length >= 2)))
 
     /**
-     * Linking a phone again after it was signed out from another device (D-148) takes a device
-     * link of the same account, since the phone keeps that account's copy: what's wrong with
-     * [invite] ("system"/"person"/"device", "" from an older server), or null when it can go ahead.
-     */
-    fun relinkRefusal(invite: String?): String? = when (invite) {
-        "system", "person" -> "That invite starts a new account. To sync this phone again, open Link a device on one of your other devices."
-        else -> null
-    }
-
-    /** After redeeming: a device link of another account isn't adopted (D-148), so the copy kept here stays its own. */
-    fun relinkAccountRefusal(expected: String, linked: String): String? =
-        if (expected == linked) null
-        else "That link is for a different account. This phone keeps its own account's copy: link it from one of that account's devices."
-
-    /**
      * Scan a Link a device QR with Google's code scanner (no camera permission: Play services
      * shows the camera). A code that isn't a Chorus link is reported, not used.
      */

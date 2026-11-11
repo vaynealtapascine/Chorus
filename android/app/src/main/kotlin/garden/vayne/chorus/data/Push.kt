@@ -235,6 +235,23 @@ object Push {
         }
     }
 
+    /**
+     * Stop push on this phone without asking the server (D-152's erase: the device is signed out):
+     * unregister from the UnifiedPush distributor, or drop the FCM token. [stateJson] is the saved
+     * registration, read before the store went away.
+     */
+    fun forgetLocally(ctx: Context, stateJson: String?) {
+        val app = ctx.applicationContext
+        lastUploadedEndpoint = null
+        lastUploadedAt = 0L
+        val state = stateJson?.let { runCatching { State.parse(it) }.getOrNull() }
+        if (state != null && state.distributor != Fcm.DISTRIBUTOR) unregisterDistributorBroadcast(app, state)
+        if (Fcm.configured(app)) FirebaseMessaging.getInstance().deleteToken()
+    }
+
+    /** The store key of the saved registration, read for [forgetLocally]. */
+    internal const val STATE_KEY = SETTING_STATE
+
     private suspend fun refreshFcmToken(ctx: Context) {
         if (!Fcm.configured(ctx)) return
         suspendCancellableCoroutine { cont ->

@@ -161,15 +161,37 @@ android/
   and store threads alike: status, the current socket (numbered), backoff and a renewal in flight
   can't disagree, a frame or close from a socket that is no longer current changes nothing, and
   "caught up" is reported only while the socket that delivered the frame is still the live one.
-- **Signed out (D-148).** When the socket answers `unauthenticated`, `Chorus` renews the session.
-  A definite refusal (`forbidden` from `/auth/challenge` or `/auth/session`: the device was signed
-  out from another one) leaves it `Status.SignedOut`, also kept on disk (`sync:signed_out`) so a cold
+- **Signed out (D-148, D-152, D-153).** When the socket answers `unauthenticated`, `Chorus` renews
+  the session. The device is signed out for good when the server answers `signed_out` (403 from
+  `/auth/session`, with `at` and `wipe_at`), a bare `forbidden` (an older server, or a device it no
+  longer has; no times) or `bad_key` (401: the device key no longer matches; no times)
+  (`SignedOut.refusal`). Anything else (no network, 5xx, rate limit, an expired nonce) keeps the
+  usual backoff. Signed out, it is `Status.SignedOut` with a `SignedOutRecord` on disk
+  (`sync:signed_out`: `at`, `wipe_at`, and the server's clock offset where the app knew it), so a cold
   start asks nothing: no socket, no retries, `syncOnce()` returns at once, `authedCall` fails with
-  code `signed_out`, uploads and the notification check wait. Anything else (no network, 5xx, rate
-  limit, a bad signature) keeps the usual backoff. The phone keeps everything it holds (Q28's
-  default) and new changes stay on it. The connection banner says it was signed out from another
-  device, with **Link again**, which opens the welcome screen for a device link of the same account
-  only (another account's link is not adopted); `adopt()` clears the state and what waited is sent.
+  code `signed_out`, uploads and the notification check skip.
+  - The app shows the ordinary welcome screen, as a phone with no device does, with one line: this
+    phone was signed out from another device, and, with a `wipe_at`, that what it still holds will be
+    erased on that date unless it is linked to the same account again first. What it keeps is not
+    shown meanwhile: the model is empty, widgets included.
+  - **Erasing** (`Chorus.erase`, steps in `data/Erase.kt`) runs only for a `wipe_at` that has passed
+    (checked when the answer arrives, at every app start, and by the one-off `WipeWork` at the
+    deadline, so with the app closed too) or for the enrolment rule below. It removes the encrypted
+    store (ops, metadata, drafts, settings, push state), its key and the device key, downloaded and
+    queued files, the app's preferences (widgets, pins, setup, navigation), the account's
+    WorkManager work, push registration (UnifiedPush unregister, FCM token), shown notifications and
+    launcher shortcuts; unsynced changes go too (the owner's choice). A marker set first and cleared
+    last makes an interrupted erase finish at the next start. Afterwards the app is a fresh install's.
+    With no `wipe_at`, nothing is erased on a timer.
+  - **Linking again** is the ordinary onboarding. The invite is peeked first (`POST /auth/invite`,
+    which names the account of a `device` invite): a device link of the kept copy's account enrols and
+    picks the copy back up (new device id and HLC node over the same store; ops never sent go out,
+    since core relists unsent ops at restore and the server stamps the device on ack; `PickUpTest`).
+    Any other invite, or a device invite whose account the server didn't name, erases the kept copy
+    first, after a confirmation that says so (`SignedOut.enrol`).
+  - **Signing another device out** (F1.6) offers "Also erase its copy now" (off by default; sends
+    `{"wipe": true}`): it happens the next time that device connects; otherwise its copy is erased two
+    days after it was signed out.
 
 ### 2.4 Deep links & intents
 

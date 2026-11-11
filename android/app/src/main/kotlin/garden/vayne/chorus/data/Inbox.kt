@@ -195,6 +195,9 @@ object Inbox {
     /** The last read of every source, with the account it belongs to: the bar's badge and the screen. */
     val state: StateFlow<Pair<String, List<InboxItem>>?> = latest
 
+    /** Forget what was read (D-152's erase). */
+    fun forget() { latest.value = null }
+
     fun of(accountId: String?): List<InboxItem>? = latest.value?.takeIf { it.first == accountId }?.second
 
     /** Read every source again. One failing source leaves the others standing. */

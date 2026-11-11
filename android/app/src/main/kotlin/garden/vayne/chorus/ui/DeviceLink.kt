@@ -6,6 +6,7 @@ import android.content.Intent
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -53,6 +54,7 @@ internal fun LinkDeviceScreen(chorus: Chorus, onBack: () -> Unit) {
     var devices by remember { mutableStateOf<List<LinkedDevice>?>(null) }
     var reload by remember { mutableIntStateOf(0) }
     var signingOut by remember { mutableStateOf<LinkedDevice?>(null) }
+    var wipe by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     LaunchedEffect(attempt) {
         invite = null; error = null; copied = false
@@ -85,7 +87,7 @@ internal fun LinkDeviceScreen(chorus: Chorus, onBack: () -> Unit) {
             }
             devices?.takeIf { it.isNotEmpty() }?.let { list ->
                 SectionLabel("Devices")
-                for (d in list) DeviceRow(d) { signingOut = d }
+                for (d in list) DeviceRow(d) { signingOut = d; wipe = false }
             }
         }
     }
@@ -102,11 +104,22 @@ internal fun LinkDeviceScreen(chorus: Chorus, onBack: () -> Unit) {
         ConfirmDrawer("Sign out ${d.name}?", null, "Sign out", danger = true, busy = busy, icon = R.drawable.ic_monitor, onConfirm = {
             busy = true
             scope.launch {
-                try { chorus.revokeDevice(d.id); signingOut = null; reload++ }
+                try { chorus.revokeDevice(d.id, wipe); signingOut = null; reload++ }
                 catch (e: Exception) { error = e.message ?: "Could not sign it out." }
                 finally { busy = false }
             }
-        }, onDismiss = { signingOut = null })
+        }, onDismiss = { signingOut = null }) {
+            // off unless chosen; either way it happens on that device, not here (D-152)
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).toggleable(wipe, enabled = !busy, role = Role.Switch) { wipe = it }
+                .padding(horizontal = 4.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text("Also erase its copy now", color = p.ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                    Text(DeviceLinks.revokeText(wipe), color = p.ink2, fontSize = 13.sp, lineHeight = 18.sp)
+                }
+                ChorusSwitch(wipe, null, enabled = !busy)
+            }
+        }
     }
 }
 

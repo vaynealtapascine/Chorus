@@ -22,6 +22,9 @@ object PinnedShortcuts {
         return pins.distinct().mapNotNull(active::get).take(4)
     }
 
+    /** The shortcuts were removed (D-152's erase): publish again from scratch next time. */
+    fun forget() { lastKey = null }
+
     fun refresh(ctx: Context, model: Model) {
         val manager = ctx.getSystemService(ShortcutManager::class.java) ?: return
         val account = garden.vayne.chorus.data.Chorus.get(ctx).device?.accountId

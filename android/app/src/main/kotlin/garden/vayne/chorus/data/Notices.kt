@@ -26,9 +26,8 @@ object Notices {
         if (secondsLeft == null || secondsLeft <= 0) "Catching its breath. Try again in a moment."
         else "Catching its breath. Try again in $secondsLeft ${if (secondsLeft == 1) "second" else "seconds"}."
 
-    /** What the connection banner shows: nothing, "changes wait here" (warn), the server not
-     * answering (danger), or this phone signed out from another device (D-148). */
-    enum class Connection { None, Away, Asleep, SignedOut }
+    /** What the connection banner shows: nothing, "changes wait here" (warn), or the server not answering (danger). */
+    enum class Connection { None, Away, Asleep }
 
     /** Failed connection attempts since the last welcome after which a reachable network means the server is down. */
     const val ASLEEP_AFTER = 3
@@ -38,7 +37,6 @@ object Notices {
      * no network reads as away, and repeated failures on a working network as the server asleep.
      */
     fun connection(status: Status, failures: Int, network: Boolean): Connection = when {
-        status == Status.SignedOut -> Connection.SignedOut
         status != Status.Offline && status != Status.Connecting -> Connection.None
         failures <= 0 -> Connection.None
         !network -> Connection.Away
@@ -52,6 +50,5 @@ object Notices {
         Connection.Away -> if (homeInstall) "Away from home. Changes wait on this phone." else "Offline. Changes wait on this phone."
         Connection.Asleep -> if (homeInstall) "Chorus Home is asleep. Everything you do is saved here and sent later."
             else "The server isn't answering. Everything you do is saved here and sent later."
-        Connection.SignedOut -> "This phone was signed out from another device. Everything here stays; link it again to sync."
     }
 }

@@ -40,8 +40,9 @@ import org.json.JSONObject
 import uniffi.chorus_ffi.CoreReplica
 import uniffi.chorus_ffi.newId
 
-/** [SignedOut]: the server refused this device (signed out from another one, D-148); it keeps
- * everything it holds and syncs nothing until it is linked again. */
+/** [SignedOut]: the server refused this device (signed out from another one, or its key no longer
+ * matches; D-148, D-153). The app shows onboarding; what it still holds is hidden, kept until the
+ * server's `wipe_at` and then erased (D-152), or picked back up by a device link of its account. */
 enum class Status { Loading, NoDevice, Offline, Connecting, Live, SignedOut, StorageError }
 
 data class RecheckProgress(val checked: Int, val total: Int)
@@ -64,8 +65,9 @@ data class MessageRevision(val rev: Int, val at: Long, val original: Boolean, va
  * [SyncLink.State], changed only through [transition] under [linkLock], from either thread.
  */
 class Chorus private constructor(private val ctx: Context) {
-    private val store = Store(ctx)
-    val editorDrafts = EditorDraftStore(store::editorDraft, store::put, store::remove)
+    // replaced by a fresh one after an erase (D-152); store thread
+    @Volatile private var store = Store(ctx)
+    val editorDrafts = EditorDraftStore({ store.editorDraft(it) }, { k, v -> store.put(k, v) }, { store.remove(it) })
     val editorOwner: String get() = device?.let { "${it.base}|${it.accountId}" }.orEmpty()
     private val worker = Executors.newSingleThreadExecutor { Thread(it, "chorus-store") }
     private val dispatcher = worker.asCoroutineDispatcher()
@@ -115,6 +117,9 @@ class Chorus private constructor(private val ctx: Context) {
 
     @Volatile var device: DeviceRecord? = null
         private set
+    // while signed out: when, and when what is kept here is erased (D-152)
+    private val _signedOut = MutableStateFlow<SignedOutRecord?>(null)
+    val signedOutRecord: StateFlow<SignedOutRecord?> = _signedOut
     @Volatile private var replica: CoreReplica? = null
     @Volatile private var ws: WebSocket? = null // written under linkLock
     private val linkLock = Any()
@@ -134,8 +139,11 @@ class Chorus private constructor(private val ctx: Context) {
     /** Live and caught up with every scope. */
     val upToDate: StateFlow<Boolean> get() = syncReady
 
-    /** Signed out from another device (D-148): nothing syncs until this phone is linked again. */
+    /** Signed out from another device (D-153): onboarding shows, nothing syncs, the copy is hidden. */
     val signedOut: Boolean get() = _status.value == Status.SignedOut
+
+    /** The account of the copy a signed-out phone still holds (D-153), or null. */
+    val keptAccount: String? get() = if (signedOut) device?.accountId else null
 
     init {
         scope.launch {
@@ -158,6 +166,10 @@ class Chorus private constructor(private val ctx: Context) {
     }
 
     private fun start() {
+        // an erase cut short goes on first; a kept copy whose time is up goes now (D-152)
+        if (Erase.pending(ctx)) erase(Erase.Reason.Resumed)
+        val kept = store.get(SIGNED_OUT)?.let(SignedOutRecord::fromJson)
+        if (kept != null && kept.due(System.currentTimeMillis())) erase(Erase.Reason.WipeAtPassed)
         frontHistories = NamedHistoryCache()
         clearTyping()
         typingNames = TypingNames()
@@ -178,8 +190,12 @@ class Chorus private constructor(private val ctx: Context) {
         replica = CoreReplica.restore(dev.deviceId, dev.node, store.get("meta").orEmpty(), store.opsJson(), store.get("hlc").orEmpty())
         refreshIssues(replica!!)
         refreshHeld(replica!!)
+        val record = store.get(SIGNED_OUT)?.let(SignedOutRecord::fromJson)
+        _signedOut.value = record
+        // the deadline survives a reboot or a cleared job queue: book it again
+        record?.delay(System.currentTimeMillis())?.let { WipeWork.schedule(ctx, it, androidx.work.ExistingWorkPolicy.KEEP) }
+        transition(SyncLink.Event.Loaded(device = true, signedOut = record != null))
         rebuild()
-        transition(SyncLink.Event.Loaded(device = true, signedOut = store.get(SIGNED_OUT) != null))
     }
 
     /** After enrolment. */
@@ -187,8 +203,10 @@ class Chorus private constructor(private val ctx: Context) {
         scope.launch {
             try {
                 store.put("device", dev.toJson())
-                // linked again after being signed out (D-148): the copy kept here syncs as before
+                // linked to the kept copy's account again (D-153): it carries on, and what was
+                // written here and never sent goes out under the new device
                 store.remove(SIGNED_OUT)
+                WipeWork.cancel(ctx)
                 start()
                 // app start registered nothing while signed out: do it now, not at the next launch
                 Push.ensure(ctx)
@@ -445,6 +463,11 @@ class Chorus private constructor(private val ctx: Context) {
         if (!rebuildPending.compareAndSet(false, true)) return
         scope.launch {
             rebuildPending.set(false)
+            // a signed-out phone shows nothing of what it keeps (D-153), widgets included
+            if (signedOut) {
+                if (_model.value != Model.Empty) { _model.value = Model.Empty; onModel?.invoke(Model.Empty) }
+                return@launch
+            }
             val r = replica ?: return@launch
             val dev = device ?: return@launch
             // only what changed crosses the FFI; the first time, the whole projection
@@ -611,8 +634,11 @@ class Chorus private constructor(private val ctx: Context) {
     /** This account's devices, this one first (F1.6). */
     suspend fun linkedDevices(): List<LinkedDevice> = DeviceLinks.devices(authedCall("GET", "/me"), device?.deviceId)
 
-    /** Sign out another device of this account (`POST /devices/{id}/revoke`). */
-    suspend fun revokeDevice(id: String) { authedCall("POST", "/devices/$id/revoke", JSONObject()) }
+    /** Sign out another device of this account (`POST /devices/{id}/revoke`); with [wipe] its copy is
+     * erased the next time it connects instead of two days later (D-152). */
+    suspend fun revokeDevice(id: String, wipe: Boolean = false) {
+        authedCall("POST", "/devices/$id/revoke", DeviceLinks.revokeBody(wipe))
+    }
 
     /** Create a one-use invite for another device, renewing the signed session if needed. */
     suspend fun deviceInvite(): DeviceInvite = withContext(dispatcher) {
@@ -636,6 +662,7 @@ class Chorus private constructor(private val ctx: Context) {
 
     /** A fresh model, waiting for the replica to load (for the widget in a cold process). */
     suspend fun awaitModel(): Model = withContext(dispatcher) {
+        if (signedOut) return@withContext Model.Empty
         val r = replica ?: return@withContext Model.Empty
         val dev = device ?: return@withContext Model.Empty
         Model.parse(JSONObject(r.projection()), dev.accountId, typingNames)
@@ -720,10 +747,6 @@ class Chorus private constructor(private val ctx: Context) {
             SyncLink.Effect.Disconnected -> scope.launch {
                 recheckDone?.completeExceptionally(IllegalStateException("Connection lost during full sync."))
                 clearTyping(); replica?.disconnect(); syncReady.value = false
-            }
-            SyncLink.Effect.RememberSignedOut -> scope.launch {
-                runCatching { store.put(SIGNED_OUT, System.currentTimeMillis().toString()) }
-                    .onFailure { Log.w(TAG, "could not keep the signed-out state", it) }
             }
         }
     }
@@ -845,14 +868,81 @@ class Chorus private constructor(private val ctx: Context) {
             SyncLink.Renewal.Renewed
         } catch (e: ApiException) {
             Log.w(TAG, "session renewal failed (${e.code})", e)
-            if (e.code != "forbidden") return SyncLink.Renewal.Failed
+            val record = SignedOut.refusal(e, typingOffset) ?: return SyncLink.Renewal.Failed
             // only if this is still the device that asked (not one linked meanwhile)
-            if (device?.deviceId == dev.deviceId) transition(SyncLink.Event.RenewalDone(SyncLink.Renewal.Refused))
+            if (device?.deviceId == dev.deviceId) signOut(record)
             SyncLink.Renewal.Refused
         } catch (e: Exception) {
             Log.w(TAG, "session renewal failed", e)
             SyncLink.Renewal.Failed
         }
+    }
+
+    /**
+     * The server refused this device for good (D-153; store thread): remember when and until when,
+     * hide what is kept, and erase it if its time is already up, else book the erase (D-152).
+     */
+    private fun signOut(record: SignedOutRecord) {
+        try { store.put(SIGNED_OUT, record.toJson()) } catch (e: Exception) { storageFailed(e); return }
+        _signedOut.value = record
+        transition(SyncLink.Event.RenewalDone(SyncLink.Renewal.Refused))
+        val now = System.currentTimeMillis()
+        if (record.due(now)) { erase(Erase.Reason.WipeAtPassed); start(); return }
+        record.delay(now)?.let { WipeWork.schedule(ctx, it) }
+        rebuild()
+    }
+
+    /** [WipeWork]: erase if the deadline has passed; else how long is left (null: nothing to do). */
+    internal suspend fun eraseIfDue(): Long? = withContext(dispatcher) {
+        val record = _signedOut.value ?: return@withContext null
+        val now = System.currentTimeMillis()
+        if (!record.due(now)) return@withContext record.delay(now)
+        erase(Erase.Reason.WipeAtPassed)
+        start()
+        null
+    }
+
+    /**
+     * Onboarding with an invite other than a device link of the kept copy's account (D-153), once
+     * the person agreed: erase what this signed-out phone keeps, unsynced changes included (D-152).
+     */
+    suspend fun eraseKept(): Boolean = withContext(dispatcher) {
+        if (!signedOut) return@withContext false
+        erase(Erase.Reason.Enrolment)
+        start()
+        true
+    }
+
+    /**
+     * The one erase (D-152; store thread): everything this install holds goes, and the app is a
+     * fresh install's. Called only for a passed `wipe_at`, the enrolment rule, or to finish one
+     * that was cut short; the caller starts again afterwards.
+     */
+    private fun erase(reason: Erase.Reason) {
+        Log.i(TAG, "erasing this phone's copy: $reason")
+        val pushState = runCatching { store.get(Push.STATE_KEY) }.getOrNull()
+        heldTimer?.cancel()
+        heldTimer = null
+        clearTyping()
+        runCatching { store.close() }
+        replica = null
+        device = null
+        projectionCache = null
+        val failed = Erase.run({ Erase.markPending(ctx) }, Erase.deviceSteps(ctx, pushState), { Erase.clearPending(ctx) })
+        if (failed.isNotEmpty()) Log.w(TAG, "erase incomplete ($failed); it goes on at the next start")
+        store = Store(ctx)
+        _signedOut.value = null
+        _model.value = Model.Empty
+        _syncIssues.value = emptyList()
+        _fixedIssues.value = emptyList()
+        _lastSynced.value = null
+        _heldMessages.value = emptyMap()
+        _fileProgress.value = null
+        _recheckProgress.value = null
+        fillStarted = false
+        Inbox.forget()
+        onModel?.invoke(Model.Empty)
+        runCatching { garden.vayne.chorus.widget.UnreadWidget.refreshAll(ctx, Model.Empty) }
     }
 
     /** Network came back or the app came to the front: try now instead of waiting out the backoff.
@@ -864,9 +954,9 @@ class Chorus private constructor(private val ctx: Context) {
     companion object {
         private const val TAG = "Chorus"
         private const val LAST_SYNCED = "sync:last_synced"
-        /** Set while this device is signed out (D-148); removed when it is linked again. */
+        /** While this device is signed out (D-153): a [SignedOutRecord]; removed when it is linked again. */
         private const val SIGNED_OUT = "sync:signed_out"
-        const val SIGNED_OUT_MESSAGE = "This phone was signed out from another device. Link it again to sync."
+        const val SIGNED_OUT_MESSAGE = "This phone was signed out from another device."
         @Volatile private var instance: Chorus? = null
 
         fun get(ctx: Context): Chorus =
