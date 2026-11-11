@@ -18,9 +18,17 @@ use crate::ingest;
 use crate::perms::can_sql;
 use crate::visibility::visible_message_sql;
 
+/// `authors` keeps their order (D-007, D-082: the first is the primary speaker): the message's
+/// authors by `position`, then authors found only in segments, in segment then position order;
+/// each member once, at their first place.
 const COLS: &str = "m.id, m.channel_id, c.space_id, m.account_id, m.occurred_at, m.text, m.cw, m.visibility,
-    COALESCE((SELECT json_group_array(member_id) FROM (SELECT member_id FROM message_author WHERE message_id=m.id
-        UNION SELECT member_id FROM message_segment_author WHERE message_id=m.id)), '[]'),
+    COALESCE((SELECT json_group_array(member_id) FROM (
+        SELECT member_id FROM (
+            SELECT member_id, src, k1, k2, row_number() OVER (PARTITION BY member_id ORDER BY src, k1, k2) AS nth
+            FROM (SELECT member_id, 0 AS src, position AS k1, 0 AS k2 FROM message_author WHERE message_id=m.id
+                  UNION ALL
+                  SELECT member_id, 1, idx, position FROM message_segment_author WHERE message_id=m.id))
+        WHERE nth = 1 ORDER BY src, k1, k2)), '[]'),
     m.entities, m.reply_to_id, m.thread_channel_id, m.edited_at, m.pinned_at";
 
 /// `?2` = the account, `?3` = 1 for an API token (own messages only).

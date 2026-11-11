@@ -6,7 +6,7 @@ use chorus_core::hlc::Hlc;
 use chorus_core::id::new_id;
 use chorus_core::op::Op;
 use chorus_core::time::{ClockSample, TimeSource};
-use chorus_server::{db, ingest, notifier, posts, spaces};
+use chorus_server::{api_data, db, ingest, messages, notifier, posts, spaces};
 use rusqlite::Connection;
 use serde_json::{Value, json};
 
@@ -917,4 +917,40 @@ fn a_blank_display_name_falls_back_to_the_name() {
     assert_eq!(read["reactions"][0]["member_name"], "June");
     let activity = posts::activity(&w.c, &a, None, 50).unwrap();
     assert_eq!(activity["reactions"][&post][0]["member_name"], "June");
+}
+
+/// D-007/D-082: REST message reads keep authors in order (the first is the primary speaker), then
+/// any segment-only authors in segment order, each once; never in id order.
+#[test]
+fn rest_message_reads_keep_author_order() {
+    let mut w = W::new();
+    let (a, b, space) = (w.a.clone(), w.b.clone(), w.space.clone());
+    // ids that sort opposite to how they speak
+    let first = new_id(NOW as u64, [45; 10]);
+    let second = new_id(NOW as u64, [44; 10]);
+    let in_segment = new_id(NOW as u64, [38; 10]);
+    for (id, name) in [(&first, "Kai"), (&second, "Rin"), (&in_segment, "Ash")] {
+        w.push(&a, "member.create", &format!("account:{a}"), id, json!({"name": name}));
+    }
+    assert!(in_segment < second && second < first);
+    let m = new_id(NOW as u64, [50; 10]);
+    let mut p = msg(
+        "us
+Ash",
+        &[&first, &second],
+        json!([]),
+    );
+    p["segments"] = json!([
+        {"offset": 0, "length": 2, "authors": [first, second]},
+        {"offset": 3, "length": 3, "authors": [in_segment, first]}
+    ]);
+    w.push(&a, "message.send", &space, &m, p);
+    let want = json!([first, second, in_segment]);
+    for who in [&a, &b] {
+        let principal = api_data::Principal::owner(who);
+        let one = messages::one(&w.c, &principal, &m).unwrap().unwrap();
+        assert_eq!(one["authors"], want, "GET /messages/{{id}} for {who}");
+        let page = messages::list(&w.c, &principal, GENERAL, &Default::default()).unwrap().unwrap();
+        assert_eq!(page["items"][0]["authors"], want, "GET /channels/{{id}}/messages for {who}");
+    }
 }
