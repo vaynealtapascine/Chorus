@@ -153,7 +153,9 @@ impl<'a> CurrentView<'a> {
                 })
                 .collect::<Vec<_>>();
             // Search always uses the recorded current front, regardless of the chat-list toggle.
-            if internal_private || !own.is_empty() {
+            // A listed channel limits only in the system's own space (D-097) or a DM (D-098); in a
+            // shared space `member_ids` has no such effect (D-155).
+            if internal_private || (space_kind == "dm" && !own.is_empty()) {
                 let included = crate::perms::with_parts(self.conn, &self.p.account_id, own)?;
                 ok = included.iter().any(|m| self.front.contains(m));
             }

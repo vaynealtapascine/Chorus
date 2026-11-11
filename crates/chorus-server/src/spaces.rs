@@ -258,7 +258,8 @@ fn accounts_in(conn: &Connection, space: &str) -> rusqlite::Result<Vec<Value>> {
 
 /// Author cards for a space the reader (`?2`) is in: its accounts, and the members of *other*
 /// accounts who wrote a message the reader can see (public, in a channel it may view), or whom a
-/// private chat the reader may view is kept to (D-098: the chat is titled before anyone writes).
+/// private chat the reader may view is kept to (D-098: the chat is titled before anyone writes;
+/// DM spaces only, D-155).
 /// Rows are `(member_id, space_id)`; a listed member counts only while their account is in the space.
 /// `space` (an SQL expression) keeps both halves to one space, so neither scans every channel.
 fn public_author_source(space: Option<&str>) -> String {
@@ -270,7 +271,7 @@ fn public_author_source(space: Option<&str>) -> String {
        UNION SELECT message_id, member_id FROM message_segment_author) au ON au.message_id = m.id
  WHERE c.deleted_at IS NULL{only}
  UNION
- SELECT x.value, c.space_id FROM channel c JOIN space s ON s.id = c.space_id AND s.kind <> 'internal'
+ SELECT x.value, c.space_id FROM channel c JOIN space s ON s.id = c.space_id AND s.kind = 'dm'
  CROSS JOIN json_each(CASE WHEN json_valid(c.member_ids) THEN c.member_ids ELSE '[]' END) x
  JOIN member lm ON lm.id = x.value
  JOIN space_member sm ON sm.space_id = c.space_id AND sm.account_id = lm.account_id AND sm.is_present
