@@ -253,7 +253,9 @@ Reviews are computed by the server (it knows `seq`) and sync down as rows.
   `unauthenticated` and closes, and the device renews over REST by signing
   `nonce‖device_id‖server_instance_id` with its key (API.md §2), then connects again. A device
   signed out from another one gets the same `error` mid-connection, on its next frame, and its
-  challenge is refused with `403 forbidden` (§6.5, D-148).
+  renewal is refused: `403 signed_out` from `/auth/session`, with `signed_out.at` and `wipe_at`
+  (D-152); `403 forbidden` from an older server or for a device it doesn't know; `401 bad_key`
+  for a key that no longer matches (D-153). §6.5 says what the web client does with each.
 - Fallback when WebSockets are blocked: `POST /api/v1/sync/push`, `GET /api/v1/sync/pull` long
   poll with the same payloads. Typing is WebSocket-only: the HTTP fallback ignores typing and never queues it.
 
@@ -403,10 +405,25 @@ user action
   `unauthenticated` error moves to `renewing`: no socket and no reconnect timer, one renewal at
   a time, and the next connection only after it settles (straight away the first time; through
   the backoff if the server refuses the new session again before a `welcome`). A renewal
-  refused with `403 forbidden` (the server no longer knows the device) ends in **`signed-out`**:
-  no socket, timer or retry on `online` or focus; the replica, outbox and device record stay
-  untouched, the other tabs learn it over the bus, and the app says so (CLIENTS §4.1). Network
-  errors, 5xx and rate limits back off as before. Android's OkHttp pings every 25 s.
+  refused for good (`403 signed_out`, `403 forbidden` or `401 bad_key`, §6.1) ends in
+  **`signed-out`**: no socket, timer or retry on `online` or focus, and the app shows onboarding
+  (CLIENTS §4.1, D-153). A plain `401 unauthenticated` (a stale nonce), network errors, 5xx and
+  rate limits back off as before. Android's OkHttp pings every 25 s.
+- **The signed-out copy (web, D-152, D-153)**: the replica, outbox and blobs stay on disk,
+  unopened, until `wipe_at`; the times are kept on the device record (`signed_out`, with the
+  clock offset of the last `welcome`, so `wipe_at` is compared by the server's clock), so a
+  reload opens no socket. Without a `wipe_at` (`forbidden`, `bad_key`) nothing is erased on a
+  timer. Once `wipe_at` has passed (checked when the answer comes, at every start and by a timer
+  while the page is open) `web/src/lib/sync/erase.ts` erases the copy: every IndexedDB store
+  (ops, metadata, snapshot, device record and key, device settings, staged uploads), the
+  offline file cache, the unsaved-ops journal and per-account localStorage keys, the tabs'
+  drafts, and the push subscription; the other tabs follow over the bus. Enrolling again picks
+  the copy up when the invite is a device link of the same account (`POST /auth/invite` says
+  its `account_id`): the new device opens the old one's ops and metadata, the core re-lists ops
+  without a `seq` (`relist_unsent`), and they go out under the new device, which the server
+  stamps at ingest; an op the server already had from the old device is acked by id, once
+  (`web/src/lib/sync/relink.test.ts`). Any other enrolment erases the copy first, once the
+  person has confirmed it. Nothing else erases it.
 - **Android background**: WorkManager unique work `sync` with `NetworkType.CONNECTED`, expedited
   when the outbox is non-empty; the widget's switch op enqueues it.
 - **Windowed web replica** (R23, D-075): a browser tab not set to "keep everything" (CLIENTS
@@ -440,7 +457,7 @@ user action
 | Op rejected (e.g. lost permission while offline) | Shown in *Sync issues* with reason; local state reverted; user can copy text of a rejected message. Android's Retry (F10.4) writes the same op again under a new id (same kind, scope, entity, acting `member_id` and payload) before letting the refused one go; a retry the server takes shows under *Fixed* for a week (device-local, `Replica::op_status`). |
 | New device joins | Snapshot of each scope + views, then live. |
 | Newer client, older server | Server stores unknown kinds; if `core_min` > client core, client shows "Update Chorus" and stays read-only for sync (keeps queuing locally). |
-| Device revoked | Server answers the device's next frame with `error` `unauthenticated` ("this device was signed out") and closes; the renewal's challenge is refused with `403 forbidden`. The device stops syncing and says it was signed out; its local data stays (D-148, §6.5). |
+| Device revoked | Server answers the device's next frame with `error` `unauthenticated` ("this device was signed out") and closes; the renewal is refused (`403 signed_out` with `wipe_at`). The device stops syncing and shows onboarding; its copy stays until `wipe_at` (two days after the sign-out, or at once if that was chosen) and is then erased, including anything that never synced; linking it to the same account before then keeps everything (D-152, D-153, §6.5). |
 | Server restored from an older backup | See §7.3. |
 
 ### 7.3 Epochs and restore
