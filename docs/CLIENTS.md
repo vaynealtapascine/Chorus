@@ -151,6 +151,20 @@ android/
 - Mono clock: `SystemClock.elapsedRealtime()`; boot id: `Settings.Global.BOOT_COUNT`.
 - Everything is on Room transactions; the widget and notification actions use the same repository
   (no Activity needed).
+- The socket's lifecycle is one pure reducer, `data/SyncLink.kt` (state, events, effects; JVM-tested
+  in `SyncLinkTest`). `Chorus` changes it only through `transition()`, under one lock, from the main
+  and store threads alike: status, the current socket (numbered), backoff and a renewal in flight
+  can't disagree, a frame or close from a socket that is no longer current changes nothing, and
+  "caught up" is reported only while the socket that delivered the frame is still the live one.
+- **Signed out (D-148).** When the socket answers `unauthenticated`, `Chorus` renews the session.
+  A definite refusal (`forbidden` from `/auth/challenge` or `/auth/session`: the device was signed
+  out from another one) leaves it `Status.SignedOut`, also kept on disk (`sync:signed_out`) so a cold
+  start asks nothing: no socket, no retries, `syncOnce()` returns at once, `authedCall` fails with
+  code `signed_out`, uploads and the notification check wait. Anything else (no network, 5xx, rate
+  limit, a bad signature) keeps the usual backoff. The phone keeps everything it holds (Q28's
+  default) and new changes stay on it. The connection banner says it was signed out from another
+  device, with **Link again**, which opens the welcome screen for a device link of the same account
+  only (another account's link is not adopted); `adopt()` clears the state and what waited is sent.
 
 ### 2.4 Deep links & intents
 

@@ -40,7 +40,9 @@ import org.json.JSONObject
 import uniffi.chorus_ffi.CoreReplica
 import uniffi.chorus_ffi.newId
 
-enum class Status { Loading, NoDevice, Offline, Connecting, Live, StorageError }
+/** [SignedOut]: the server refused this device (signed out from another one, D-148); it keeps
+ * everything it holds and syncs nothing until it is linked again. */
+enum class Status { Loading, NoDevice, Offline, Connecting, Live, SignedOut, StorageError }
 
 data class RecheckProgress(val checked: Int, val total: Int)
 
@@ -58,7 +60,8 @@ data class MessageRevision(val rev: Int, val at: Long, val original: Boolean, va
  * the Android twin of web/src/lib/sync/client.ts.
  *
  * Threading: the replica is internally locked; persistence and model rebuilds run on one
- * background thread, in order.
+ * background thread, in order. The socket's lifecycle (status, socket, backoff, renewal) is one
+ * [SyncLink.State], changed only through [transition] under [linkLock], from either thread.
  */
 class Chorus private constructor(private val ctx: Context) {
     private val store = Store(ctx)
@@ -113,9 +116,12 @@ class Chorus private constructor(private val ctx: Context) {
     @Volatile var device: DeviceRecord? = null
         private set
     @Volatile private var replica: CoreReplica? = null
-    @Volatile private var ws: WebSocket? = null
-    @Volatile private var renewing = false
-    private var backoff = 1000L
+    @Volatile private var ws: WebSocket? = null // written under linkLock
+    private val linkLock = Any()
+    private var link = SyncLink.State() // guarded by linkLock
+    private var wsNumber = 0L // guarded by linkLock: which of link's sockets [ws] is
+    // before init: the store thread may start transitions while the constructor runs
+    private val retry = Runnable { transition(SyncLink.Event.RetryDue) }
     private val rebuildPending = AtomicBoolean(false)
     private val syncReady = MutableStateFlow(false)
     private val expectedScopes = mutableSetOf<String>() // store thread only
@@ -127,6 +133,9 @@ class Chorus private constructor(private val ctx: Context) {
 
     /** Live and caught up with every scope. */
     val upToDate: StateFlow<Boolean> get() = syncReady
+
+    /** Signed out from another device (D-148): nothing syncs until this phone is linked again. */
+    val signedOut: Boolean get() = _status.value == Status.SignedOut
 
     init {
         scope.launch {
@@ -163,14 +172,14 @@ class Chorus private constructor(private val ctx: Context) {
         typingNames = TypingNames(dev?.accountId.orEmpty())
         Pins.trust(dev?.pin)
         if (dev == null) {
-            _status.value = Status.NoDevice
+            transition(SyncLink.Event.Loaded(device = false, signedOut = false))
             return
         }
         replica = CoreReplica.restore(dev.deviceId, dev.node, store.get("meta").orEmpty(), store.opsJson(), store.get("hlc").orEmpty())
         refreshIssues(replica!!)
         refreshHeld(replica!!)
         rebuild()
-        main.post { connect() }
+        transition(SyncLink.Event.Loaded(device = true, signedOut = store.get(SIGNED_OUT) != null))
     }
 
     /** After enrolment. */
@@ -178,6 +187,8 @@ class Chorus private constructor(private val ctx: Context) {
         scope.launch {
             try {
                 store.put("device", dev.toJson())
+                // linked again after being signed out (D-148): the copy kept here syncs as before
+                store.remove(SIGNED_OUT)
                 start()
                 // app start registered nothing while signed out: do it now, not at the next launch
                 Push.ensure(ctx)
@@ -371,8 +382,8 @@ class Chorus private constructor(private val ctx: Context) {
         val r = replica ?: return@withContext false
         if (!r.cancelHeld(held.opId)) return@withContext false
         changed(r)
-        syncReady.value = _status.value == Status.Live && caughtScopes.containsAll(expectedScopes) &&
-            HeldMessages.caughtUp(r.pendingCount(), _heldMessages.value.size)
+        setSyncReady(null, caughtScopes.containsAll(expectedScopes) &&
+            HeldMessages.caughtUp(r.pendingCount(), _heldMessages.value.size))
         true
     }
 
@@ -572,10 +583,12 @@ class Chorus private constructor(private val ctx: Context) {
     /** A signed-in REST call, renewing an expired or rejected session once. */
     suspend fun authedCall(method: String, path: String, body: JSONObject? = null): JSONObject {
         val dev = withContext(dispatcher) {
+            checkSignedIn()
             var d = device ?: throw ApiException("Not signed in.", "unauthenticated")
-            if (d.expiresAt <= System.currentTimeMillis() + 60_000 && renewSession()) {
+            if (d.expiresAt <= System.currentTimeMillis() + 60_000 && renewSession() == SyncLink.Renewal.Renewed) {
                 d = device ?: throw ApiException("Not signed in.", "unauthenticated")
             }
+            checkSignedIn()
             d
         }
         return try {
@@ -583,11 +596,16 @@ class Chorus private constructor(private val ctx: Context) {
         } catch (e: ApiException) {
             if (e.code != "unauthenticated") throw e
             val fresh = withContext(dispatcher) {
-                if (!renewSession()) throw e
+                if (renewSession() != SyncLink.Renewal.Renewed) { checkSignedIn(); throw e }
                 device ?: throw e
             }
             Api.call(method, fresh.base, path, body, fresh.session)
         }
+    }
+
+    /** A signed-out phone (D-148) asks the server nothing more, and says why. */
+    private fun checkSignedIn() {
+        if (signedOut) throw ApiException(SIGNED_OUT_MESSAGE, "signed_out")
     }
 
     /** This account's devices, this one first (F1.6). */
@@ -598,15 +616,19 @@ class Chorus private constructor(private val ctx: Context) {
 
     /** Create a one-use invite for another device, renewing the signed session if needed. */
     suspend fun deviceInvite(): DeviceInvite = withContext(dispatcher) {
+        checkSignedIn()
         var dev = device ?: error("not set up")
         if (dev.expiresAt <= System.currentTimeMillis() + 60_000) {
-            check(renewSession()) { "Could not renew the device session." }
+            val renewed = renewSession()
+            checkSignedIn()
+            check(renewed == SyncLink.Renewal.Renewed) { "Could not renew the device session." }
             dev = device ?: error("not set up")
         }
         try {
             DeviceLinks.invite(Api.post(dev.base, "/devices/invite", JSONObject(), dev.session))
         } catch (e: ApiException) {
-            if (e.code != "unauthenticated" || !renewSession()) throw e
+            if (e.code != "unauthenticated") throw e
+            if (renewSession() != SyncLink.Renewal.Renewed) { checkSignedIn(); throw e }
             dev = device ?: error("not set up")
             DeviceLinks.invite(Api.post(dev.base, "/devices/invite", JSONObject(), dev.session))
         }
@@ -625,15 +647,14 @@ class Chorus private constructor(private val ctx: Context) {
         syncReady.value = false
         heldTimer?.cancel()
         heldTimer = null
-        _status.value = Status.StorageError
-        main.post { ws?.close(1000, "storage unavailable"); ws = null; main.removeCallbacks(retry) }
+        transition(SyncLink.Event.StorageFailed)
     }
 
     /** Own a socket only while visible or while a bounded sync work is running. */
     fun setForeground(active: Boolean) {
         main.post {
             foreground = active
-            if (active) reconnectNow() else if (workLeases == 0) closeSocket()
+            transition(SyncLink.Event.Wanted(foreground || workLeases > 0))
         }
     }
 
@@ -641,29 +662,70 @@ class Chorus private constructor(private val ctx: Context) {
     suspend fun syncOnce(): Boolean {
         withContext(Dispatchers.Main) {
             workLeases++
-            reconnectNow()
+            transition(SyncLink.Event.Wanted(true))
         }
         return try {
+            // nothing to wait for without a device or once signed out (D-148): done, not retried
             val result = withTimeoutOrNull(25_000) {
                 status.combine(syncReady) { state, synced -> state to synced }
-                    .first { (state, synced) -> state == Status.NoDevice || state == Status.StorageError || synced }
+                    .first { (state, synced) -> state == Status.NoDevice || state == Status.SignedOut || state == Status.StorageError || synced }
             }
-            result?.let { (state, synced) -> state == Status.NoDevice || state != Status.StorageError && synced } ?: false
+            result?.let { (state, synced) -> state == Status.NoDevice || state == Status.SignedOut || state != Status.StorageError && synced } ?: false
         } finally {
             withContext(NonCancellable + Dispatchers.Main) {
                 workLeases--
-                if (!foreground && workLeases == 0) closeSocket()
+                transition(SyncLink.Event.Wanted(foreground || workLeases > 0))
             }
         }
     }
 
-    private fun closeSocket() {
-        main.removeCallbacks(retry)
-        val socket = ws ?: return
-        ws = null
-        socket.close(1000, "background")
-        scope.launch { clearTyping(); replica?.disconnect(); syncReady.value = false }
-        _status.value = Status.Offline
+    /**
+     * The one way the connection's lifecycle changes (SyncLink): reduce, carry out the effects and
+     * publish, all under [linkLock], so a frame handled on the store thread and a close on the main
+     * thread can't interleave into "Live with no socket". Effects only post or enqueue work.
+     */
+    private fun transition(event: SyncLink.Event): SyncLink.State = synchronized(linkLock) {
+        val step = SyncLink.reduce(link, event)
+        link = step.state
+        for (effect in step.effects) perform(effect)
+        if (link.socket == null) ws = null
+        if (link.status != Status.Live) syncReady.value = false
+        _status.value = link.status
+        _connectFailures.value = link.failures
+        link
+    }
+
+    /** Whether socket [n] is still the one we own. */
+    private fun current(n: Long): Boolean = synchronized(linkLock) { link.socket == n }
+
+    /** Caught up, said only while socket [n] is live and still ours. */
+    private fun setSyncReady(n: Long?, ready: Boolean) = synchronized(linkLock) {
+        syncReady.value = ready && (if (n == null) link.status == Status.Live && link.socket != null else link.liveOn(n))
+    }
+
+    private fun perform(effect: SyncLink.Effect) {
+        when (effect) {
+            is SyncLink.Effect.Open -> openSocket(effect.socket)
+            is SyncLink.Effect.Close -> if (wsNumber == effect.socket) { ws?.close(1000, effect.reason); ws = null }
+            is SyncLink.Effect.Retry -> {
+                main.removeCallbacks(retry)
+                main.postDelayed(retry, (effect.after * (0.7 + Math.random() * 0.6)).toLong())
+            }
+            SyncLink.Effect.CancelRetry -> main.removeCallbacks(retry)
+            SyncLink.Effect.Renew -> scope.launch {
+                val result = renewSession()
+                // a refusal has already left the phone signed out
+                if (result != SyncLink.Renewal.Refused) transition(SyncLink.Event.RenewalDone(result))
+            }
+            SyncLink.Effect.Disconnected -> scope.launch {
+                recheckDone?.completeExceptionally(IllegalStateException("Connection lost during full sync."))
+                clearTyping(); replica?.disconnect(); syncReady.value = false
+            }
+            SyncLink.Effect.RememberSignedOut -> scope.launch {
+                runCatching { store.put(SIGNED_OUT, System.currentTimeMillis().toString()) }
+                    .onFailure { Log.w(TAG, "could not keep the signed-out state", it) }
+            }
+        }
     }
 
     // ─── socket ──────────────────────────────────────────────────────────────
@@ -676,19 +738,20 @@ class Chorus private constructor(private val ctx: Context) {
         for (i in 0 until frames.length()) s.send(frames.get(i).toString())
     }
 
-    private fun connect() {
-        if (!foreground && workLeases == 0 || _status.value == Status.StorageError) return
-        val dev = device ?: return
-        val r = replica ?: return
-        if (ws != null) return
-        _status.value = Status.Connecting
-        syncReady.value = false
+    /** Socket [n] (under [linkLock], from [perform]); its listener reports back by number. */
+    private fun openSocket(n: Long) {
+        val dev = device
+        val r = replica
+        if (dev == null || r == null) {
+            main.post { transition(SyncLink.Event.Dropped(n)) }
+            return
+        }
         scope.launch { expectedScopes.clear(); caughtScopes.clear() }
         val listener = object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 UploadWork.enqueue(ctx) // files queued while offline go up now
                 scope.launch {
-                    if (ws !== webSocket) return@launch
+                    if (!current(n)) return@launch
                     val clock = JSONObject().put("wall", System.currentTimeMillis())
                         .put("mono", SystemClock.elapsedRealtime()).put("boot_id", bootId())
                     webSocket.send(r.connect(clock.toString(), device!!.session))
@@ -699,30 +762,13 @@ class Chorus private constructor(private val ctx: Context) {
                 val frame = runCatching { JSONObject(text) }.getOrNull() ?: return
                 // too many frames: the server closes the socket; say so once (F10.7)
                 if (frame.optString("t") == "error" && frame.optString("code") == "rate_limited") Notices.slowDown(null)
+                // an expired session, or this device signed out from another one: renew to tell which
                 if (frame.optString("t") == "error" && frame.optString("code") == "unauthenticated") {
-                    if (renewing) return
-                    renewing = true
-                    webSocket.close(1000, null)
-                    scope.launch {
-                        val renewed = renewSession()
-                        clearTyping()
-                        r.disconnect()
-                        main.post {
-                            if (ws === webSocket) {
-                                ws = null
-                            }
-                            renewing = false
-                            if (_status.value != Status.StorageError) {
-                                _status.value = Status.Offline
-                                if (renewed) reconnectNow()
-                                else if (foreground || workLeases > 0) schedule()
-                            }
-                        }
-                    }
+                    transition(SyncLink.Event.Unauthenticated(n))
                     return
                 }
                 scope.launch {
-                    if (ws !== webSocket || _status.value == Status.StorageError) return@launch
+                    if (!current(n) || _status.value == Status.StorageError) return@launch
                     val kind = frame.optString("t")
                     if (kind == "typing") { receiveTyping(frame); return@launch }
                     val out = runCatching { JSONArray(r.onFrame(text, System.currentTimeMillis())) }
@@ -731,6 +777,8 @@ class Chorus private constructor(private val ctx: Context) {
                     changed(r) // durable before any dependent frame goes out
                     if (_status.value == Status.StorageError) return@launch
                     if (kind == "welcome") {
+                        // a welcome from a socket closed meanwhile changes nothing
+                        if (!transition(SyncLink.Event.Welcome(n)).liveOn(n)) return@launch
                         clearTyping()
                         typingOffset = frame.getLong("server_time") - System.currentTimeMillis()
                         refreshTypingNames()
@@ -739,9 +787,6 @@ class Chorus private constructor(private val ctx: Context) {
                         frame.optJSONArray("scopes")?.let { scopes ->
                             for (i in 0 until scopes.length()) expectedScopes.add(scopes.getString(i))
                         }
-                        _status.value = Status.Live
-                        _connectFailures.value = 0
-                        backoff = 1000
                         scheduleFileFill()
                         if (frame.optBoolean("reconcile")) {
                             val hashes = JSONArray(r.restoringBlobs())
@@ -769,68 +814,59 @@ class Chorus private constructor(private val ctx: Context) {
                         if (!repairing) caughtScopes.add(scopeName)
                         recheckWatch?.invoke(scopeName)
                     }
-                    syncReady.value = _status.value == Status.Live &&
-                        caughtScopes.containsAll(expectedScopes) &&
-                        HeldMessages.caughtUp(r.pendingCount(), _heldMessages.value.size)
+                    setSyncReady(n, caughtScopes.containsAll(expectedScopes) &&
+                        HeldMessages.caughtUp(r.pendingCount(), _heldMessages.value.size))
                 }
             }
 
-            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) = dropped(webSocket)
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { transition(SyncLink.Event.Dropped(n)) }
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.i(TAG, "sync socket failed: ${t.message}")
-                dropped(webSocket)
+                transition(SyncLink.Event.Dropped(n))
             }
         }
+        wsNumber = n
         ws = Api.http.newWebSocket(Request.Builder().url(wsUrl(dev.base)).build(), listener)
     }
 
-    private fun dropped(socket: WebSocket) {
-        main.post {
-            if (ws !== socket) return@post
-            ws = null
-            scope.launch {
-                recheckDone?.completeExceptionally(IllegalStateException("Connection lost during full sync."))
-                clearTyping(); replica?.disconnect(); syncReady.value = false
-            }
-            _status.value = Status.Offline
-            _connectFailures.value += 1
-            if (!renewing && (foreground || workLeases > 0)) schedule()
-        }
-    }
-
-    private suspend fun renewSession(): Boolean {
-        val dev = device ?: return false
+    /**
+     * A fresh session by signing the server's challenge. `forbidden` from the challenge or the
+     * session call is the server refusing this device for good (signed out from another device,
+     * D-148): the phone is left [Status.SignedOut] whoever asked. Anything else (no network, 5xx,
+     * rate limits, a bad signature) is [SyncLink.Renewal.Failed] and keeps the usual backoff.
+     */
+    private suspend fun renewSession(): SyncLink.Renewal {
+        val dev = device ?: return SyncLink.Renewal.Failed
+        if (signedOut) return SyncLink.Renewal.Refused
         return try {
             val next = Api.renew(dev)
-            try { store.put("device", next.toJson()) } catch (e: Exception) { storageFailed(e); return false }
+            try { store.put("device", next.toJson()) } catch (e: Exception) { storageFailed(e); return SyncLink.Renewal.Failed }
             device = next
-            true
+            SyncLink.Renewal.Renewed
+        } catch (e: ApiException) {
+            Log.w(TAG, "session renewal failed (${e.code})", e)
+            if (e.code != "forbidden") return SyncLink.Renewal.Failed
+            // only if this is still the device that asked (not one linked meanwhile)
+            if (device?.deviceId == dev.deviceId) transition(SyncLink.Event.RenewalDone(SyncLink.Renewal.Refused))
+            SyncLink.Renewal.Refused
         } catch (e: Exception) {
             Log.w(TAG, "session renewal failed", e)
-            false
+            SyncLink.Renewal.Failed
         }
     }
 
-    private val retry = Runnable { connect() }
-
-    private fun schedule() {
-        main.removeCallbacks(retry)
-        val jitter = (backoff * (0.7 + Math.random() * 0.6)).toLong()
-        main.postDelayed(retry, jitter)
-        backoff = minOf(backoff * 2, 5 * 60_000L)
-    }
-
-    /** Network came back or the app came to the front: try now instead of waiting out the backoff. */
+    /** Network came back or the app came to the front: try now instead of waiting out the backoff.
+     * Nothing while signed out, renewing, unwanted or already connected. */
     fun reconnectNow() {
-        if (ws != null || device == null || renewing || !foreground && workLeases == 0 || _status.value == Status.StorageError) return
-        backoff = 1000
-        main.removeCallbacks(retry)
-        connect()
+        transition(SyncLink.Event.ConnectNow)
     }
 
     companion object {
         private const val TAG = "Chorus"
         private const val LAST_SYNCED = "sync:last_synced"
+        /** Set while this device is signed out (D-148); removed when it is linked again. */
+        private const val SIGNED_OUT = "sync:signed_out"
+        const val SIGNED_OUT_MESSAGE = "This phone was signed out from another device. Link it again to sync."
         @Volatile private var instance: Chorus? = null
 
         fun get(ctx: Context): Chorus =

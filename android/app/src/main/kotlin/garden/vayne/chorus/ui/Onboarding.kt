@@ -50,9 +50,12 @@ import kotlinx.coroutines.launch
  * this device is called, with *I am plural* (D-093: on = a system, off = one person; the invite's
  * kind sets it). A link for another device of an account needs only the link: **Link device**
  * scans the QR on that account's Link a device screen and joins at once.
+ *
+ * With [relinkAccount] it links a phone signed out from another device again (D-148): only a
+ * device link of that account, everything kept on the phone syncing as before; [onBack] leaves.
  */
 @Composable
-fun Onboarding(chorus: Chorus, initialLink: String?) {
+fun Onboarding(chorus: Chorus, initialLink: String?, relinkAccount: String? = null, onBack: (() -> Unit)? = null) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var link by remember { mutableStateOf(initialLink.orEmpty()) }
@@ -67,16 +70,21 @@ fun Onboarding(chorus: Chorus, initialLink: String?) {
     var error by remember { mutableStateOf<String?>(null) }
     var scanned by remember { mutableStateOf(false) }
     val valid = Api.parseInvite(link) != null
-    val forDevice = invite == "device"
+    val relink = relinkAccount != null
+    val forDevice = invite == "device" || relink
+    // linking again needs no account details: the link alone decides (Welcoming.relinkRefusal)
+    val readyInvite = if (relink && invite != null) "device" else invite
 
     fun join() {
-        if (busy || !Welcoming.ready(link, invite, name, handle, device)) return
+        if (busy || !Welcoming.ready(link, readyInvite, name, handle, device)) return
+        if (relink) Welcoming.relinkRefusal(invite)?.let { error = it; return }
         busy = true; error = null
         val account = !forDevice
         scope.launch {
             try {
                 val dev = Api.enrol(link, name.takeIf { account }, handle.takeIf { account },
                     (if (plural) "system" else "person").takeIf { account && invite != "" }, device.trim())
+                if (relinkAccount != null) Welcoming.relinkAccountRefusal(relinkAccount, dev.accountId)?.let { error = it; return@launch }
                 // a new system goes through setup next (F1.2–F1.4), which also names it
                 if (account && plural) Setup.begin(ctx, dev.accountId, name.trim())
                 chorus.adopt(dev)
@@ -111,6 +119,9 @@ fun Onboarding(chorus: Chorus, initialLink: String?) {
             ChorusWordmark()
             Spacer(Modifier.weight(1f).heightIn(min = 40.dp))
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (relink) Text("This phone was signed out from another device. Everything on it is still here. " +
+                    "To sync again, open Link a device on one of your other devices and scan its code.",
+                    color = Welcome.Cream, fontSize = 14.sp, lineHeight = 20.sp, modifier = Modifier.fillMaxWidth())
                 WelcomeField("Invite code", link, { link = it.trim(); error = null }, "chrs.…/i/…",
                     done = valid && invite != null, busy = looking, enabled = !busy, keyboard = KeyboardType.Uri,
                     shown = Welcoming.code(link), paste = {
@@ -125,7 +136,7 @@ fun Onboarding(chorus: Chorus, initialLink: String?) {
                         done = handle.length >= 2, enabled = !busy, keyboard = KeyboardType.Ascii, prefix = if (handle.isEmpty()) null else "@")
                 }
                 WelcomeField("This device", device, { device = it.take(60) }, "Pixel 8", done = device.isNotBlank(), enabled = !busy)
-                if (!forDevice && invite != "") Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                if (!forDevice && invite != "" && !relink) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     PluralToggle(plural, enabled = !busy) { plural = it }
                 }
                 error?.let {
@@ -133,12 +144,13 @@ fun Onboarding(chorus: Chorus, initialLink: String?) {
                         .clip(RoundedCornerShape(12.dp)).background(Welcome.Cream).padding(horizontal = 12.dp, vertical = 8.dp))
                 }
                 Row(Modifier.fillMaxWidth().padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (onBack != null) WelcomeButton("Back", R.drawable.ic_back, plain = true, enabled = !busy, onClick = onBack)
                     WelcomeButton("Link device", R.drawable.ic_scan, outlined = true, enabled = !busy) {
                         Welcoming.scan(ctx, onLink = { scanned = true; link = it }, onError = { error = it })
                     }
                     Spacer(Modifier.weight(1f))
                     WelcomeButton(if (forDevice) "Link" else "Continue", R.drawable.ic_arrow_right, enabled = !busy &&
-                        Welcoming.ready(link, invite, name, handle, device), busy = busy, trailing = true, onClick = ::join)
+                        Welcoming.ready(link, readyInvite, name, handle, device), busy = busy, trailing = true, onClick = ::join)
                 }
             }
         }

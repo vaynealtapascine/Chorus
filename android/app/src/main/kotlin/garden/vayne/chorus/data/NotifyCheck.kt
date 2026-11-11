@@ -25,7 +25,8 @@ object NotifyCheck {
     suspend fun run(ctx: Context) {
         val app = ctx.applicationContext
         val chorus = Chorus.get(app)
-        chorus.awaitDevice() ?: return
+        // a phone signed out from another device (D-148) has nothing to ask for
+        if (chorus.awaitDevice() == null || chorus.signedOut) return
         val cursor = chorus.setting(CURSOR)?.toLongOrNull()
         if (Push.registered(chorus)) {
             if (cursor == null) pull(app, chorus, null, show = false)
@@ -38,7 +39,7 @@ object NotifyCheck {
     suspend fun onTickle(ctx: Context) {
         val app = ctx.applicationContext
         val chorus = Chorus.get(app)
-        chorus.awaitDevice() ?: return
+        if (chorus.awaitDevice() == null || chorus.signedOut) return
         val cursor = chorus.setting(CURSOR)?.toLongOrNull() ?: (System.currentTimeMillis() - 120_000L)
         pull(app, chorus, cursor, show = !inForeground())
     }

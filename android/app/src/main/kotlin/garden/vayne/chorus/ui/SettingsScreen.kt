@@ -386,6 +386,7 @@ private fun SystemPage(chorus: Chorus, model: Model) {
         FormInfoRow("Status", when (status) {
             Status.Live -> "Connected"
             Status.Connecting -> "Connecting…"
+            Status.SignedOut -> "Signed out"
             else -> "Offline"
         })
     }

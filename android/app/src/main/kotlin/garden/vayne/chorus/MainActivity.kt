@@ -386,6 +386,17 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
         }
         return
     }
+    // a phone signed out from another device links again from the welcome screen (D-148): its
+    // banner's Link again, or an invite link opened meanwhile; everything kept here stays
+    var relinking by remember { mutableStateOf(false) }
+    LaunchedEffect(status, invite) {
+        if (status != Status.SignedOut) relinking = false else if (invite != null) relinking = true
+    }
+    if (relinking && status == Status.SignedOut) {
+        BackHandler { relinking = false }
+        Onboarding(chorus, invite, relinkAccount = chorus.device?.accountId) { relinking = false }
+        return
+    }
     when (status) {
         Status.Loading -> Box(Modifier.fillMaxSize().background(p.bg))
         Status.NoDevice -> Onboarding(chorus, invite)
@@ -442,7 +453,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                 IconButton(onClick = { settingsOpen = !settingsOpen; searchOpen = false; insightsOpen = false; frontsOpen = false; layersFront = null }) { ChorusIcon(if (settingsOpen) AppIcon.Close else AppIcon.Settings, if (settingsOpen) "Close settings" else "Settings") }
             }
             // changes waiting on this phone, on every screen (F2.5, F10.3)
-            if (!chatStageCapture) garden.vayne.chorus.ui.ConnectionBanner(chorus)
+            if (!chatStageCapture) garden.vayne.chorus.ui.ConnectionBanner(chorus) { relinking = true }
             if (!chatStageCapture) garden.vayne.chorus.ui.UpdateBanner()
             Box(Modifier.weight(1f)) {
                 if (sharedDraft != null) ShareChooser(sharedDraft, model, chorus.device?.accountId,

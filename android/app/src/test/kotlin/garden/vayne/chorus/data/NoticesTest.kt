@@ -20,6 +20,14 @@ class NoticesTest {
         assertEquals(Notices.Connection.Asleep, Notices.connection(Status.Connecting, Notices.ASLEEP_AFTER, network = true))
     }
 
+    @Test fun aSignedOutPhoneSaysSoWhateverTheNetwork() {
+        assertEquals(Notices.Connection.SignedOut, Notices.connection(Status.SignedOut, 0, network = true))
+        assertEquals(Notices.Connection.SignedOut, Notices.connection(Status.SignedOut, 9, network = false))
+        val text = Notices.connectionText(Notices.Connection.SignedOut, homeInstall = false)!!
+        assertTrue(text.contains("signed out from another device"))
+        assertTrue(text.contains("link it again"))
+    }
+
     @Test fun theWordsDependOnTheInstall() {
         assertNull(Notices.connectionText(Notices.Connection.None, homeInstall = true))
         assertTrue(Notices.connectionText(Notices.Connection.Away, homeInstall = true)!!.startsWith("Away from home"))

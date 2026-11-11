@@ -299,7 +299,10 @@ object Blobs {
 /** Uploads queued blobs when there's a network; retried with backoff until they're all up. */
 class UploadWork(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
-        val device = Chorus.get(applicationContext).device ?: return Result.success()
+        val chorus = Chorus.get(applicationContext)
+        val device = chorus.awaitDevice() ?: return Result.success()
+        // signed out from another device (D-148): files stay queued until it is linked again
+        if (chorus.signedOut) return Result.success()
         val uploads = Blobs.flush(applicationContext, device)
         val restoring = Blobs.flushRestore(applicationContext, device)
         return if (uploads && restoring) Result.success() else Result.retry()
