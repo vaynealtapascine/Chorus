@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chips, fromActivity, fromNotifications, isRead, mark, needsYou, parseRead, readMarks, showsPayload, unmark, unread, visible } from './inbox';
+import { chips, fromActivity, fromNotifications, isRead, mark, needsYou, parseRead, readMarks, showsPayload, unmark, unread, visible, withReactors } from './inbox';
 
 // D-127: the Notifications page's rows, chips, read marks and "what shows here" (Android's InboxTest)
 const notes = [
@@ -45,6 +45,23 @@ describe('inbox', () => {
     expect(asks.map((a) => a.title)).toEqual(['Mossbank wants to follow your system', 'Two devices switched within a minute']);
     expect(isRead({ until: 1000, ids: [] }, asks[0])).toBe(false);
     expect(visible([...asks, ...liked], 'all', null)[0].id).toBe('follow:f');
+  });
+
+  it('counts hearts by members we may not see, named "Someone" (D-154)', () => {
+    const target = { id: 'p', kind: 'note', title: 'Tea', text: '', cw: null };
+    const heart = (member_id: string | null, member_name: string | null) => ({ kind: 'reaction' as const, at: 1, emoji: '💜', member_id, member_name, target });
+    const title = (items: ReturnType<typeof heart>[]) => fromActivity({ items, reply_counts: {}, reactions: {} })[0].title;
+    expect(title([heart(null, null)])).toBe('Someone liked “Tea”');
+    expect(title([heart(null, null), heart(null, null)])).toBe('2 people liked “Tea”');
+    expect(title([heart('kit', 'Kit'), heart(null, null)])).toBe('Kit and someone else liked “Tea”');
+    expect(title([heart('kit', 'Kit'), heart(null, null), heart(null, null)])).toBe('Kit and 2 others liked “Tea”');
+    const a = withReactors({ items: [], reply_counts: {}, reactions: { p: [
+      { emoji: '💜', member_id: null, member_name: null }, { emoji: '💜', member_id: null, member_name: null }, { emoji: '💜', member_id: 'kit', member_name: 'Kit' },
+    ] } } as never);
+    const ids = a.reactions.p.map((r) => r.member_id);
+    expect(new Set(ids).size).toBe(3);
+    expect(ids.filter((id) => id.startsWith('someone:'))).toHaveLength(2);
+    expect(a.reactions.p.map((r) => r.member_name)).toEqual(['Someone', 'Someone', 'Kit']);
   });
 
   it('moves read marks forward and back one row at a time', () => {

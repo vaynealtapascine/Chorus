@@ -18,7 +18,8 @@ export interface ThreadPost {
     avatar_blob?: string | null; profile?: boolean }[];
   account_id?: string;
   tags?: string[] | null;
-  reactions?: { emoji: string; member_id?: string; member_name: string }[];
+  /** A member this reader may not see reacts with `member_id` and `member_name` null (D-154). */
+  reactions?: { emoji: string; member_id?: string | null; member_name?: string | null }[];
   /** Replies this reader may see. */
   reply_count?: number;
   reply_to?: string | null;
@@ -148,6 +149,11 @@ export function quoteView(quoteId: string | null | undefined, byId: Map<string, 
   return { id: quoteId, post: null, names: '' };
 }
 
+/** A reaction that came without its member (one this reader may not see, D-154) still counts
+ * under its emoji: it gets an id of its own that no member has, so it is never one of ours, and
+ * shows as "Someone" (an unknown id's name). `key` tells it from the others. */
+export const reactorId = (r: { member_id?: string | null }, key: string): string => r.member_id || `someone:${key}`;
+
 /**
  * An own post's reactions on its thread page: the replica's (this account's members) and the
  * server's, which also has other accounts' readers (a friend's heart only reaches us through the
@@ -159,15 +165,15 @@ export function mergedReactions(detail: PostDetail | null, local: (id: string) =
   const server = new Map<string, ThreadPost['reactions']>();
   for (const p of [detail, ...(detail?.ancestors ?? []), ...(detail?.replies ?? [])]) if (p?.reactions?.length) server.set(p.id, p.reactions);
   const names = new Map<string, string>();
-  for (const list of server.values()) for (const r of list ?? []) if (r.member_id) names.set(r.member_id, r.member_name);
+  for (const list of server.values()) for (const r of list ?? []) if (r.member_id && r.member_name) names.set(r.member_id, r.member_name);
   return {
     names,
     reactions: (id) => {
       const out = new Map([...(local(id) ?? new Map<string, string[]>())].map(([emoji, ids]) => [emoji, [...ids]] as [string, string[]]));
-      for (const r of server.get(id) ?? []) {
-        if (!r.member_id) continue;
+      for (const [i, r] of (server.get(id) ?? []).entries()) {
+        const who = reactorId(r, `${id}:${i}`);
         const ids = out.get(r.emoji) ?? [];
-        if (!ids.includes(r.member_id)) out.set(r.emoji, [...ids, r.member_id]);
+        if (!ids.includes(who)) out.set(r.emoji, [...ids, who]);
       }
       return out;
     },

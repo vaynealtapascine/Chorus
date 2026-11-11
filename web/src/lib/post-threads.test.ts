@@ -95,4 +95,16 @@ describe('journal threads', () => {
     // the replica's own map is left as it was
     expect(local.get('p')!.get('💜')).toEqual(['kai']);
   });
+
+  it('counts reactions by members the reader may not see, as no one of ours (D-154)', () => {
+    const merged = mergedReactions({ id: 'p', text: '', occurred_at: 1, reactions: [
+      { emoji: '💜', member_id: null, member_name: null }, { emoji: '💜', member_id: null, member_name: null },
+      { emoji: '👍', member_id: 'robin', member_name: 'Robin' },
+    ] }, () => new Map([['💜', ['kai']]]));
+    const hearts = merged.reactions('p').get('💜')!;
+    expect(hearts).toHaveLength(3);
+    expect(hearts.filter((id) => id.startsWith('someone:'))).toHaveLength(2);
+    expect(hearts).not.toContain(null);
+    expect([...merged.names.keys()]).toEqual(['robin']); // shown as "Someone": no name
+  });
 });

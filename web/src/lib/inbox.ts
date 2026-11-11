@@ -105,13 +105,34 @@ export interface ActivityItem {
   kind: 'reply' | 'quote' | 'repost' | 'reaction';
   at: number;
   post?: Json & { id: string; text: string; occurred_at: number; account_id?: string; author_cards?: Json[] };
-  emoji?: string; member_id?: string; member_name?: string; account_id?: string;
+  /** null for a member this account may not see (D-154) */
+  emoji?: string; member_id?: string | null; member_name?: string | null; account_id?: string;
   target?: ActivityTarget | null;
 }
 export interface JournalActivity {
   items: ActivityItem[];
   reply_counts: Record<string, number>;
+  /** After {@link withReactors}: every reaction has a member id and a name. */
   reactions: Record<string, { emoji: string; member_id: string; member_name: string }[]>;
+}
+
+/** The server's activity read with each reaction that came without its member (D-154) given an
+ * id of its own and the name "Someone": it counts, and is never taken for one of ours. */
+export function withReactors(a: JournalActivity): JournalActivity {
+  type Raw = { emoji: string; member_id: string | null; member_name: string | null };
+  const reactions = Object.fromEntries(Object.entries((a.reactions ?? {}) as Record<string, Raw[]>).map(([post, list]) =>
+    [post, list.map((r, i) => (r.member_id ? { ...r, member_name: r.member_name ?? 'Someone' } : { ...r, member_id: `someone:${post}:${i}`, member_name: 'Someone' }))]));
+  return { ...a, reactions } as JournalActivity;
+}
+
+/** "Kit", "Kit and Juniper", "Kit and 2 others"; reactors without a name (D-154) count too. */
+function reactors(group: ActivityItem[]): string {
+  const named = [...new Set(group.map((g) => g.member_name).filter((n): n is string => !!n))];
+  const total = named.length + group.filter((g) => !g.member_name).length;
+  if (!named.length) return total > 1 ? `${total} people` : 'Someone';
+  if (total === 1) return named[0];
+  if (total === 2) return `${named[0]} and ${named[1] ?? 'someone else'}`;
+  return `${named[0]} and ${total - 1} others`;
 }
 
 function about(t: ActivityTarget | null | undefined): string {
@@ -134,11 +155,10 @@ export function fromActivity(activity: JournalActivity | null | undefined): Inbo
     groups.set(key, [...(groups.get(key) ?? []), a]);
   }
   for (const [key, group] of groups) {
-    const who = [...new Set(group.map((g) => g.member_name).filter((n): n is string => !!n))];
-    const label = who.length === 0 ? 'Someone' : who.length === 1 ? who[0] : who.length === 2 ? `${who[0]} and ${who[1]}` : `${who[0]} and ${who.length - 1} others`;
+    const label = reactors(group);
     const first = group[0];
     const verb = first.emoji === '💜' ? 'liked' : `reacted ${first.emoji} to`;
-    out.push({ id: `react:${key}:${group.map((g) => g.member_id).sort().join(',')}`, kind: 'reaction', category: 'friends', shows: 'likes',
+    out.push({ id: `react:${key}:${group.map((g) => g.member_id ?? '').sort().join(',')}`, kind: 'reaction', category: 'friends', shows: 'likes',
       at: Math.max(...group.map((g) => g.at)), actor: label, title: `${label} ${verb} ${about(first.target)}`, postId: first.target?.id });
   }
   for (const a of activity.items) {
