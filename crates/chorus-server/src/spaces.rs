@@ -9,8 +9,9 @@
 //! - A DM is a `dm` space with exactly two accounts; asking again returns the same one.
 //! - Leaving writes `space.leave` for yourself; the owner of a shared space can't leave it.
 //! - Other accounts' members appear in shared chat through **author cards**: the name, colour,
-//!   pronouns, sigils and avatar of members who wrote a message everyone in the space can read
-//!   (`visibility` unset). Anything else about them stays in their account (SYNC.md §4.3).
+//!   sigils and avatar of members who wrote a message everyone in the space can read
+//!   (`visibility` unset), and their pronouns only where the profile rule shares them
+//!   (`profiles::pronouns_for`). Anything else about them stays in their account (SYNC.md §4.3).
 
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
@@ -299,9 +300,10 @@ pub fn authors(conn: &Connection, me: &str, space: &str) -> Result<Value, SpaceE
         return Err(SpaceError::NotFound);
     }
     let mut st = conn.prepare_cached(&format!(
-        "SELECT DISTINCT mb.id, mb.account_id, mb.name, mb.display_name, mb.pronouns, mb.color, mb.sigils, mb.avatar_blob
+        "SELECT DISTINCT mb.id, mb.account_id, mb.name, mb.display_name, mb.color, mb.sigils, mb.avatar_blob
          FROM ({}) src JOIN member mb ON mb.id = src.member_id AND mb.deleted_at IS NULL
-         WHERE src.space_id = ?1 AND mb.account_id != ?2", public_author_source(Some("?1"))
+         WHERE src.space_id = ?1 AND mb.account_id != ?2",
+        public_author_source(Some("?1"))
     ))?;
     let mut members: Vec<Value> = st
         .query_map([space, me], |r| {
@@ -310,10 +312,11 @@ pub fn authors(conn: &Connection, me: &str, space: &str) -> Result<Value, SpaceE
                 "account_id": r.get::<_, String>(1)?,
                 "name": r.get::<_, Option<String>>(2)?,
                 "display_name": r.get::<_, Option<String>>(3)?,
-                "pronouns": r.get::<_, Option<String>>(4)?,
-                "color": r.get::<_, Option<String>>(5)?,
-                "sigils": serde_json::from_str::<Value>(&r.get::<_, String>(6)?).unwrap_or(json!([])),
-                "avatar_blob": r.get::<_, Option<String>>(7)?,
+                // filled in below, only where the profile rule allows
+                "pronouns": Value::Null,
+                "color": r.get::<_, Option<String>>(4)?,
+                "sigils": serde_json::from_str::<Value>(&r.get::<_, String>(5)?).unwrap_or(json!([])),
+                "avatar_blob": r.get::<_, Option<String>>(6)?,
             }))
         })?
         .collect::<Result<_, _>>()?;
@@ -328,6 +331,8 @@ pub fn authors(conn: &Connection, me: &str, space: &str) -> Result<Value, SpaceE
         if let Some((name, _)) = crate::profiles::names_for(conn, me, &id)? {
             card["name"] = json!(name);
         }
+        // pronouns are a profile part with their own audience (D-101, D-147)
+        card["pronouns"] = json!(crate::profiles::pronouns_for(conn, me, &id)?);
         crate::handles::stamp(conn, &mut book, me, &owner, card)?;
     }
     Ok(json!({"accounts": accounts_in(conn, space)?, "members": members}))

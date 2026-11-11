@@ -327,6 +327,23 @@ pub fn names_for(conn: &Connection, viewer: &str, member: &str) -> rusqlite::Res
     Ok(Some((m.name_for(&v).to_string(), m.display_name().map(str::to_string))))
 }
 
+/// A member's pronouns as `viewer` may see them: only if the viewer may open the profile and the
+/// `pronouns` part reaches them (`Row::card`'s rule), else `None`. For cards outside this module
+/// that carry pronouns, such as shared-chat author cards (D-147).
+pub(crate) fn pronouns_for(conn: &Connection, viewer: &str, member: &str) -> rusqlite::Result<Option<String>> {
+    let found = conn
+        .query_row(&format!("SELECT {COLUMNS}, account_id FROM member WHERE id = ?1"), [member], |r| {
+            Ok((row(r)?, r.get::<_, String>(13)?))
+        })
+        .optional()?;
+    let Some((m, owner)) = found else { return Ok(None) };
+    let v = Viewer::of(conn, viewer, &owner)?;
+    if !m.open(&v) {
+        return Ok(None);
+    }
+    Ok(m.card(&v)["pronouns"].as_str().map(str::to_string))
+}
+
 /// Small cards only. Reuses exactly the profile-opening rule, without fetching relationships
 /// recursively or granting access to any target's other parts, history or files.
 pub fn visible_card(conn: &Connection, viewer: &str, member: &str) -> anyhow::Result<Option<Value>> {

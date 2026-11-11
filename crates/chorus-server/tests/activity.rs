@@ -6,7 +6,7 @@ use chorus_core::hlc::Hlc;
 use chorus_core::id::new_id;
 use chorus_core::op::Op;
 use chorus_core::time::{ClockSample, TimeSource};
-use chorus_server::{db, ingest, notifier};
+use chorus_server::{db, ingest, notifier, spaces};
 use rusqlite::Connection;
 use serde_json::{Value, json};
 
@@ -844,4 +844,39 @@ fn a_thread_under_a_private_aside_notifies_nobody_else() {
             ("mention".to_string(), "@June look".to_string()),
         ]
     );
+}
+
+/// D-101/D-126/D-147: an author card in shared chat carries pronouns only where the profile and its
+/// `pronouns` part reach the reader; name, colour, sigil and avatar follow the member regardless.
+#[test]
+fn shared_chat_author_cards_carry_pronouns_only_under_the_profile_rule() {
+    let mut w = W::new();
+    let (a, b, space) = (w.a.clone(), w.b.clone(), w.space.clone());
+    let space_id = space.strip_prefix("space:").unwrap().to_string();
+    let kai = new_id(NOW as u64, [40; 10]);
+    w.push(&a, "member.create", &format!("account:{a}"), &kai, json!({"name": "Kai", "pronouns": "they/them"}));
+    w.push(&a, "message.send", &space, &new_id(NOW as u64, [50; 10]), msg("hello", &[&kai], json!([])));
+    let card = |w: &W| -> Value {
+        let all = spaces::authors(&w.c, &b, &space_id).unwrap();
+        all["members"].as_array().unwrap().iter().find(|m| m["id"] == kai.as_str()).cloned().unwrap()
+    };
+    // a private profile (the default): the card is there, its pronouns aren't
+    assert_eq!(card(&w)["name"], "Kai");
+    assert_eq!(card(&w)["pronouns"], Value::Null);
+    // the profile open to followers but pronouns kept private: still nothing
+    w.c.execute(
+        "INSERT INTO follow(id, follower_account_id, target_account_id, status, created_at) VALUES ('f', ?1, ?2, 'active', 0)",
+        [&b, &a],
+    )
+    .unwrap();
+    w.c.execute(
+        "UPDATE member SET visibility = '{\"mode\":\"followers\"}', field_visibility = '{\"pronouns\":{\"mode\":\"private\"}}' WHERE id = ?1",
+        [&kai],
+    )
+    .unwrap();
+    assert_eq!(card(&w)["pronouns"], Value::Null);
+    // and both shared with Alex's account: they appear
+    w.c.execute("UPDATE member SET field_visibility = '{\"pronouns\":{\"mode\":\"followers\"}}' WHERE id = ?1", [&kai])
+        .unwrap();
+    assert_eq!(card(&w)["pronouns"], "they/them");
 }
