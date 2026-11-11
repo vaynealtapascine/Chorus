@@ -13,6 +13,9 @@ import { fillFiles, keepEverything } from './keep';
 import type { Entity } from '../core';
 import { TypingState, TypingThrottle, type TypingEntry, type TypingFrame, type TypingInput } from './typing';
 import type { CurrentFrontSystem } from '../core/fronts';
+import { heartbeat, MOVES, refusesDevice, WELCOME_WITHIN_MS, type Status } from './lifecycle';
+
+export type { Status } from './lifecycle';
 
 /** An op the server refused (SYNC §7 "Sync issues"). */
 /** A browser tab's message window (DATA_MODEL §5: "keep last N days offline", default 90). */
@@ -36,8 +39,6 @@ export interface Revision {
   fields: { text?: string; entities?: Entity[]; cw?: string | null; title?: string | null };
   at: number;
 }
-
-export type Status = 'offline' | 'connecting' | 'live' | 'no-device';
 
 export interface Projection {
   rows: Record<string, Record<string, { exists: boolean; fields: Record<string, unknown>; edits?: number }>>;
@@ -141,8 +142,20 @@ export class SyncClient {
   private typingThrottle = new TypingThrottle();
   private typingTimer: ReturnType<typeof setTimeout> | null = null;
   private typingOffset = 0;
+  // The connection (lifecycle.ts): `move` is the only place that changes `status` in the syncing
+  // tab, and the only one that opens or drops `ws` and sets or clears the two timers below.
   private backoff = 1000;
-  private timer: ReturnType<typeof setTimeout> | null = null;
+  /** offline: when to connect again */
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  /** connecting: the welcome deadline; live: the heartbeat */
+  private beatTimer: ReturnType<typeof setTimeout> | null = null;
+  /** live: when anything last arrived, and when this tab last pinged */
+  private heard = 0;
+  private pinged: number | null = null;
+  /** renewing: the one renewal in flight */
+  private renewal: Promise<void> | null = null;
+  /** a session renewed since the last welcome: renewing again goes through the backoff */
+  private renewed = false;
   private listeners = new Set<Listener>();
   private projectionListeners = new Set<ProjectionListener>();
   private cached: Projection | null = null;
@@ -271,6 +284,10 @@ export class SyncClient {
    * ops it made and never got to send, so read the metadata and the ops again first. */
   private async lead(takingOver: boolean): Promise<void> {
     this.leader = true;
+    // the last syncing tab learned this device was signed out: so is this one
+    if (this.status === 'signed-out') return;
+    // a status shown so far was the last syncing tab's; this one holds no socket yet
+    this.status = 'offline';
     if (takingOver && this.replica) {
       const p = await loadHead();
       let after: string | undefined;
@@ -318,11 +335,88 @@ export class SyncClient {
     }
   }
 
-  private setStatus(status: Status): void {
-    this.status = status;
-    if (status !== 'live') this.clearTyping();
-    if (this.leader) this.bus?.postMessage({ t: 'status', status } satisfies BusMessage);
+  /**
+   * Every change of the connection goes through here (the moves are listed in `MOVES`, D-148).
+   * Leaving a state drops what it held: the socket (held while connecting and live), the welcome
+   * deadline or heartbeat, the reconnect timer. Entering one starts what it holds, and the other
+   * tabs are told.
+   */
+  private move(to: Status): void {
+    const from = this.status;
+    if (!MOVES[from].includes(to)) {
+      console.warn(`sync: no move from ${from} to ${to}`);
+      return;
+    }
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    if (this.beatTimer) clearTimeout(this.beatTimer);
+    this.reconnectTimer = this.beatTimer = null;
+    if (this.ws && to !== 'live') {
+      const ws = this.ws;
+      this.ws = null; // its handlers stop here
+      ws.close();
+      this.replica?.disconnect();
+    }
+    this.status = to;
+    if (to !== 'live') this.clearTyping();
+    if (this.leader) this.bus?.postMessage({ t: 'status', status: to } satisfies BusMessage);
     this.emit();
+    if (to === 'connecting') {
+      this.open();
+      this.beatTimer = setTimeout(() => this.move('offline'), WELCOME_WITHIN_MS);
+    } else if (to === 'live') {
+      this.backoff = 1000;
+      this.renewed = false;
+      this.heard = Date.now();
+      this.pinged = null;
+      this.beat();
+    } else if (to === 'offline') {
+      const jitter = this.backoff * (0.7 + Math.random() * 0.6);
+      this.reconnectTimer = setTimeout(() => this.connect(), jitter);
+      this.backoff = Math.min(this.backoff * 2, 5 * 60_000);
+    } else if (to === 'renewing') {
+      this.renewSession();
+    }
+  }
+
+  /** Live: ping after a silence, and give the socket up when the ping goes unanswered too. */
+  private beat(): void {
+    const ws = this.ws;
+    if (this.status !== 'live' || !ws) return;
+    const now = Date.now();
+    const b = heartbeat(now, this.heard, this.pinged);
+    if (b.act === 'close') {
+      this.move('offline');
+      return;
+    }
+    if (b.act === 'ping') {
+      this.pinged = now;
+      ws.send(JSON.stringify({ t: 'ping', clock: { wall: now, mono: null, boot_id: null } }));
+    }
+    this.beatTimer = setTimeout(() => this.beat(), Math.max(0, b.next - now));
+  }
+
+  /** Sign a new session, once at a time; connect only after it has settled, either way. A device
+   * the server no longer knows is signed out; anything else is tried again after the backoff. */
+  private renewSession(): void {
+    if (this.renewal || !this.device) return;
+    const again = this.renewed;
+    this.renewed = true;
+    this.renewal = renew(this.device)
+      .then(
+        (dev): Status => {
+          this.device = dev;
+          return again ? 'offline' : 'connecting';
+        },
+        (e): Status => {
+          if (refusesDevice(e)) return 'signed-out';
+          console.warn('session renewal failed', e);
+          return 'offline';
+        },
+      )
+      .then((to) => {
+        this.renewal = null;
+        if (this.status === 'renewing') this.move(to);
+      });
   }
 
   /** Only messages from the last WINDOW_DAYS on this device; older ones page in over REST. */
@@ -639,19 +733,26 @@ export class SyncClient {
   }
 
   private connect(): void {
-    if (!this.replica || !this.device || this.opening || !this.leader) return;
-    this.setStatus('connecting');
+    if (!this.replica || !this.device || this.opening || !this.leader || this.status !== 'offline') return;
+    this.move('connecting');
+  }
+
+  /** The socket of a `connecting` move. */
+  private open(): void {
     const ws = new WebSocket(this.url());
     this.ws = ws;
     ws.onopen = () => {
+      if (this.ws !== ws) return;
       const clock = { wall: Date.now(), mono: null, boot_id: null };
       this.replica!.setWindow(this.keepAll ? undefined : Date.now() - WINDOW_DAYS * 86_400_000);
       ws.send(this.replica!.connect(JSON.stringify(clock), this.device!.session));
       this.changed(); // what the window dropped leaves storage too
     };
-    ws.onmessage = async (ev) => {
+    ws.onmessage = (ev) => {
       if (this.ws !== ws) return;
+      this.heard = Date.now(); // any frame is life (the heartbeat)
       const frame = JSON.parse(ev.data as string);
+      if (frame.t === 'pong') return; // says nothing more
       if (frame.t === 'typing') {
         this.receiveTyping(frame as TypingFrame);
         // Same browser tabs are this device: only fan incoming other-device presence to them.
@@ -659,18 +760,12 @@ export class SyncClient {
         return;
       }
       if (frame.t === 'error' && frame.code === 'unauthenticated') {
-        ws.close();
-        try {
-          this.device = await renew(this.device!);
-        } catch (e) {
-          console.warn('session renewal failed', e);
-        }
+        this.move('renewing');
         return;
       }
       if (frame.t === 'welcome') {
         this.typingOffset = frame.server_time - Date.now();
-        this.setStatus('live');
-        this.backoff = 1000;
+        this.move('live');
         void flushUploads(this.device);
         void this.keepFiles();
       }
@@ -681,25 +776,13 @@ export class SyncClient {
       if (frame.t === 'caught') this.caughtWatch?.(frame.scope);
     };
     ws.onclose = () => {
-      if (this.ws !== ws) return;
-      this.replica?.disconnect();
-      this.clearTyping();
-      this.setStatus('offline');
-      this.schedule();
+      if (this.ws === ws) this.move('offline');
     };
   }
 
-  private schedule(): void {
-    if (this.timer) clearTimeout(this.timer);
-    const jitter = this.backoff * (0.7 + Math.random() * 0.6);
-    this.timer = setTimeout(() => this.connect(), jitter);
-    this.backoff = Math.min(this.backoff * 2, 5 * 60_000);
-  }
-
   private reconnectNow(): void {
-    if (!this.leader || this.status === 'live' || this.status === 'connecting') return;
+    if (!this.leader || this.status !== 'offline') return;
     this.backoff = 1000;
-    if (this.timer) clearTimeout(this.timer);
     this.connect();
   }
 }

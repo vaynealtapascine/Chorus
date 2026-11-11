@@ -16,6 +16,15 @@ export class RateLimitedError extends Error {
   }
 }
 
+/** An error response from the API (API.md §1): its HTTP status and `error.code`, with the
+ * server's message to show. */
+export class ApiError extends Error {
+  constructor(readonly status: number, readonly code: string, message: string) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
 /** `Retry-After` in ms: delay-seconds or an HTTP date; 1 s when missing or unreadable. */
 export function retryAfterMs(response: Response, now = Date.now()): number {
   const v = response.headers.get('retry-after')?.trim();

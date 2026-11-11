@@ -101,6 +101,8 @@
     live: 'Live',
     connecting: 'Connecting…',
     offline: 'Offline · saved on this device',
+    renewing: 'Connecting…',
+    'signed-out': 'Signed out · not syncing',
     'no-device': '',
   };
   // a person account has one member, themself, and no front to switch (D-003)

@@ -1,7 +1,7 @@
 // Device identity: a non-extractable P-256 key, enrolment by invite, session renewal by signing a
 // server nonce (docs/API.md §2).
 import { saveDevice, type DeviceRecord } from './persist';
-import { apiFetch } from '../http';
+import { ApiError, apiFetch } from '../http';
 
 const b64 = (buf: ArrayBuffer): string => btoa(String.fromCharCode(...new Uint8Array(buf)));
 
@@ -16,7 +16,7 @@ async function post<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
+  if (!r.ok) throw new ApiError(r.status, j?.error?.code ?? '', j?.error?.message ?? `HTTP ${r.status}`);
   return j as T;
 }
 
