@@ -502,13 +502,13 @@ async fn follow_request(
 ) -> Result<Response, ApiError> {
     let conn = s.db();
     let me = who(&s, &conn, &headers)?;
-    let (id, op) = follows::request(&conn, &me.account_id, &b.target, now_ms())?;
-    let created = op.is_some();
-    if let Some(o) = op {
+    let asked = follows::ask(&conn, &me.account_id, &b.target, now_ms())?;
+    if let Some(o) = asked.op {
         fan_out(&s, &conn, &[o], None)?;
     }
-    let status = if created { StatusCode::CREATED } else { StatusCode::OK };
-    Ok((status, Json(json!({"id": id}))).into_response())
+    // a request held back by the cooldown (D-150) answers exactly like a new one
+    let status = if asked.new { StatusCode::CREATED } else { StatusCode::OK };
+    Ok((status, Json(json!({"id": asked.id}))).into_response())
 }
 
 async fn follow_prefs(

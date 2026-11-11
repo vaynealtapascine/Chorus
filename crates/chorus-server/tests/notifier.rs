@@ -825,3 +825,52 @@ fn additional_fronts_and_custom_layers_reveal_only_with_explicit_grants() {
         w.c.query_row("SELECT count(*) FROM follower_front_view WHERE front_id <> ''", [], |r| r.get(0)).unwrap();
     assert_eq!(rows, 0, "a revoked front's revealed view is withdrawn");
 }
+
+/// Q26/D-150: asking again within 30 minutes after the followed account declined or removed
+/// you looks like any new request but writes nothing, so nobody hears of it; after that it goes
+/// through. Your own unfollow starts no wait.
+#[test]
+fn asking_again_soon_after_a_no_goes_nowhere() {
+    let mut w = World::new();
+    let friend = w.friend.clone();
+    let ops = |w: &World| -> i64 {
+        w.c.query_row("SELECT count(*) FROM op WHERE kind = 'follow.request'", [], |r| r.get(0)).unwrap()
+    };
+    let follows_of = |w: &World| -> i64 {
+        w.c.query_row("SELECT count(*) FROM follow WHERE follower_account_id = ?1", [&friend], |r| r.get(0)).unwrap()
+    };
+    let minute = 60_000;
+
+    // asked, then declined by the Stars' phone (an empty follow.end, as the clients write it)
+    let asked = follows::ask(&w.c, &friend, "@stars", NOW).unwrap();
+    assert!(asked.new && asked.op.is_some());
+    w.push("follow.end", &asked.id, json!({}), NOW + minute);
+    assert_eq!((ops(&w), follows_of(&w)), (1, 1));
+
+    // asking again 10 minutes later: a fresh id, answered as new, and nothing written
+    let again = follows::ask(&w.c, &friend, "@stars", NOW + 11 * minute).unwrap();
+    assert!(again.new, "answered like a new request");
+    assert!(again.op.is_none());
+    assert_ne!(again.id, asked.id);
+    assert_eq!((ops(&w), follows_of(&w)), (1, 1), "no op, no follow");
+    // and again: still nothing, each time with its own id
+    let third = follows::ask(&w.c, &friend, "@stars", NOW + 30 * minute).unwrap();
+    assert!(third.op.is_none() && third.id != again.id);
+
+    // 30 minutes after the no, it goes through
+    let later = follows::ask(&w.c, &friend, "@stars", NOW + 31 * minute + 1).unwrap();
+    assert!(later.new && later.op.is_some());
+    assert_eq!((ops(&w), follows_of(&w)), (2, 2));
+
+    // accepted, then removed by the Stars through the API: the same wait
+    w.push("follow.accept", &later.id, json!({}), NOW + 32 * minute);
+    follows::end(&w.c, &w.sys, &later.id, NOW + 33 * minute).unwrap();
+    assert!(follows::ask(&w.c, &friend, "@stars", NOW + 40 * minute).unwrap().op.is_none());
+
+    // Alex's own unfollow starts none
+    let after = NOW + 70 * minute;
+    let mine = follows::ask(&w.c, &friend, "@stars", after).unwrap();
+    assert!(mine.op.is_some());
+    follows::end(&w.c, &friend, &mine.id, after + minute).unwrap();
+    assert!(follows::ask(&w.c, &friend, "@stars", after + 2 * minute).unwrap().op.is_some());
+}
