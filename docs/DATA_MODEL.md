@@ -272,7 +272,8 @@ CREATE TABLE device (
   last_seen_at     INTEGER,
   clock_offset_ms  INTEGER NOT NULL DEFAULT 0,   -- server_time - device_time, smoothed
   push_endpoint    TEXT,                     -- UnifiedPush endpoint URL
-  revoked_at       INTEGER
+  revoked_at       INTEGER,
+  wipe_on_signout  INTEGER NOT NULL DEFAULT 0 -- signed out with "erase now" (D-152, migration 0023)
 );
 
 CREATE TABLE invite (

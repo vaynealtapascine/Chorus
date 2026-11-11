@@ -300,6 +300,16 @@ never imply eligibility. Raw front/purpose metadata remains private to the ownin
   message (`visibility::op_visible_to`): public, in a channel it may view, and not in a thread
   under a message it can't see. A thread is as private as its parent, so a thread under a
   system-only aside notifies nobody outside the account, whatever is said in it.
+- **Forwards (D-151).** A `message.forward` notifies exactly like a `message.send` (every rule
+  above, the own-space member rules and the visibility check). Its text is the forwarder's own
+  comment, else "Forwarded a message"; never the forwarded words.
+- **Listed only while the source can be read (D-149).** `GET /notifications` leaves out a chat
+  item (`mention`, `dm`, `reply`, `message`, `member_dm`), a `poll_nudge`, or a `post` /
+  `post_reply` whose message or post the reader can't read now (deleted, or no longer theirs:
+  `messages::readable_by`, `posts::readable_sql`). Decided at read time, so a restore or regained
+  access brings it back; nothing is erased. A client reading only `?after=` (Android's no-push
+  poller) can't learn that an item it already showed has left; the inbox screens read the whole
+  list and do.
 - In your own internal space, a mention of one of your members (by name, through a group, or
   `@front`) and a member DM ping your account under each member's rule: `pref`
   key `notify_member:<member id>` = `{"mentions": rule, "dms": rule}`, where rule is `always`,
@@ -373,7 +383,8 @@ and its recipient may read it (`posts::readable_sql`), and for `post` the recipi
 active alert for one of its authors (`post_alerts::still_deliverable`, called from
 `activity::process_due`). Otherwise the row is cancelled: nothing is pushed or listed. So a post
 deleted or narrowed, a follow or bucket assignment that ended, or an alert declined during a
-random delay leaves no ping behind. A notification already delivered stays (Q25).
+random delay leaves no ping behind. A notification already delivered leaves the list while its
+post can't be read (D-149, §7).
 
 ## 7a. Implementation (`chorus_core::notify`)
 

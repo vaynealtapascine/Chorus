@@ -423,7 +423,7 @@ user action
 | Op rejected (e.g. lost permission while offline) | Shown in *Sync issues* with reason; local state reverted; user can copy text of a rejected message. Android's Retry (F10.4) writes the same op again under a new id (same kind, scope, entity, acting `member_id` and payload) before letting the refused one go; a retry the server takes shows under *Fixed* for a week (device-local, `Replica::op_status`). |
 | New device joins | Snapshot of each scope + views, then live. |
 | Newer client, older server | Server stores unknown kinds; if `core_min` > client core, client shows "Update Chorus" and stays read-only for sync (keeps queuing locally). |
-| Device revoked | Server closes the socket with `revoked`; device wipes local data after telling the user (Advanced: keep an export first). |
+| Device revoked | The socket's next frame gets `error unauthenticated` and is closed; renewal answers `403 signed_out` with `at` and `wipe_at` (API §2.2). The device goes back to onboarding with a line saying it was signed out, keeps its copy until `wipe_at` (two days after, or at once if the person signing it out chose that) and then erases it, unsynced writes included. A device link for the same account before then picks the copy back up; any other enrolment erases it first. A `401 bad_key` (the key no longer matches) also goes back to onboarding, with nothing erased on a timer (D-152, D-153). |
 | Server restored from an older backup | See §7.3. |
 
 ### 7.3 Epochs and restore

@@ -10,12 +10,12 @@ All questions from the 2026-09-23 spec round are answered (D-045 to D-054). Q14 
 | Q21 | Confirm the shared-space/DM typing indicator default: should other accounts see typing only after “Show when we're typing in shared chats” is enabled? (Owner request, 2026-10-27; D-087.) | **Off.** Same-account other devices still receive it; internal spaces never send it across accounts. |
 | Q22 | Figma F5.7 shows “Also send to General” under a thread's composer; the spec has no such option. Android implements it as: when ticked, the reply is posted in the thread *and* as a separate message in the parent channel, replying to the thread's parent. Keep, change (e.g. one message shown in both places), or drop? (2026-10-28, Android chat parity.) | **Two messages**, unticked each time; web unchanged until answered. |
 | Q23 | When a member who voted in a poll is deleted or archived, should their vote still count? POLLS.md only checks the member at voting time; deleting is a restorable tombstone, so dropping the vote would bring it back on restore. (Gemini review BUG-04, 2026-11-06.) | **Keeps counting**, as now. |
-| Q25 | When a message or post is deleted, or the reader loses access to it, should its already delivered notification (which holds up to 280 characters of text) leave the reader's Notifications list? (Audit, 2026-11-11; D-147 covers only notifications not yet delivered.) | **Stays**, as now. |
-| Q26 | After a follow request is declined or a follow is ended, the same account can ask again at once and without limit, each time a new request for the other side. Should there be a cooldown or a block? (Audit, 2026-11-11.) | **Unchanged.** |
-| Q27 | A forwarded message (`message.forward`) notifies nobody, even in a DM or a channel set to all messages, because only `message.send` queues notifications. Should forwards notify like messages? (Audit, 2026-11-11.) | **Unchanged** (forwards don't notify). |
-| Q28 | A signed-out (revoked) device keeps its local copy of everything. Should it lock or erase it when it learns it was signed out? (Audit, 2026-11-11; D-148.) | **Keeps it** (D-053) and shows the signed-out notice. |
 
 Q18 (past-history corrections while following) was answered 2026-10-25: keep following (D-083).
 Q19 (additional-front follower access) was answered 2026-10-25: explicit grants are required (D-084).
 Q24 (a friend's member count) was answered 2026-11-08: only what is shared (D-138).
+Q25 (delivered notifications whose source is gone) was answered 2026-11-11: they leave the list while it is gone (D-149).
+Q26 (asking again after a no) was answered 2026-11-11: a silent 30-minute cooldown (D-150).
+Q27 (forwards) was answered 2026-11-11: they notify like messages (D-151).
+Q28 (a signed-out device's copy) was answered 2026-11-11: kept two days then erased, or erased at once if chosen; the device goes back to onboarding (D-152, D-153).
 Q20 (mentions, reading and chat availability) was answered 2026-10-25: separate per-front layer selections using the channel's selected front, preserving existing defaults (D-085).

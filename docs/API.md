@@ -53,8 +53,11 @@ needs only the link):
 
 ```
 POST /auth/invite { "code": "…" }
-→ 200 { "kind": "system" | "person" | "device" }
+→ 200 { "kind": "system" | "person" | "device", "account_id"?: "…" }
 ```
+
+`account_id` comes only with a `device` invite: the account the new device would join, so a
+signed-out device can tell whether a link is for its own account (D-153).
 
 Unknown, used up and expired codes are all the same `400 bad_request`. Like redeeming, it counts
 against the `/auth/*` rate limit.
@@ -75,10 +78,13 @@ that certificate (its SHA-256, the `tls_pin` in `GET /server`), not a CA.
 can scan it from the web app. `CHORUS_QR_SAMPLES=<dir> cargo test -p chorus-server --lib qr`
 followed by `python scripts/qr-check.py <dir>` decodes samples with OpenCV.
 
-Sign out another device of the same account (a lost phone): `POST /devices/{id}/revoke` → 204.
-Its sessions end, it can't renew, and its open sync socket is closed on its next frame. Revoking
-the device you're calling from is a 400; another account's device is a 404. `GET /me` lists the
-account's devices.
+Sign out another device of the same account (a lost phone): `POST /devices/{id}/revoke` → 204,
+with an optional body `{"wipe": true}` (absent or `false`: the device keeps its copy for two days;
+`true`: it erases it at once; D-152). Its sessions end, it can't renew, and its open sync socket is
+closed on its next frame (`error unauthenticated`). When it next renews it learns when it was
+signed out (§2.2). Revoking the device you're calling from is a 400; another account's device is
+a 404; a body that isn't that JSON is a 400. `GET /me` lists the account's devices (signed-out
+ones aren't listed).
 
 `GET /push/vapid` → `{public_key}` is the server's VAPID key for browsers' `pushManager.subscribe`
 (D-061). Browsers then register below like any device.
@@ -109,9 +115,19 @@ resolves to. A device can't make the server POST to the host's own services.
 
 - Session token: opaque random 256-bit, stored hashed, 30-day sliding expiry, bound to a device.
 - Renewal (no password ever):
-  `POST /auth/challenge {device_id}` → `{nonce}`;
+  `POST /auth/challenge {device_id}` → `{nonce, instance_id}` (also for a signed-out device; an
+  unknown device is `403 forbidden`);
   `POST /auth/session {device_id, nonce, signature}` (ECDSA P-256 over
   `"chorus-auth\n" + nonce + "\n" + device_id + "\n" + instance_id`) → `{session, expires_at}`.
+  Its refusals (D-152, D-153):
+  - `401 unauthenticated`: the nonce is unknown, used, expired or another device's, or the
+    signature can't be decoded. Ask for a new challenge.
+  - `401 bad_key`: the nonce was this device's and a well-formed signature doesn't verify against
+    its enrolled key (the key was lost). Clients go back to onboarding with no erase times.
+  - `403 signed_out`, only after the signature verifies, so only the key's holder learns it:
+    `{"error": {"code": "signed_out", "message": "this device was signed out", "retry": false},
+    "signed_out": {"at": <revoked_at ms>, "wipe_at": <ms>}}`, where `wipe_at` is `at` if erasing at
+    once was chosen, else `at` + 2 days. No session is issued.
 - Private keys: Android Keystore (non-exportable, optional user-auth binding in Advanced); web
   WebCrypto non-extractable key in IndexedDB.
 - Optional second factor (Advanced, per account): **Tailscale identity**. Caddy forwards
@@ -207,6 +223,8 @@ GET  /posts/activity?before=&limit=        other accounts' readable replies, quo
                                             {items:[{kind: reply|quote|repost|reaction, at, post?,
                                             emoji?, member_id?, member_name?, target:{id,kind,title,
                                             text,cw}}], reply_counts:{post:n}, reactions:{post:[…]}};
+                                            a reaction's member_id/member_name are null unless the
+                                            reactor's profile is open to the caller (D-154)
                                             devices only (tokens get empty lists)
 GET  /posts/{id}                           with replies ?depth=
                                            + reply_count on it and each reply, and ancestors (what it
@@ -224,8 +242,10 @@ GET  /posts/{id}/revisions                 {items:[{rev,title,text,entities,cw,a
   parent/repost links. Authors include ordered member ids and small author cards; a card says
   `profile: true` and carries `avatar_blob` only when the reader may open that member's profile
   (D-101, the rule the blob read uses), else `profile: false` and no picture. Each post also
-  includes ordered attachment metadata and blob hashes, plus present post reactions with emoji and
-  reactor member id/name; blob downloads enforce the same current
+  includes ordered attachment metadata and blob hashes, plus present post reactions
+  `[{emoji, member_id, member_name}]`: for a reactor of another account, `member_id` and
+  `member_name` (the shown name, never a full name behind a display name) only when that member's
+  profile is open to the reader, else both `null` (D-154); blob downloads enforce the same current
   audience. API tokens (`read:posts`) get only their own account's posts here, and only their
   own account's replies under one.
 GET  /timeline?before=&limit=              combined system timeline
@@ -268,7 +288,9 @@ PUT  /alerts/{member}/{account}            say yes (they're told) → 204
 DELETE /alerts/{member}/{account}          say no, or stop their alerts (not told; they keep seeing
                                            "requested") → 204
 GET  /follows                               following + followers ({following:[…], followers:[…]}, open ones)
-POST /follows {target:"@handle"|account_id}  ask to follow (201; 200 with the open follow's id if one exists)
+POST /follows {target:"@handle"|account_id}  ask to follow (201; 200 with the open follow's id if one exists);
+                                             within 30 minutes after the target declined or removed the caller,
+                                             the same 201 with a fresh id, but nothing is written (D-150)
 PUT  /follows/{id}/prefs {…}                 the follower's own prefs (NOTIFICATIONS.md §4)
 GET  /follows/{id}/view                      what that follower sees of you right now (Figma F7.9): the
                                              same view as their `/accounts/{you}/view`; only the followed
@@ -277,7 +299,9 @@ DELETE /follows/{id}                         unfollow (follower) or remove (targ
 GET  /notifications?after=<ms>             delivered notifications, newest first (100); `after` keeps
                                             only newer ones, and pings caused by the calling device's
                                             own writes are left out (D-096: phones without push poll it);
-                                            `poll_nudge` (D-136) has `post_id`, or `message_id` + `channel_id`
+                                            `poll_nudge` (D-136) has `post_id`, or `message_id` + `channel_id`;
+                                            an item whose message or post the caller can't read now
+                                            (deleted, or no longer theirs) is left out while so (D-149)
 GET  /insights/{chart}?from=&to=           dashboard data (same numbers as the views)
 ```
 
