@@ -142,3 +142,18 @@ export async function wipe(): Promise<void> {
   const tx = d.transaction(['ops', 'kv', 'blob_uploads'], 'readwrite');
   await Promise.all([tx.objectStore('ops').clear(), tx.objectStore('kv').clear(), tx.objectStore('blob_uploads').clear(), tx.done]);
 }
+
+/** The unsaved-ops journal with `ops` added (tabs of one browser share it): by op id, `ops`' copy
+ * winning. An unreadable journal is replaced. */
+export function mergeJournal(held: string | null, ops: { id: string }[]): { id: string }[] {
+  let old: unknown = [];
+  try {
+    old = JSON.parse(held ?? '[]');
+  } catch {
+    // replaced
+  }
+  const out = new Map<string, { id: string }>();
+  for (const o of Array.isArray(old) ? old : []) if (o && typeof o.id === 'string') out.set(o.id, o);
+  for (const o of ops) out.set(o.id, o);
+  return [...out.values()];
+}

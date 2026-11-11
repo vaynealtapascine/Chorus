@@ -2,7 +2,7 @@
 // Durable protocol logic is in chorus-core (WebReplica); ephemeral typing stays in TypeScript.
 import { WebReplica, newId } from '../core/pkg/chorus_wasm.js';
 import type { SwitchRow } from '../front.svelte';
-import { loadHead, loadOps, save, saveSnapshot, type Changes, type DeviceRecord, type Snapshot } from './persist';
+import { loadHead, loadOps, mergeJournal, save, saveSnapshot, type Changes, type DeviceRecord, type Snapshot } from './persist';
 import { renew } from './device';
 import { applyDelta, type Delta } from './delta';
 import { readSnapshot } from './snapshot';
@@ -77,9 +77,11 @@ type BusMessage =
  * synchronous work, and localStorage is synchronous). */
 const UNSAVED = 'chorus-unsaved-ops';
 
+/** Added to what is there: the tabs of a browser share the key, and a browser quitting takes
+ * them all at once. With nothing unsaved here, an older journal stays as it is. */
 function journalUnsaved(ops: { id: string }[]): void {
   try {
-    if (ops.length) localStorage.setItem(UNSAVED, JSON.stringify(ops));
+    if (ops.length) localStorage.setItem(UNSAVED, JSON.stringify(mergeJournal(localStorage.getItem(UNSAVED), ops)));
   } catch {
     // no localStorage (private mode, full): IndexedDB's own write may still land
   }
