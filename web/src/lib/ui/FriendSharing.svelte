@@ -2,6 +2,9 @@
   // F7.9: what one follower sees of us right now (their own view, GET /follows/{id}/view), how much
   // they hear (the follow override), their buckets, what else we share with them, who they hear
   // about (each member's announce list) and the rest just for them. Every change saves as it's made.
+  import SectionLabel from './kit/SectionLabel.svelte';
+  import ValueRow from './kit/ValueRow.svelte';
+  import Switch from './kit/Switch.svelte';
   import Chip from './kit/Chip.svelte';
   import '../design/friends.css';
   import { onMount } from 'svelte';
@@ -77,32 +80,32 @@
           <p class="fr-small">{[sinceLine(seen, now), seen.revealed_at ? `told them ${shortAgo(seen.revealed_at)} ago` : null].filter(Boolean).join(' · ')}</p>
         {/if}
       </div>
-      <h2 class="fr-section"><span>How much they hear</span></h2>
+      <SectionLabel inset label="How much they hear" />
       <div class="fr-seg" role="group" aria-label="How much they hear">
         {#each PRESET_IDS as p (p)}<button aria-pressed={choice === p} onclick={() => setCeiling(presetCeiling(p, override))}>{presetName(p)}</button>{/each}
       </div>
       <p class="fr-about">{choice === 'inherit' ? `As their bucket says (${bucketsSay}). Pick one to set it just for them.` : choice === 'custom' ? `Set detail by detail under Just for ${name}.` : presetAbout(choice)}</p>
     {/if}
-    <h2 class="fr-section"><span>Buckets</span></h2>
+    <SectionLabel inset label="Buckets" />
     <div class="fr-chips">
       {#each theirs as b (b.id)}<Chip on href="#/people/bucket/{encodeURIComponent(b.id)}"><BucketGlyph icon={b.icon} color={b.color} size={15} />{b.name}</Chip>{/each}
       {#if buckets(projection).some((b) => !theirs.includes(b))}<Chip onclick={() => (adding = true)}><Icon name="plus" size={14} />Add</Chip>{/if}
       {#if !buckets(projection).length}<span class="fr-line quiet">No buckets yet. Make one under Sharing.</span>{/if}
     </div>
     {#if !person}
-      <h2 class="fr-section"><span>Also share</span></h2>
+      <SectionLabel inset label="Also share" />
       {@render toggle('Who’s here now', 'On their Friends tab and our profile', effective('share_current_front', true), (on) => setCeiling({ ...override, share_current_front: on }))}
       {@render toggle('Front history', 'Last 30 days, times as shared', effective('share_history', false), (on) => setCeiling({ ...override, share_history: on }))}
       {@render toggle('Fronting stats', 'Each member’s share, whole days only', effective('share_stats', false), (on) => setCeiling({ ...override, share_stats: on }))}
-      <button class="fr-link" onclick={() => (hears = true)}><span class="fr-text"><strong>Who they hear about</strong><span>{hearsAbout(hearing.map(({ m, on }) => [m.display_name ?? m.name, on]))}</span></span><span class="chev"><Icon name="chevron-right" size={18} /></span></button>
-      <button class="fr-link" onclick={() => (justFor = true)}><Icon name="sliders" /><span class="fr-text"><strong>Just for {name}</strong><span>Delay, time shown, quiet hours, extra fronts</span></span><span class="chev"><Icon name="chevron-right" size={18} /></span></button>
+      <ValueRow label="Who they hear about" sub={hearsAbout(hearing.map(({ m, on }) => [m.display_name ?? m.name, on]))} onclick={() => (hears = true)} />
+      <ValueRow icon="sliders" label="Just for {name}" sub="Delay, time shown, quiet hours, extra fronts" onclick={() => (justFor = true)} />
     {/if}
     <button class="fr-danger" onclick={() => (removing = true)}>Remove follower</button>
   {/if}
 </section>
 
 {#snippet toggle(title: string, sub: string, on: boolean, set: (on: boolean) => void)}
-  <button class="fr-toggle" role="switch" aria-checked={on} onclick={() => set(!on)}><span class="fr-text"><strong>{title}</strong><span>{sub}</span></span><span class="fr-switch"></span></button>
+  <Switch checked={on} label={title} {sub} onchange={set} />
 {/snippet}
 
 {#if adding && f}
@@ -153,7 +156,6 @@
   .seen-title { display: flex; align-items: center; gap: var(--s-2); color: var(--accent); font-size: 14px; }
   .seen p { margin: 0; }
   .who { display: flex; align-items: center; gap: 10px; }
-  .chev { color: var(--ink-3); display: grid; }
   .menu { display: grid; gap: 2px; }
   .menu button { display: flex; align-items: center; gap: 14px; padding: var(--s-3); border: 0; border-radius: var(--r-row); background: none; color: var(--ink); font: inherit; font-size: var(--fs-base); text-align: left; cursor: pointer; }
   .menu button:hover { background: var(--surface-2); }

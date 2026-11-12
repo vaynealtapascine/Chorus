@@ -2,11 +2,12 @@
   // Ceiling details as rows (F7.10): each shows its value and opens a sheet to change it or go back
   // to what it inherits, and an inherited one says what that is ("23:00–08:00 · from Everyone else").
   // Switch-outs is a switch. Extra fronts and layers (D-084) and the rarer details come last.
+  import ValueRow from './kit/ValueRow.svelte';
+  import Switch from './kit/Switch.svelte';
   import { CEILING_FIELDS, withField } from '../bucket-controls';
   import { fieldValue } from '../friends-screens';
   import { sync, type Projection } from '../sync/client';
   import CeilingField from './CeilingField.svelte';
-  import Icon from './Icon.svelte';
   import Sheet from './Sheet.svelte';
 
   let { projection, ceiling, inherited, beneath = null, onchange }: {
@@ -48,19 +49,13 @@
 {#each MAIN as key (key)}
   {@const f = fields[key]}
   {#if f?.kind === 'bool'}
-    <button class="fr-toggle" role="switch" aria-checked={boolOn(key)} onclick={() => onchange(withField(ceiling, key, !boolOn(key)))}>
-      <span class="fr-text"><strong>{TITLES[key] ?? f.label}</strong><span>{key === 'announce_leaving' ? 'Tell them when someone leaves' : f.hint ?? ''}</span></span>
-      <span class="fr-switch"></span>
-    </button>
+    <Switch checked={boolOn(key)} label={TITLES[key] ?? f.label} sub={key === 'announce_leaving' ? 'Tell them when someone leaves' : f.hint ?? ''} onchange={(next) => onchange(withField(ceiling, key, next))} />
   {:else if f}
-    <button class="fr-link" onclick={() => (open = key)}>
-      <span class="fr-text"><strong>{TITLES[key] ?? f.label}</strong><span>{custom(key) ? NOTES[key] ?? '' : `${fieldValue(key, below(key))} · from ${inherited}`}</span></span>
-      <span class="fr-value">{custom(key) ? fieldValue(key, ceiling[key]) : 'Inherit'}</span>
-    </button>
+    <ValueRow label={TITLES[key] ?? f.label} sub={custom(key) ? NOTES[key] ?? '' : `${fieldValue(key, below(key))} · from ${inherited}`} value={custom(key) ? fieldValue(key, ceiling[key]) : 'Inherit'} onclick={() => (open = key)} />
   {/if}
 {/each}
-<button class="fr-link" onclick={() => (grants = true)}><span class="fr-text"><strong>Extra fronts</strong><span>{grantSummary}</span></span><span class="chev"><Icon name="chevron-right" size={18} /></span></button>
-<button class="fr-link" onclick={() => (more = true)}><span class="fr-text"><strong>More details</strong><span>Daily limit, digest, who’s hidden, “notify now”</span></span><span class="chev"><Icon name="chevron-right" size={18} /></span></button>
+<ValueRow label="Extra fronts" sub={grantSummary} onclick={() => (grants = true)} />
+<ValueRow label="More details" sub="Daily limit, digest, who’s hidden, “notify now”" onclick={() => (more = true)} />
 
 {#if open}
   {@const f = fields[open]}
@@ -80,13 +75,10 @@
     {#if !grantable.length}<p class="fr-line quiet">You have no other fronts or custom layers.</p>{/if}
     {#each grantable as g (g.key + g.id)}
       {@const on = granted(g.key).includes(g.id)}
-      <button class="fr-toggle" role="switch" aria-checked={on} onclick={() => setGrant(g.key, g.id, !on)}>
-        <span class="fr-text"><strong>{g.name}</strong><span>{g.kind}</span></span><span class="fr-switch"></span>
-      </button>
+      <Switch checked={on} label={g.name} sub={g.kind} onchange={(next) => setGrant(g.key, g.id, next)} />
     {/each}
   </Sheet>
 {/if}
 
 <style>
-  .chev { color: var(--ink-3); display: grid; }
 </style>

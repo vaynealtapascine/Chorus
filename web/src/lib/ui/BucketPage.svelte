@@ -1,6 +1,7 @@
 <script lang="ts">
   // A bucket (F7.10), or a new one: its look, its preset and every detail as a row, who's in it, and
   // deleting it. Changes save as they're made; the name saves when it changes.
+  import SectionLabel from './kit/SectionLabel.svelte';
   import '../design/friends.css';
   import { onMount } from 'svelte';
   import { BUCKET_SWATCHES, DEFAULT_BUCKET_ICON } from '../bucket-controls';
@@ -61,19 +62,19 @@
   </div>
   {#if !bucket}
     {#if !person}
-      <h2 class="fr-section"><span>Preset</span></h2>
+      <SectionLabel inset label="Preset" />
       <div class="fr-seg" role="group" aria-label="Preset">{#each PRESET_IDS as p (p)}<button aria-pressed={preset === p} onclick={() => (preset = p)}>{presetName(p)}</button>{/each}</div>
       <p class="fr-about">{presetAbout(preset)}</p>
     {/if}
     <div class="create"><button class="fr-wide" disabled={!name.trim()} onclick={create}>Create bucket</button></div>
   {:else}
     {#if !person}
-      <h2 class="fr-section"><span>Preset</span>{#if !(PRESET_IDS as readonly string[]).includes(choice)}<span class="fr-aside">{choice === 'inherit' ? 'Everyone else’s' : 'Custom'}</span>{/if}</h2>
+      <SectionLabel inset label="Preset" aside={!(PRESET_IDS as readonly string[]).includes(choice) ? choice === 'inherit' ? 'Everyone else’s' : 'Custom' : null} />
       <div class="fr-seg" role="group" aria-label="Preset">{#each PRESET_IDS as p (p)}<button aria-pressed={choice === p} onclick={() => set({ ceiling: presetCeiling(p, bucket.ceiling) })}>{presetName(p)}</button>{/each}</div>
-      <h2 class="fr-section"><span>Details</span><span class="fr-aside">inherits from Everyone else</span></h2>
+      <SectionLabel inset label="Details" aside="inherits from Everyone else" />
       <CeilingDetails {projection} ceiling={bucket.ceiling} inherited="Everyone else" beneath={accountDefault(projection)} onchange={(c) => set({ ceiling: c })} />
     {/if}
-    <h2 class="fr-section"><span>Who’s in it</span><span class="fr-aside">{inside.size}</span></h2>
+    <SectionLabel inset label="Who’s in it" aside={inside.size} />
     {#if !friends.activeFollowers.length}<p class="fr-line quiet pad">No followers yet.</p>{/if}
     {#each friends.activeFollowers as f (f.id)}
       {@const on = inside.has(f.account.id)}

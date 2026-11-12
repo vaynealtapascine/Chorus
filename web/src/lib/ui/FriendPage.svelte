@@ -3,6 +3,8 @@
   // our bucket pills, Message / Notifying / Chats (a person: Tell me about posts), who's around now
   // as they share it, the members they share, and what's between us. A person shows their posts,
   // journal and about instead of fronting. Only what the server's filtered reads allow.
+  import SectionLabel from './kit/SectionLabel.svelte';
+  import ValueRow from './kit/ValueRow.svelte';
   import Pill from './kit/Pill.svelte';
   import Button from './kit/Button.svelte';
   import '../design/friends.css';
@@ -179,7 +181,7 @@
         {/if}
       {/if}
       {#if shared?.length}
-        <h2 class="fr-section"><span>Members you can see</span><span class="fr-aside">{shared.length}</span></h2>
+        <SectionLabel inset label="Members you can see" aside={shared.length} />
         {#if viewerPerson}
           <ul class="fr-list">
             {#each shared as m (m.id)}
@@ -208,15 +210,15 @@
 
 {#snippet between(r: NonNullable<typeof friends.rows[number]>)}
       {#if (r.follower?.status === 'active') || follows(r) || spaces.length}
-    <h2 class="fr-section"><span>Between you</span></h2>
+    <SectionLabel inset label="Between you" />
     {#if r.follower?.status === 'active'}
-      <a class="fr-link" href="#/people/share/{encodeURIComponent(r.follower.id)}"><Icon name="shield" /><span class="fr-text"><strong>What you share with them</strong><span>{share()}</span></span><span class="chev"><Icon name="chevron-right" size={18} /></span></a>
+      <ValueRow icon="shield" label="What you share with them" sub={share()} href="#/people/share/{encodeURIComponent(r.follower.id)}" />
     {/if}
     {#if follows(r) && r.following}
-      <a class="fr-link" href="#/people/notify/{encodeURIComponent(r.following.id)}"><Icon name="bell" /><span class="fr-text"><strong>Notifications from them</strong><span>{prefsSummary(r.following.prefs ?? {}, new Map((shared ?? []).map((m) => [m.id, shownMember(m)])), now)}</span></span><span class="chev"><Icon name="chevron-right" size={18} /></span></a>
+      <ValueRow icon="bell" label="Notifications from them" sub={prefsSummary(r.following.prefs ?? {}, new Map((shared ?? []).map((m) => [m.id, shownMember(m)])), now)} href="#/people/notify/{encodeURIComponent(r.following.id)}" />
     {/if}
     {#if spaces.length}
-      <button class="fr-link" onclick={() => (chats = true)}><Icon name="users" /><span class="fr-text"><strong>Shared spaces</strong><span>{spaces.map(spaceName).join(' · ')}</span></span><span class="chev"><Icon name="chevron-right" size={18} /></span></button>
+      <ValueRow icon="users" label="Shared spaces" sub={spaces.map(spaceName).join(' · ')} onclick={() => (chats = true)} />
     {/if}
   {/if}
 {/snippet}

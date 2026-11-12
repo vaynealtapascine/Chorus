@@ -2,6 +2,9 @@
   // F7.12: what we hear from one friend, our own prefs (NOTIFICATIONS §4) that can only make it
   // quieter than they allow: their switches (who, which layers, switch-outs), how they arrive, quiet
   // hours, a mute, and post alerts per member (D-106). Each change saves as it's made.
+  import SectionLabel from './kit/SectionLabel.svelte';
+  import ValueRow from './kit/ValueRow.svelte';
+  import Switch from './kit/Switch.svelte';
   import Chip from './kit/Chip.svelte';
   import '../design/friends.css';
   import { onMount } from 'svelte';
@@ -71,10 +74,8 @@
   {:else}
     {#if error}<p class="fr-error" role="alert">{error}</p>{/if}
     {#if isSystem(f.account)}
-      <h2 class="fr-section"><span>Switches</span></h2>
-      <button class="fr-toggle" role="switch" aria-checked={on} onclick={() => save({ ...prefs, enabled: !on })}>
-        <span class="fr-text"><strong>Tell me when they switch</strong><span>As often and as exactly as {name} allow</span></span><span class="fr-switch"></span>
-      </button>
+      <SectionLabel inset label="Switches" />
+      <Switch checked={on} label="Tell me when they switch" sub="As often and as exactly as {name} allow" onchange={(next) => save({ ...prefs, enabled: next })} />
       {#if members.length}
         <p class="fr-label">About</p>
         <div class="fr-chips">
@@ -92,10 +93,8 @@
           <Chip aria-pressed={chosen} disabled={!on} onclick={() => save(withLevel(prefs, id))}>{#if chosen}<Icon name="check" size={14} />{/if}{label}</Chip>
         {/each}
       </div>
-      <button class="fr-toggle" role="switch" aria-checked={switchOuts(prefs)} disabled={!on} onclick={() => save({ ...prefs, switch_outs: !switchOuts(prefs) })}>
-        <span class="fr-text"><strong>Switch-outs</strong><span>When someone stops fronting</span></span><span class="fr-switch"></span>
-      </button>
-      <h2 class="fr-section"><span>How they arrive</span></h2>
+      <Switch checked={switchOuts(prefs)} disabled={!on} label="Switch-outs" sub="When someone stops fronting" onchange={(next) => save({ ...prefs, switch_outs: next })} />
+      <SectionLabel inset label="How they arrive" />
       <div class="fr-seg" role="group" aria-label="How they arrive">
         {#each DELIVERIES as d (d)}
           <button aria-pressed={delivery(prefs) === d} onclick={() => {
@@ -105,9 +104,9 @@
       </div>
       {#if delivery(prefs) === 'digest_daily'}<p class="fr-about">Choose it again to change the time.</p>{/if}
     {/if}
-    <button class="fr-link" onclick={openQuiet}><span class="fr-text"><strong>Quiet hours</strong><span>{quiet(prefs) ? `${quiet(prefs)![0]}–${quiet(prefs)![1]} · ${quietHold(prefs) ? 'hold until they end' : 'skip them'}` : 'Off'}</span></span><span class="chev"><Icon name="chevron-right" size={18} /></span></button>
-    <button class="fr-link" onclick={() => (muteOpen = true)}><span class="fr-text"><strong>Mute for a while</strong><span>{mutedUntil(prefs, now) ? `Until ${new Date(mutedUntil(prefs, now)!).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}` : 'Off'}</span></span><span class="chev"><Icon name="chevron-right" size={18} /></span></button>
-    <h2 class="fr-section"><span>New posts</span></h2>
+    <ValueRow label="Quiet hours" sub={quiet(prefs) ? `${quiet(prefs)![0]}–${quiet(prefs)![1]} · ${quietHold(prefs) ? 'hold until they end' : 'skip them'}` : 'Off'} onclick={openQuiet} />
+    <ValueRow label="Mute for a while" sub={mutedUntil(prefs, now) ? `Until ${new Date(mutedUntil(prefs, now)!).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}` : 'Off'} onclick={() => (muteOpen = true)} />
+    <SectionLabel inset label="New posts" />
     {#if !isSystem(f.account)}
       {#if alerts.person}{@render alertRow(`${name}’s posts`, 'person', alerts.person)}{/if}
     {:else if !members.length}<p class="fr-line quiet pad">{name} haven’t shared any member profiles with you.</p>
@@ -121,15 +120,13 @@
   {#if state === 'requested'}
     <button class="fr-link" onclick={() => setAlert(key, false)}><span class="fr-text"><strong>{title}</strong><span>Asked · waiting for an answer</span></span><span class="fr-value">Asked</span></button>
   {:else}
-    <button class="fr-toggle" role="switch" aria-checked={state === 'active'} onclick={() => setAlert(key, state !== 'active')}>
-      <span class="fr-text"><strong>{title}</strong><span>{state === 'active' ? 'They said yes' : 'Ask to hear when they post'}</span></span><span class="fr-switch"></span>
-    </button>
+    <Switch checked={state === 'active'} label={title} sub={state === 'active' ? 'They said yes' : 'Ask to hear when they post'} onchange={(next) => setAlert(key, next)} />
   {/if}
 {/snippet}
 
 {#if quietOpen}
   <Sheet title="Quiet hours" onclose={() => (quietOpen = false)}>
-    <button class="fr-toggle" role="switch" aria-checked={qOn} onclick={() => (qOn = !qOn)}><span class="fr-text"><strong>Quiet hours</strong></span><span class="fr-switch"></span></button>
+    <Switch bind:checked={qOn} label="Quiet hours" />
     {#if qOn}
       <div class="times">
         <label class="fr-field"><span>FROM</span><input type="time" bind:value={qFrom} /></label>
@@ -164,7 +161,6 @@
 {/if}
 
 <style>
-  .chev { color: var(--ink-3); display: grid; }
   .pad { padding: 0 var(--s-4); }
   .times { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .flush { margin: 0; }

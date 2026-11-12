@@ -19,9 +19,6 @@
 .fr-tabs button[aria-selected='true'] { color: var(--ink); font-weight: 600; }
 .fr-tabs button[aria-selected='true']::after { content: ''; position: absolute; left: 12px; right: 12px; bottom: 0; height: 3px; border-radius: 2px; background: var(--accent); }
 .fr-count { border-radius: var(--r-full); background: var(--surface-3, var(--surface-2)); color: var(--ink); font-size: 11px; font-weight: 600; padding: 1px 6px; }
-.fr-section { display: flex; align-items: center; gap: var(--s-2); margin: 0; padding: var(--s-4) var(--s-4) 6px; color: var(--accent); font-size: var(--fs-sm); font-weight: 600; }
-.fr-section > span:first-child { flex: 1; }
-.fr-section .fr-aside { color: var(--ink-3); font-weight: 400; font-size: var(--fs-xs); }
 .fr-note { display: flex; gap: 10px; margin: var(--s-2) var(--s-4); padding: 10px 14px; border-radius: var(--r-row); background: var(--surface); color: var(--ink-2); font-size: var(--fs-sm); line-height: 18px; }
 .fr-note :global(.icon), .fr-note .icon { color: var(--ink-3); margin-top: 1px; }
 .fr-note.accent { background: var(--accent-soft); color: var(--ink); }
@@ -65,10 +62,6 @@
 .fr-toggle .fr-text strong { font-size: var(--fs-md); font-weight: 400; line-height: 20px; }
 .fr-toggle .fr-text span { color: var(--ink-3); font-size: var(--fs-sm); line-height: 17px; }
 .fr-toggle:disabled { color: var(--ink-3); cursor: default; }
-.fr-switch { position: relative; width: 40px; height: 24px; flex: none; border-radius: var(--r-row); background: var(--surface-3, var(--surface-2)); transition: background var(--t-fast) var(--ease); }
-.fr-switch::after { content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: var(--ink-3); transition: transform var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
-.fr-toggle[aria-checked='true'] .fr-switch { background: var(--accent); }
-.fr-toggle[aria-checked='true'] .fr-switch::after { transform: translateX(16px); background: var(--bg); }
 .fr-chips { display: flex; flex-wrap: wrap; gap: var(--s-2); padding: 0 var(--s-4); }
 .fr-label { margin: 0; padding: 10px var(--s-4) 6px; color: var(--ink-3); font-size: var(--fs-sm); }
 .fr-card { margin: 0 var(--s-4); border-radius: var(--r-md); background: var(--surface); padding: 14px; display: grid; gap: var(--s-3); }

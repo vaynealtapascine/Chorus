@@ -4,6 +4,8 @@
   // (#/people/<account>); sharing with one friend, a bucket, Advanced sharing and notifications from
   // a friend are pages of their own (#/people/share|bucket|advanced|notify/…). Everything about other
   // accounts is the server's filtered view; accepting and buckets are ordinary ops.
+  import SectionLabel from './kit/SectionLabel.svelte';
+  import ValueRow from './kit/ValueRow.svelte';
   import Pill from './kit/Pill.svelte';
   import Button from './kit/Button.svelte';
   import '../design/friends.css';
@@ -129,19 +131,19 @@
     {@const back = shown.filter((r) => !r.following)}
     {#if friends.loaded && !shown.length}{@render empty()}{/if}
     {#if near.length}
-      <h2 class="fr-section"><span>Around right now</span></h2>
+      <SectionLabel inset label="Around right now" />
       <ul class="fr-list">{#each near as r (r.account.id)}<li>{@render row(r, true)}</li>{/each}</ul>
     {/if}
     {#if rest.length}
-      <h2 class="fr-section"><span>Not sharing who’s around</span></h2>
+      <SectionLabel inset label="Not sharing who’s around" />
       <ul class="fr-list">{#each rest as r (r.account.id)}<li>{@render row(r, false)}</li>{/each}</ul>
     {/if}
     {#if out.length}
-      <h2 class="fr-section"><span>You follow</span><span class="fr-aside">not following you back</span></h2>
+      <SectionLabel inset label="You follow" aside="not following you back" />
       <ul class="fr-list">{#each out as r (r.account.id)}<li>{@render row(r, around(r, now))}</li>{/each}</ul>
     {/if}
     {#if back.length}
-      <h2 class="fr-section"><span>Follow you</span><span class="fr-aside">follow back to see what they share</span></h2>
+      <SectionLabel inset label="Follow you" aside="follow back to see what they share" />
       <ul class="fr-list">{#each back as r (r.account.id)}<li>{@render row(r, false)}</li>{/each}</ul>
     {/if}
   {:else if tabs[tab] === 'Following'}
@@ -166,12 +168,12 @@
         </button>{#if !r.following}<Button size="sm" class="back" onclick={() => void followBack(r.account.id)}><Icon name="user-plus" size={16} />Follow back</Button>{/if}</li>
       {/each}
     </ul>
-    <h2 class="fr-section"><span>Buckets</span><span class="fr-aside">who sees which posts</span></h2>
+    <SectionLabel inset label="Buckets" aside="who sees which posts" />
     {@render bucketRows()}
   {:else if tabs[tab] === 'Requests'}
     {#if friends.loaded && !friends.requests.length && !asked.length && !ours.length && !hearing.length}<EmptyState icon="user-plus" label="No requests" />{/if}
     {#if friends.requests.length}
-      <h2 class="fr-section"><span>Want to follow {ownName}</span></h2>
+      <SectionLabel inset label="Want to follow {ownName}" />
       <ul class="fr-list">
         {#each friends.requests as f (f.id)}
           <li>{@render request(f.account, person ? 'Would like to follow you.' : 'Would like to know when you switch.', [
@@ -180,7 +182,7 @@
       </ul>
     {/if}
     {#if asked.length}
-      <h2 class="fr-section"><span>Want to hear about posts</span></h2>
+      <SectionLabel inset label="Want to hear about posts" />
       <ul class="fr-list">
         {#each asked as a (`${a.member_id}:${a.account.id}`)}
           <li>{@render request(a.account, person ? 'Would like to hear when you post.' : `Would like to hear when ${memberName(a.member_id)} posts.`, [
@@ -189,11 +191,11 @@
       </ul>
     {/if}
     {#if ours.length}
-      <h2 class="fr-section"><span>You asked to follow</span></h2>
+      <SectionLabel inset label="You asked to follow" />
       <ul class="fr-list">{#each ours as f (f.id)}<li>{@render request(f.account, 'Waiting for them to accept.', [['Cancel request', false, () => cancel(f)]])}</li>{/each}</ul>
     {/if}
     {#if hearing.length}
-      <h2 class="fr-section"><span>Hear about our posts</span></h2>
+      <SectionLabel inset label="Hear about our posts" />
       <ul class="fr-list">
         {#each hearing as a (`${a.member_id}:${a.account.id}`)}
           <li>{@render request(a.account, person ? 'Hears when you post.' : `Hears when ${memberName(a.member_id)} posts.`, [['Stop', false, () => decideAlert(a, false)]])}</li>
@@ -202,25 +204,17 @@
     {/if}
   {:else}
     <p class="fr-note"><Icon name="shield" size={16} />Friends in the same bucket hear the same things. A friend in two buckets gets the more open one.</p>
-    <h2 class="fr-section"><span>Buckets</span><span class="fr-aside">who · how much</span></h2>
+    <SectionLabel inset label="Buckets" aside="who · how much" />
     {@render bucketRows()}
-    <h2 class="fr-section"><span>Everyone else</span></h2>
-    <button class="fr-link" onclick={() => (startOpen = true)}>
-      <Icon name="user-plus" />
-      <span class="fr-text"><strong>New friends start in</strong><span>{start ? `${start.name} · ${presetName(presetOf(start.ceiling))}` : `No bucket · ${presetName(everyoneElsePreset(projection))}`}</span></span>
-      <span class="chev"><Icon name="chevron-right" size={18} /></span>
-    </button>
-    <a class="fr-link" href="#/people/advanced">
-      <Icon name="sliders" />
-      <span class="fr-text"><strong>Advanced sharing</strong><span>Everyone else, front history, stats, extra fronts</span></span>
-      <span class="chev"><Icon name="chevron-right" size={18} /></span>
-    </a>
+    <SectionLabel inset label="Everyone else" />
+    <ValueRow icon="user-plus" label="New friends start in" sub={start ? `${start.name} · ${presetName(presetOf(start.ceiling))}` : `No bucket · ${presetName(everyoneElsePreset(projection))}`} onclick={() => (startOpen = true)} />
+    <ValueRow icon="sliders" label="Advanced sharing" sub="Everyone else, front history, stats, extra fronts" href="#/people/advanced" />
   {/if}
 </section>
 
 {#snippet group(title: string, list: FriendRow[])}
   {#if list.length}
-    <h2 class="fr-section"><span>{title}</span><span class="fr-aside">{list.length}</span></h2>
+    <SectionLabel inset label={title} aside={list.length} />
     <ul class="fr-list">{#each list as r (r.account.id)}<li>{@render row(r, around(r, now) || (!isSystem(r.account) && follows(r)))}</li>{/each}</ul>
   {/if}
 {/snippet}
