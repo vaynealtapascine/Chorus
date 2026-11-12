@@ -3,6 +3,7 @@
   // their roles, Add / Remove, Leave or Delete group; in a DM, the private chats kept to one of
   // our members; in our own space, who a channel is kept to.
   import { core } from '../core';
+  import { actingOpts } from '../front-view';
   import { channels, members, selfMember, type ChannelRow, type MemberRow, type SpaceRow } from '../data';
   import { canEditSpace, canInvite, existingPrivate, privateSides, roleIn } from '../chat-manage';
   import { canWriteAs } from '../posts';
@@ -75,7 +76,7 @@
   }
   function deleteGroup() {
     if (!confirm(`Delete ${space.name} for everyone in it? Its chats leave everyone's list. This is kept in the history and can be restored.`)) return;
-    sync.create('space.delete', scope, space.id, {});
+    sync.create('space.delete', scope, space.id, {}, actingOpts(projection, sync.accountId));
     location.hash = '#/chat';
   }
 

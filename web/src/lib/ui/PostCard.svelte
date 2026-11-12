@@ -130,7 +130,7 @@
     repostMenu = false;
     if (!speaker) return;
     // undoing deletes (tombstones) the repost, never the original
-    if (ownRepost) sync.create('post.delete', sync.accountScope, ownRepost.id, {});
+    if (ownRepost) sync.create('post.delete', sync.accountScope, ownRepost.id, {}, { memberId: speaker });
     else sync.create('post.create', sync.accountScope, sync.newId(), repostPayload(speaker, post.id));
   }
   function quotePost() {

@@ -7,7 +7,7 @@
   import { ARCHIVED, chatPrefs, chatTime, discColor, dmFace, folderOf, groupsInto, HIDDEN, isSpaceEntry, movePin, orderChats, PINS, previewOf, privateVisible, stillArchived, togglePin, withSpaces, type Folder, type SpaceEntry } from '../chat-list';
   import { contains, holds, PREF as FOLDERS_PREF, setChat, toJson, withCustom, type Settings as FolderSettings } from '../chat-folders';
   import ChatFolders from './ChatFolders.svelte';
-  import { bodyPresence, frontLayers } from '../front-view';
+  import { actingOpts, bodyPresence, frontLayers } from '../front-view';
   import { authorCards, spaceTitle, type SpaceInfo } from '../spaces';
   import { privateSides } from '../chat-manage';
   import { sync, type Projection } from '../sync/client';
@@ -129,7 +129,7 @@
     const what = r.channel.kind === 'member_dm' ? 'this chat' : r.space?.kind === 'dm' ? `your chat with ${r.title}` : `#${r.title}`;
     if (own) {
       if (!confirm(`Delete ${what}?`)) return;
-      sync.create('channel.delete', `space:${r.channel.space_id}`, r.channel.id, {});
+      sync.create('channel.delete', `space:${r.channel.space_id}`, r.channel.id, {}, actingOpts(projection, sync.accountId));
     } else {
       if (!confirm(`Clear ${what}?`)) return;
       sync.create('pref.set', sync.accountScope, null, { device: '', key: `${HIDDEN}${r.channel.id}`, value: Math.max(Date.now(), r.at) });

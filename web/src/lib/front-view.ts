@@ -84,3 +84,9 @@ export function bodyAuthors(p: Projection | null, account: string): string[] {
   const body = named.resolved[account];
   return !body || body.deleted ? [] : body.authorship.filter((e) => e.subject_type === 'member').map((e) => e.subject_id);
 }
+
+/** The member a delete is attributed to (Trash's "Deleted by"): the first of whoever fronts now. */
+export function actingOpts(p: Projection | null, account: string): { memberId?: string } {
+  const memberId = bodyAuthors(p, account)[0];
+  return memberId ? { memberId } : {};
+}

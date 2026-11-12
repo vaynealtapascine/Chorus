@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 import { activeViewers } from './hidden';
-import { bodyAuthors, bodyPresence, frontView } from './front-view';
+import { actingOpts, bodyAuthors, bodyPresence, frontView } from './front-view';
 import type { Projection } from './sync/client';
 
 it('shows canonical Body layers without exposing an unavailable recovery fallback', () => {
@@ -43,4 +43,11 @@ it('reads Body presence and authors canonically once configured, legacy otherwis
   const legacy = { ...p, front_systems: undefined };
   expect(bodyPresence(legacy, account).map((e) => e.subject_id)).toEqual(['stale']);
   expect(bodyAuthors(legacy, account)).toEqual(['stale']);
+});
+
+it('attributes a delete to whoever fronts, and to no one when nobody does', () => {
+  const p = { fronts: { a: { current: [{ subject_type: 'member', subject_id: 'm1', level: 'front', is_primary: true }] }, b: { current: [] } } } as unknown as Projection;
+  expect(actingOpts(p, 'a')).toEqual({ memberId: 'm1' });
+  expect(actingOpts(p, 'b')).toEqual({});
+  expect(actingOpts(null, 'a')).toEqual({});
 });

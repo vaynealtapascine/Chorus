@@ -4,6 +4,7 @@
   // Archive at the foot. The top fields are a draft that Save writes; the rows open their own sheets
   // or pages and save as they are used.
   import { onDestroy, untrack } from 'svelte';
+  import { actingOpts } from '../front-view';
   import { core } from '../core';
   import { audienceLabel, audienceOf } from '../profile-audience';
   import { buckets, fieldDefs, fieldValues, members, selfMember, type ProxyTag } from '../data';
@@ -371,7 +372,7 @@
 {/if}
 {#if trashing && m}
   <ConfirmSheet title="Move {shownName} to Trash?" confirm="Move to Trash" danger onclose={() => (trashing = false)}
-    onconfirm={() => { sync.create('member.delete', sync.accountScope, id, {}); trashing = false; }} />
+    onconfirm={() => { sync.create('member.delete', sync.accountScope, id, {}, actingOpts(projection, sync.accountId)); trashing = false; }} />
 {/if}
 
 <style>

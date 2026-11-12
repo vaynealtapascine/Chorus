@@ -3,6 +3,7 @@
   // description, icon, colour and picture, and in our own space who it is kept to. Saving writes
   // only what changed, so another device's edit to the rest survives.
   import { untrack } from 'svelte';
+  import { actingOpts } from '../front-view';
   import { core } from '../core';
   import { fuzzy, members, type ChannelRow, type SpaceRow } from '../data';
   import { channelChanges, channelCreate, draftOf, draftProblem, type ChannelDraft } from '../chat-manage';
@@ -107,7 +108,7 @@
     if (!channel) return;
     const name = what === 'member_dm' ? 'this chat' : `#${channel.name}`;
     if (!confirm(`Delete ${name}?`)) return;
-    sync.create('channel.delete', `space:${spaceId}`, channel.id, {});
+    sync.create('channel.delete', `space:${spaceId}`, channel.id, {}, actingOpts(projection, sync.accountId));
     onclose();
     location.hash = '#/chat';
   }

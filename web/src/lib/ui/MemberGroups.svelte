@@ -2,6 +2,7 @@
   // The Groups tab (F4.4): every group as a card that opens on its members. Any group, plain or
   // subsystem, can be filled and emptied here; edit, recolour or remove from the card.
   import { groupPath, groups } from '../data';
+  import { actingOpts } from '../front-view';
   import { sync, type Projection } from '../sync/client';
   import { groupLine, groupMembers } from '../member-directory';
   import { core } from '../core';
@@ -81,7 +82,7 @@
 {/if}
 {#if removing && editGroup}
   <ConfirmSheet title="Remove {editGroup.name}?" message="Its members stay." confirm="Remove" danger layer={1} onclose={() => (removing = false)}
-    onconfirm={() => { sync.create('group.delete', sync.accountScope, editGroup.id, {}); removing = false; editing = null; }} />
+    onconfirm={() => { sync.create('group.delete', sync.accountScope, editGroup.id, {}, actingOpts(projection, sync.accountId)); removing = false; editing = null; }} />
 {/if}
 
 <style>
