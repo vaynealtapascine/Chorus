@@ -56,6 +56,7 @@ export const styleLabel = (style: Style) => STYLES.find(([id]) => id === style)?
 
 export const freshRender = (): Render => ({
   style: 'chorus', theme: 'auto', width: 'phone', blur_avatars: false, blur_attachments: false, hide_header: false, hide_reply_bars: false,
+  hide_reactions: false, hide_thread_previews: false, hide_dates: false, hide_counts: false,
 });
 
 export const fresh = (): Def => ({

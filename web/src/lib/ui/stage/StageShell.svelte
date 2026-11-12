@@ -76,7 +76,7 @@
   .capture:disabled { background: var(--surface-3); color: var(--ink-3); cursor: default; }
   .preview { overflow: auto; min-height: 0; overscroll-behavior: contain; }
   .tools { display: flex; flex-direction: column; min-height: 0; }
-  .panel { display: grid; align-content: start; gap: 10px; max-height: 330px; overflow: auto; padding: 14px 16px; background: var(--surface); border-radius: 20px 20px 0 0; }
+  .panel { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 10px; max-height: 330px; overflow: auto; padding: 14px 16px; background: var(--surface); border-radius: 20px 20px 0 0; }
   .tabs { display: flex; padding: 4px; background: var(--surface); }
   .tabs button { flex: 1; min-width: 0; display: grid; justify-items: center; gap: 3px; padding: 6px 0; border: 0; border-radius: 12px; background: none; color: var(--ink-2);
     font: inherit; font-size: 11px; line-height: 14px; font-weight: 500; cursor: pointer; white-space: nowrap; }

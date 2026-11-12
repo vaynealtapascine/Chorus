@@ -6,17 +6,18 @@
   import { onDestroy } from 'svelte';
   import { stagePlan } from '../core/pkg/chorus_wasm.js';
   import { core } from '../core';
-  import { channels, members, messages, spaces, type MessageRow } from '../data';
+  import { channels, customEmojis, members, messages, reactions, spaces, threadSummaries, type MessageRow } from '../data';
   import { activeViewers, memberVisible } from '../hidden';
   import { chatShown } from '../chat-visible';
   import { segmentRich } from '../segments';
-  import { blackParts, count, fresh, loadDef, redacted, styleLabel, WIDTH_PX, type Def } from '../stage-def';
+  import { count, fresh, loadDef, maskText, redacted, styleLabel, withBlackout, WIDTH_PX, type Def } from '../stage-def';
   import { paletteStyle } from '../stage-text';
   import { sync, type Projection } from '../sync/client';
   import { bodyPresence } from '../front-view';
   import RichText from './RichText.svelte';
   import AttachmentView from './AttachmentView.svelte';
   import AvatarImage from './AvatarImage.svelte';
+  import EmojiImage from './EmojiImage.svelte';
   import Icon from './Icon.svelte';
   import Segmented from './kit/Segmented.svelte';
   import FormCard from './kit/FormCard.svelte';
@@ -31,7 +32,9 @@
   import SaveSheet, { type SavedRow } from './stage/SaveSheet.svelte';
   import StageShell, { type StageTab } from './stage/StageShell.svelte';
   import Stepper from './stage/Stepper.svelte';
+  import StageText from './stage/StageText.svelte';
   import StyleTab from './stage/StyleTab.svelte';
+  import TimeSheet from './stage/TimeSheet.svelte';
   import { stageAuthor } from './stage/authors';
 
   let { projection, channelId, dark }: { projection: Projection; channelId: string; dark: boolean } = $props();
@@ -46,6 +49,7 @@
   let saving = $state(false);
   let viewingAs = $state<string | null>(null);
   let shownCw = $state(new Set<string>());
+  let timing = $state<{ id: string; at: number } | null>(null);
 
   const channel = $derived(channels(projection).find((c) => c.id === channelId));
   const space = $derived(spaces(projection).find((s) => s.id === channel?.space_id));
@@ -56,6 +60,9 @@
   const byId = $derived(new Map(list.map((m) => [m.id, m])));
   const people = $derived(new Map(members(projection).map((m) => [m.id, m])));
   const authors = $derived([...new Set(list.flatMap((m) => m.authors))].map((id) => stageAuthor(id, people.get(id))));
+  const reacts = $derived(reactions(projection));
+  const threads = $derived(threadSummaries(projection));
+  const emojiById = $derived(new Map(customEmojis(projection).map((e) => [e.id, e])));
   const saved = $derived(
     Object.entries(projection.rows.stage ?? {})
       .filter(([, r]) => r.exists && r.fields.deleted_at == null && (r.fields.definition as Def | undefined)?.channel_id === channelId)
@@ -64,6 +71,8 @@
 
   const items = $derived(list.map((m) => ({ id: m.id, authors: m.authors, at: m.occurred_at, reply_to: m.reply_to ?? null })));
   const picking = $derived(!capturing && tab === 'select');
+  const editingText = $derived(!capturing && tab === 'redact');
+  const byHand = $derived(!capturing && def.time.mode === 'manual');
   // picking shows every message, the unpicked dimmed; the other tools show what Capture will
   const plan = $derived.by(() => {
     const d = picking && def.selected.length > 0 ? { ...def, unselected: 'visible' as const } : def;
@@ -137,7 +146,9 @@
         <MemberChips {authors} only={def.only_members} onchange={(next) => (def.only_members = next)} />
       {/if}
       <FormCard>
+        <Switch label="Hide reactions" bind:checked={def.render.hide_reactions} />
         <Switch label="Hide reply bars" bind:checked={def.render.hide_reply_bars} />
+        <Switch label="Hide thread previews" bind:checked={def.render.hide_thread_previews} />
       </FormCard>
       <Row label="Crop reply chains">
         <Stepper value={def.reply_depth == null ? 'All' : String(def.reply_depth)} label="Reply levels"
@@ -197,11 +208,11 @@
             {/if}
             <div class="body">
               {#if reply}
-                <div class="reply">↳ {reply.authors.map(nameOf).join(' & ')}: {reply.cw ? `Content warning: ${reply.cw}` : reply.text.slice(0, 60)}</div>
+                <div class="reply">↳ {reply.authors.map(nameOf).join(' & ')}: {reply.cw ? `Content warning: ${reply.cw}` : maskText(reply.text, def.blackout?.[reply.id] ?? []).slice(0, 60)}</div>
               {/if}
               <div class="head">
                 <span class="who">{m.authors.map(nameOf).join(' & ')}{def.render.style === 'transcript' ? ':' : ''}</span>
-                {#if row.at != null && def.render.style !== 'transcript'}<time>{clock(row.at)}</time>{/if}
+                {#if row.at != null && def.render.style !== 'transcript'}{#if byHand}<button class="time-edit" title="Change this time" onclick={() => (timing = { id: m.id, at: row.at! })}>{clock(row.at)}</button>{:else}<time>{clock(row.at)}</time>{/if}{/if}
               </div>
               {#if m.cw}
                 <button class="cw-toggle" aria-expanded={shownCw.has(m.id)} onclick={(e) => {
@@ -228,18 +239,28 @@
                     {#each f.attachments ?? [] as a (a.id)}<AttachmentView attachment={a} blur={def.render.blur_attachments} revealable={false} />{/each}
                   </div>
                 {/each}
-                {#if row.blackout?.length}
-                  <div class="text">{#each blackParts(m.text, row.blackout, false) as part, j (j)}{#if part.black}<span class="blackout">{part.text}</span>{:else}{part.text}{/if}{/each}</div>
-                {:else if m.segments.length > 1}
-                  {#each m.segments as s, j (j)}
-                    {@const seg = segmentRich(m, s)}
-                    <div class="segment"><span class="seg-who" style="color: {colorOf(s.authors[0] ?? '').name}">{s.authors.map(nameOf).join(' & ')}</span> <RichText text={seg.text} entities={seg.entities} /></div>
+                {#if m.segments.length > 1 && !row.blackout?.length && !editingText}
+                  {#each m.segments as sg, j (j)}
+                    {@const seg = segmentRich(m, sg)}
+                    <div class="segment"><span class="seg-who" style="color: {colorOf(sg.authors[0] ?? '').name}">{sg.authors.map(nameOf).join(' & ')}</span> <RichText text={seg.text} entities={seg.entities} /></div>
                   {/each}
                 {:else}
-                  <div class="text"><RichText text={m.text} entities={m.entities} /></div>
+                  <StageText text={m.text} entities={m.entities} shown={row.blackout} own={def.blackout?.[m.id] ?? []} editing={editingText}
+                    onchange={(ranges) => (def.blackout = withBlackout(def, m.id, ranges))} />
                 {/if}
                 {#if m.attachments.length && !m.forward_snapshot?.some((f) => f.attachments?.length)}
                   <div class="attachments">{#each m.attachments as a (a.id)}<AttachmentView attachment={a} blur={def.render.blur_attachments} revealable={false} />{/each}</div>
+                {/if}
+                {#if threads.get(m.id) && !def.render.hide_thread_previews}
+                  {@const n = threads.get(m.id)!.replyCount}
+                  <span class="thread">{n === 1 ? '1 reply' : `${n} replies`}</span>
+                {/if}
+                {#if reacts.get(m.id)?.size && !def.render.hide_reactions}
+                  <div class="reacts">
+                    {#each [...reacts.get(m.id)!] as [emoji, who] (emoji)}
+                      <span class="react">{#if emoji.startsWith('custom:') && emojiById.has(emoji.slice(7))}{@const custom = emojiById.get(emoji.slice(7))!}<EmojiImage hash={custom.blob_hash} name={custom.name} />{:else}{emoji}{/if} {who.length}</span>
+                    {/each}
+                  </div>
                 {/if}
               {/if}
             </div>
@@ -251,6 +272,11 @@
     </div>
   {/snippet}
 </StageShell>
+
+{#if timing}
+  <TimeSheet at={timing.at} onclose={() => (timing = null)}
+    onpick={(at) => { if (def.time.mode === 'manual') def.time = { mode: 'manual', at: { ...def.time.at, [timing!.id]: at } }; timing = null; }} />
+{/if}
 
 {#if saving}
   <SaveSheet saved={savedRows} onsave={save} onclose={() => (saving = false)}
@@ -269,7 +295,10 @@
     padding: var(--s-4); background: var(--bg); color: var(--ink);
   }
   .capturing { padding-top: var(--s-6); }
-  .blackout { background: #000; color: #000; border-radius: 2px; }
+  .time-edit { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-size: var(--fs-xs); cursor: pointer; }
+  .thread { color: var(--accent); font-size: var(--fs-sm); font-weight: 600; }
+  .reacts { display: flex; flex-wrap: wrap; gap: 4px; }
+  .react { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 10px; background: var(--surface-3); color: var(--ink-2); font-size: 12px; }
   .chan { display: flex; align-items: center; gap: 8px; font-size: 17px; font-weight: 600; color: var(--ink); padding: var(--s-3) 0 var(--s-2); }
   .chan :global(.icon) { color: var(--ink-3); }
   .chan span { margin-left: auto; font-size: 12px; font-weight: 400; color: var(--ink-3); }
