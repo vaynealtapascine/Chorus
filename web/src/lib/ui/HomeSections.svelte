@@ -33,8 +33,8 @@
 </Sheet>
 
 <style>
-  .name { flex: 1; font-size: 15px; }
-  .neutral, .primary { min-height: 44px; padding: 10px 18px; border: 0; border-radius: 14px; font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
+  .name { flex: 1; font-size: var(--fs-md); }
+  .neutral, .primary { min-height: 44px; padding: 10px 18px; border: 0; border-radius: var(--r-control); font: inherit; font-size: var(--fs-md); font-weight: 600; cursor: pointer; }
   .neutral { background: var(--surface-2); color: var(--ink); }
   .primary { flex: 1; background: var(--accent); color: var(--on-accent); }
 </style>

@@ -354,76 +354,76 @@
 <style>
   /* min-width: 0 keeps a long "here now" strip (big subsystems) from widening the list past its column */
   .list { display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; background: var(--bg); border-right: 1px solid var(--line); }
-  .search-row { display: flex; align-items: center; gap: 8px; padding: 12px 8px 12px 12px; }
-  .search { flex: 1; display: flex; align-items: center; gap: 8px; height: 37px; padding: 0 12px; border-radius: var(--r-full); background: var(--surface-2); color: var(--ink-3); }
+  .search-row { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-3) var(--s-2) var(--s-3) var(--s-3); }
+  .search { flex: 1; display: flex; align-items: center; gap: var(--s-2); height: 37px; padding: 0 var(--s-3); border-radius: var(--r-full); background: var(--surface-2); color: var(--ink-3); }
   .search:focus-within { box-shadow: 0 0 0 2px var(--accent); }
-  .search input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--ink); font: inherit; font-size: 15px; }
+  .search input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--ink); font: inherit; font-size: var(--fs-md); }
   .compose { width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 50%; background: none; color: var(--ink-2); cursor: pointer; }
   .compose:hover { background: var(--surface-2); color: var(--ink); }
-  .archive-bar { display: flex; align-items: center; gap: 8px; margin: 0 12px 8px; padding: 8px 12px; border: 0; border-radius: var(--r-md);
+  .archive-bar { display: flex; align-items: center; gap: var(--s-2); margin: 0 var(--s-3) var(--s-2); padding: var(--s-2) var(--s-3); border: 0; border-radius: var(--r-md);
     background: var(--surface); color: var(--ink-2); font: inherit; font-size: var(--fs-sm); cursor: pointer; text-align: left; }
   .archive-bar:hover { background: var(--surface-2); color: var(--ink); }
   .row-wrap { position: relative; }
   .row-wrap.drop { box-shadow: inset 0 2px 0 var(--accent); }
   .row.pinned { background: var(--surface); }
-  .row.compact { padding-top: 4px; padding-bottom: 4px; }
-  .row.compact .disc { width: 40px; height: 40px; font-size: 16px; }
+  .row.compact { padding-top: var(--s-1); padding-bottom: var(--s-1); }
+  .row.compact .disc { width: 40px; height: 40px; font-size: var(--fs-base); }
   .tick { display: inline-block; width: 16px; text-align: center; color: var(--accent); }
   .row.pinned[draggable='true'] { cursor: grab; }
   .pin { color: var(--ink-3); display: inline-flex; }
   .more { position: absolute; right: 8px; top: 8px; width: 28px; height: 28px; display: none; place-items: center; border: 0; border-radius: 50%;
     background: var(--surface-2); color: var(--ink-2); cursor: pointer; }
   .row-wrap:hover .more, .more[aria-expanded='true'], .more:focus-visible { display: grid; }
-  .row-menu { position: absolute; right: 8px; top: 40px; z-index: 5; display: grid; min-width: 160px; padding: 4px; border-radius: var(--r-md);
+  .row-menu { position: absolute; right: 8px; top: 40px; z-index: 5; display: grid; min-width: 160px; padding: var(--s-1); border-radius: var(--r-md);
     background: var(--surface-2); box-shadow: 0 8px 24px rgb(0 0 0 / 0.35); }
-  .row-menu button { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 0; border-radius: var(--r-sm); background: none;
+  .row-menu button { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-2) 10px; border: 0; border-radius: var(--r-sm); background: none;
     color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
   .row-menu button:hover { background: var(--surface-3, var(--surface)); }
   .row-menu .danger { color: var(--danger); }
-  .here { min-width: 0; display: flex; align-items: flex-start; gap: 6px; padding: 4px 12px 12px; overflow-x: auto; border-bottom: 1px solid var(--line); scrollbar-width: none; }
-  .here-one { flex: none; width: 64px; display: grid; justify-items: center; gap: 4px; border: 0; background: none; color: var(--ink-2); cursor: pointer; padding: 0; font: inherit; }
+  .here { min-width: 0; display: flex; align-items: flex-start; gap: 6px; padding: var(--s-1) var(--s-3) var(--s-3); overflow-x: auto; border-bottom: 1px solid var(--line); scrollbar-width: none; }
+  .here-one { flex: none; width: 64px; display: grid; justify-items: center; gap: var(--s-1); border: 0; background: none; color: var(--ink-2); cursor: pointer; padding: 0; font: inherit; }
   .ring { width: 60px; height: 60px; border-radius: 50%; display: grid; place-items: center; border: 2px solid transparent; }
   .ring.front { border-color: var(--accent); }
   .ring.cocon { border: 2px dashed var(--accent); }
   .face { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; overflow: hidden; font-weight: 700; font-size: 20px; }
-  .here-name { max-width: 64px; font-size: 12px; line-height: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .here-name { max-width: 64px; font-size: var(--fs-xs); line-height: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .switch { flex: none; align-self: center; margin-top: -16px; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 50%;
     border: 1.5px dashed var(--line); background: none; color: var(--accent); cursor: pointer; }
   .switch:hover { border-color: var(--accent); }
   .rows { flex: 1; overflow-y: auto; min-height: 0; }
   /* a held finger opens the chat's menu, not the browser's link preview */
-  .row { display: flex; align-items: center; gap: 12px; padding: 2px 0 2px 12px; color: inherit; text-decoration: none; transition: background var(--t-fast) var(--ease);
+  .row { display: flex; align-items: center; gap: var(--s-3); padding: 2px 0 2px var(--s-3); color: inherit; text-decoration: none; transition: background var(--t-fast) var(--ease);
     -webkit-touch-callout: none; user-select: none; }
   .row:hover { background: var(--surface); }
   .row.on { background: var(--accent-soft); }
   .disc { flex: none; width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; overflow: hidden; font-weight: 700; font-size: 20px; }
-  .body { flex: 1; min-width: 0; display: grid; gap: 3px; padding: 12px 14px 12px 0; border-bottom: 1px solid var(--line); }
+  .body { flex: 1; min-width: 0; display: grid; gap: 3px; padding: var(--s-3) 14px var(--s-3) 0; border-bottom: 1px solid var(--line); }
   .row.on .body, .row-wrap:has(+ .row-wrap .row.on) .body { border-bottom-color: transparent; }
   .top, .bottom { display: flex; align-items: center; gap: 5px; min-width: 0; }
   .top { color: var(--ink-3); }
-  .title { flex: 1; min-width: 0; color: var(--ink); font-weight: 600; font-size: 15px; line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .title { flex: 1; min-width: 0; color: var(--ink); font-weight: 600; font-size: var(--fs-md); line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .title.fit { flex: 0 1 auto; }
-  .whose { flex: 1 1 0; min-width: 40px; color: var(--ink-3); font-size: 13px; line-height: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .whose { flex: 1 1 0; min-width: 40px; color: var(--ink-3); font-size: var(--fs-sm); line-height: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .muted-icon { display: grid; color: var(--ink-3); }
-  time { flex: none; font-size: 12px; line-height: 16px; color: var(--ink-3); }
-  .bottom { gap: 4px; font-size: 14px; line-height: 19px; }
+  time { flex: none; font-size: var(--fs-xs); line-height: 16px; color: var(--ink-3); }
+  .bottom { gap: var(--s-1); font-size: 14px; line-height: 19px; }
   .who { flex: none; color: var(--ink); max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .text { flex: 1; min-width: 0; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .badge { flex: none; min-width: 22px; padding: 2px 7px; border-radius: 11px; background: var(--sun); color: var(--on-sun); font-size: 12px; line-height: 16px; font-weight: 700; text-align: center; }
+  .badge { flex: none; min-width: 22px; padding: 2px 7px; border-radius: 11px; background: var(--sun); color: var(--on-sun); font-size: var(--fs-xs); line-height: 16px; font-weight: 700; text-align: center; }
   .badge.muted { background: var(--line); color: var(--ink); }
   /* a space's entry is a button styled as a row; its disc is rounded square, as Telegram's forums */
   button.row { width: 100%; border: 0; background: none; font: inherit; text-align: left; cursor: pointer; }
-  .disc.forum { border-radius: 16px; }
+  .disc.forum { border-radius: var(--r-md); }
   .topic { flex: none; max-width: 40%; color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .space-head { display: flex; align-items: center; gap: 10px; padding: 4px 12px 10px 4px; border-bottom: 1px solid var(--line); }
+  .space-head { display: flex; align-items: center; gap: 10px; padding: var(--s-1) var(--s-3) 10px var(--s-1); border-bottom: 1px solid var(--line); }
   .space-head .back { width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 50%; background: none; color: var(--ink-2); cursor: pointer; }
   .space-head .back:hover { background: var(--surface-2); color: var(--ink); }
-  .disc.small { width: 36px; height: 36px; font-size: 15px; border-radius: 12px; }
+  .disc.small { width: 36px; height: 36px; font-size: var(--fs-md); border-radius: var(--r-row); }
   .space-name { display: grid; min-width: 0; }
   .space-name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .space-name small { color: var(--ink-3); font-size: 12px; }
-  .folder-tabs { display: none; gap: 4px; padding: 0 8px 8px; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--line); }
-  .folder-tabs button { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 0; border-radius: var(--r-full);
+  .space-name small { color: var(--ink-3); font-size: var(--fs-xs); }
+  .folder-tabs { display: none; gap: var(--s-1); padding: 0 var(--s-2) var(--s-2); overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--line); }
+  .folder-tabs button { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 6px var(--s-3); border: 0; border-radius: var(--r-full);
     background: none; color: var(--ink-3); font: inherit; font-size: var(--fs-sm); cursor: pointer; }
   .folder-tabs button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
   .folder-tabs .count { min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--line); color: var(--ink); font-size: 11px; line-height: 16px; text-align: center; }

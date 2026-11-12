@@ -123,25 +123,25 @@
 </dialog>
 
 <style>
-  .also { margin: 0 4px; color: var(--ink-3); font-size: 13px; line-height: 18px; }
+  .also { margin: 0 var(--s-1); color: var(--ink-3); font-size: var(--fs-sm); line-height: 18px; }
   .actions { display: flex; align-items: center; margin: 0 -8px; }
   .actions > .act, .actions > .pop-anchor { flex: 1; }
   .pop-anchor { position: relative; display: inline-flex; }
-  .menu { position: absolute; z-index: 20; top: 100%; left: 0; min-width: 160px; display: grid; padding: 6px; border-radius: 12px; background: var(--surface); box-shadow: var(--shadow-pop); }
-  .menu button { display: flex; align-items: center; gap: 10px; border: 0; border-radius: 8px; background: none; color: var(--ink); padding: 8px 10px; font: inherit; text-align: left; cursor: pointer; }
+  .menu { position: absolute; z-index: 20; top: 100%; left: 0; min-width: 160px; display: grid; padding: 6px; border-radius: var(--r-row); background: var(--surface); box-shadow: var(--shadow-pop); }
+  .menu button { display: flex; align-items: center; gap: 10px; border: 0; border-radius: 8px; background: none; color: var(--ink); padding: var(--s-2) 10px; font: inherit; text-align: left; cursor: pointer; }
   .menu button:hover:not(:disabled) { background: var(--surface-2); }
   .menu button:disabled { color: var(--ink-3); cursor: default; }
   .actions > .act.last { flex: none; }
-  .act { display: inline-flex; align-items: center; gap: 4px; min-height: 36px; padding: 0 8px; border: 0; background: none; color: var(--ink-3); font: inherit; font-size: 13px; cursor: pointer; }
+  .act { display: inline-flex; align-items: center; gap: var(--s-1); min-height: 36px; padding: 0 var(--s-2); border: 0; background: none; color: var(--ink-3); font: inherit; font-size: var(--fs-sm); cursor: pointer; }
   .act:hover:not(:disabled) { color: var(--accent); }
   .act:disabled { cursor: default; opacity: .4; }
   .act.heart.on, .act.heart:hover:not(:disabled) { color: var(--danger); }
-  .notice { color: var(--ink-3); font-size: var(--fs-xs); margin-left: 8px; }
-  .disclose { max-width: 360px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); color: var(--ink); padding: 20px; }
+  .notice { color: var(--ink-3); font-size: var(--fs-xs); margin-left: var(--s-2); }
+  .disclose { max-width: 360px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); color: var(--ink); padding: var(--s-5); }
   .disclose::backdrop { background: rgb(0 0 0 / .4); }
-  .disclose h2 { margin: 0 0 8px; font-size: 18px; }
+  .disclose h2 { margin: 0 0 var(--s-2); font-size: var(--fs-lg); }
   .disclose p { margin: 0; color: var(--ink-2); font-size: var(--fs-sm); line-height: 1.5; }
-  .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
-  .dialog-actions button { border: 0; border-radius: 999px; padding: 8px 16px; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
+  .dialog-actions { display: flex; justify-content: flex-end; gap: var(--s-2); margin-top: var(--s-4); }
+  .dialog-actions button { border: 0; border-radius: var(--r-full); padding: var(--s-2) var(--s-4); background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
   .dialog-actions .primary { background: var(--accent); color: var(--on-accent, #fff); }
 </style>

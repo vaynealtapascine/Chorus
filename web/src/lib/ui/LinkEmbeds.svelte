@@ -70,7 +70,7 @@
 {/each}
 
 <style>
-  .message { display: grid; gap: 4px; padding: var(--s-3); border: 1px solid var(--line); border-radius: 12px; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; min-width: 0; width: 100%; }
+  .message { display: grid; gap: var(--s-1); padding: var(--s-3); border: 1px solid var(--line); border-radius: var(--r-row); background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; min-width: 0; width: 100%; }
   .message:hover:not(:disabled) { background: var(--surface); }
   .by { color: var(--ink-3); font-size: var(--fs-xs); }
   .by strong { color: var(--ink); }

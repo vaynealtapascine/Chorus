@@ -118,28 +118,28 @@
 </section>
 
 <style>
-  .body { display: grid; gap: 12px; padding: 16px; }
-  .alert { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 16px; background: var(--surface); }
-  .alert strong { font-size: 15px; font-weight: 600; line-height: 20px; }
-  .disc { width: 40px; height: 40px; flex: none; display: grid; place-items: center; border-radius: 12px; background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); font-weight: 700; font-size: 20px; }
+  .body { display: grid; gap: var(--s-3); padding: var(--s-4); }
+  .alert { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-3); border-radius: var(--r-md); background: var(--surface); }
+  .alert strong { font-size: var(--fs-md); font-weight: 600; line-height: 20px; }
+  .disc { width: 40px; height: 40px; flex: none; display: grid; place-items: center; border-radius: var(--r-row); background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); font-weight: 700; font-size: 20px; }
   .sides { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .side { display: grid; gap: 8px; padding: 12px; border-radius: 16px; background: var(--surface); min-width: 0; }
-  .dev { color: var(--ink-3); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .side { display: grid; gap: var(--s-2); padding: var(--s-3); border-radius: var(--r-md); background: var(--surface); min-width: 0; }
+  .dev { color: var(--ink-3); font-size: var(--fs-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .said { display: flex; align-items: center; gap: 10px; min-width: 0; }
   .t { display: grid; min-width: 0; }
-  .t strong { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .t span { color: var(--ink-3); font-size: 12px; }
-  .choice { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 56px; padding: 10px 12px; border: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+  .t strong { font-size: var(--fs-md); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .t span { color: var(--ink-3); font-size: var(--fs-xs); }
+  .choice { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 56px; padding: 10px var(--s-3); border: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
   .choice:disabled { cursor: default; }
   .choice:disabled strong { color: var(--ink-3); }
   .radio { width: 24px; height: 24px; flex: none; border-radius: 50%; border: 2px solid var(--ink-3); display: grid; place-items: center; }
   .radio.on { border-color: var(--accent); }
   .radio.on::after { content: ''; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); }
   .text { flex: 1; min-width: 0; display: grid; }
-  .text strong { font-size: 15px; font-weight: 600; }
-  .text span { color: var(--ink-3); font-size: 13px; line-height: 18px; }
+  .text strong { font-size: var(--fs-md); font-weight: 600; }
+  .text span { color: var(--ink-3); font-size: var(--fs-sm); line-height: 18px; }
   .error { margin: 0; color: var(--danger); font-size: 14px; }
-  .foot { display: flex; gap: 10px; padding: 0 16px 16px; }
+  .foot { display: flex; gap: 10px; padding: 0 var(--s-4) var(--s-4); }
   .later { flex: 3; }
   .save { flex: 7; }
 </style>

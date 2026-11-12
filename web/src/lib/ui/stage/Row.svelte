@@ -7,6 +7,6 @@
 <div class="row"><span>{label}</span>{@render children()}</div>
 
 <style>
-  .row { display: flex; align-items: center; gap: 12px; min-height: 48px; font-size: 15px; }
+  .row { display: flex; align-items: center; gap: var(--s-3); min-height: 48px; font-size: var(--fs-md); }
   span { flex: 1; min-width: 0; }
 </style>

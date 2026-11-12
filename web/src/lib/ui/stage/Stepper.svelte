@@ -11,7 +11,7 @@
 
 <style>
   .stepper { display: inline-flex; align-items: center; border-radius: 20px; background: var(--surface-2); }
-  button { width: 40px; height: 40px; border: 0; border-radius: 50%; background: none; color: var(--ink); font: inherit; font-size: 18px; font-weight: 600; cursor: pointer; }
+  button { width: 40px; height: 40px; border: 0; border-radius: 50%; background: none; color: var(--ink); font: inherit; font-size: var(--fs-lg); font-weight: 600; cursor: pointer; }
   button:disabled { color: var(--ink-3); cursor: default; }
-  span { min-width: 28px; text-align: center; font-weight: 600; font-size: 15px; }
+  span { min-width: 28px; text-align: center; font-weight: 600; font-size: var(--fs-md); }
 </style>

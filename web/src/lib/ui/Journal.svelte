@@ -144,14 +144,14 @@
 </aside></div>
 
 <style>
-  .journal-layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 24px; }
-  .journal-context { display: grid; align-content: start; gap: 16px; min-width: 0; }
-  .journal-context section { display: grid; gap: 12px; background: var(--surface); border-radius: 16px; padding: 16px; }
+  .journal-layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: var(--s-6); }
+  .journal-context { display: grid; align-content: start; gap: var(--s-4); min-width: 0; }
+  .journal-context section { display: grid; gap: var(--s-3); background: var(--surface); border-radius: var(--r-md); padding: var(--s-4); }
   .journal-context h2 { font-size: var(--fs-sm); }
   .journal-context p { color: var(--ink-3); font-size: var(--fs-sm); line-height: 1.5; }
   .journal-context a { color: var(--accent); text-decoration: none; font-size: var(--fs-xs); }
-  .journal-context button, .context-search { display: flex; align-items: center; gap: 10px; border: 0; background: none; color: var(--ink-2); padding: 8px 0; text-align: left; font-size: var(--fs-sm); cursor: pointer; }
-  .journal-context .context-search { background: var(--surface-2); border-radius: 999px; padding: 12px 16px; color: var(--ink-3); }
+  .journal-context button, .context-search { display: flex; align-items: center; gap: 10px; border: 0; background: none; color: var(--ink-2); padding: var(--s-2) 0; text-align: left; font-size: var(--fs-sm); cursor: pointer; }
+  .journal-context .context-search { background: var(--surface-2); border-radius: var(--r-full); padding: var(--s-3) var(--s-4); color: var(--ink-3); }
   @media (max-width: 1279px) { .journal-layout { grid-template-columns: minmax(0, 1fr); } .journal-context { display: none; } }
   /* a set width (auto margins would shrink it to its content), so switching sections doesn't move the tabs */
   .journal { width: 100%; max-width: 760px; margin: 0 auto; display: grid; gap: var(--s-4); align-content: start; min-width: 0; }
@@ -159,19 +159,19 @@
   h1, p { margin: 0; }
   /* switching sections fades the new one in */
   .timeline { animation: chorus-fade-in var(--t-fast) var(--ease); }
-  .head-tools { display: flex; align-items: center; gap: 4px; }
-  .me { color: var(--accent); text-decoration: none; margin-right: 8px; }
+  .head-tools { display: flex; align-items: center; gap: var(--s-1); }
+  .me { color: var(--accent); text-decoration: none; margin-right: var(--s-2); }
   .icon-btn { display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 50%; background: none; color: var(--ink-2); cursor: pointer; }
   .icon-btn:hover { background: var(--surface-2); }
   .icon-btn.back { transform: rotate(180deg); }
-  .sub { display: flex; align-items: center; gap: 4px; }
+  .sub { display: flex; align-items: center; gap: var(--s-1); }
   .sub h2 { margin: 0; font-size: 19px; font-weight: 600; }
   header label { color: var(--ink-3); font-size: var(--fs-sm); }
   select { border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--ink); padding: var(--s-2); }
   .timeline { display: grid; gap: 0; border-top: 1px solid var(--line); }
   /* a switch or pin is a quiet marker in the timeline, aligned with the post avatars */
-  .event { display: flex; gap: 12px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--line); color: var(--ink-3); font-size: var(--fs-sm); }
+  .event { display: flex; gap: var(--s-3); align-items: center; padding: 10px var(--s-4); border-bottom: 1px solid var(--line); color: var(--ink-3); font-size: var(--fs-sm); }
   .event-icon { width: 40px; flex: none; text-align: center; color: var(--accent); }
   time { margin-left: auto; color: var(--ink-3); font-size: var(--fs-xs); white-space: nowrap; }
-  .repost-gone { margin: 0; padding: 12px 16px; border-bottom: 1px solid var(--line); color: var(--ink-3); font-size: var(--fs-sm); }
+  .repost-gone { margin: 0; padding: var(--s-3) var(--s-4); border-bottom: 1px solid var(--line); color: var(--ink-3); font-size: var(--fs-sm); }
 </style>

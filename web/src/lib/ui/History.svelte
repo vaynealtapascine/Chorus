@@ -187,27 +187,27 @@
 {/if}
 
 <style>
-  .page { display: grid; gap: 10px; max-width: 720px; padding-bottom: 32px; }
-  .bar { display: flex; align-items: center; gap: 4px; margin-left: -8px; }
+  .page { display: grid; gap: 10px; max-width: 720px; padding-bottom: var(--s-8); }
+  .bar { display: flex; align-items: center; gap: var(--s-1); margin-left: -8px; }
   .back, .icon-btn { width: 44px; height: 44px; display: grid; place-items: center; color: var(--ink); border: 0; background: none; border-radius: 50%; cursor: pointer; }
-  .titles { flex: 1; display: grid; padding-left: 4px; }
+  .titles { flex: 1; display: grid; padding-left: var(--s-1); }
   /* the desktop app bar already names the page */
   @media (min-width: 1024px) { .titles { visibility: hidden; } }
   .titles strong { font-size: 17px; font-weight: 600; }
-  .titles span { color: var(--ink-3); font-size: 12px; }
-  .seg { display: flex; gap: 3px; padding: 3px; border-radius: 12px; background: var(--surface-2); }
-  .seg button { flex: 1; min-height: 36px; border: 0; border-radius: 9px; background: none; color: var(--ink-3); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
+  .titles span { color: var(--ink-3); font-size: var(--fs-xs); }
+  .seg { display: flex; gap: 3px; padding: 3px; border-radius: var(--r-row); background: var(--surface-2); }
+  .seg button { flex: 1; min-height: 36px; border: 0; border-radius: 9px; background: none; color: var(--ink-3); font: inherit; font-size: var(--fs-sm); font-weight: 500; cursor: pointer; }
   .seg button.on { background: var(--surface); color: var(--ink); font-weight: 600; }
-  .fronts { display: flex; gap: 8px; overflow-x: auto; }
-  .fronts button { border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink); font: inherit; font-size: 13px; font-weight: 600; padding: 7px 12px; cursor: pointer; white-space: nowrap; }
+  .fronts { display: flex; gap: var(--s-2); overflow-x: auto; }
+  .fronts button { border: 1px solid var(--line); border-radius: var(--r-full); background: var(--surface); color: var(--ink); font: inherit; font-size: var(--fs-sm); font-weight: 600; padding: 7px var(--s-3); cursor: pointer; white-space: nowrap; }
   .fronts button.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
-  .timeline { background: var(--surface); border-radius: 16px; padding: 12px; display: grid; gap: 8px; }
+  .timeline { background: var(--surface); border-radius: var(--r-md); padding: var(--s-3); display: grid; gap: var(--s-2); }
   .axis, .lane { display: grid; grid-template-columns: 96px 1fr; align-items: center; }
-  .nav { display: flex; gap: 4px; }
-  .nav button { border: 0; background: none; color: var(--accent); font-size: 18px; padding: 0 8px; cursor: pointer; }
+  .nav { display: flex; gap: var(--s-1); }
+  .nav button { border: 0; background: none; color: var(--accent); font-size: var(--fs-lg); padding: 0 var(--s-2); cursor: pointer; }
   .ticks { position: relative; height: 16px; }
   .ticks span { position: absolute; top: 0; color: var(--ink-3); font-size: 11px; }
-  .lane-name { display: flex; align-items: center; gap: 6px; min-width: 0; padding-right: 6px; font-size: 13px; }
+  .lane-name { display: flex; align-items: center; gap: 6px; min-width: 0; padding-right: 6px; font-size: var(--fs-sm); }
   .lane-name > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .track { position: relative; height: 22px; border-radius: 4px; background: var(--surface-2); }
   .bar-seg { position: absolute; top: 0; bottom: 0; border-radius: 4px; background: var(--c); }
@@ -215,33 +215,33 @@
   .bar-seg[data-style='faint'] { background: none; border: 1.2px dashed var(--c); }
   .bar-seg[data-style='plain'] { background: var(--line); }
   .now { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--accent); }
-  .legend { display: flex; justify-content: center; gap: 14px; padding-top: 4px; color: var(--ink-3); font-size: 11px; }
+  .legend { display: flex; justify-content: center; gap: 14px; padding-top: var(--s-1); color: var(--ink-3); font-size: 11px; }
   .legend span { display: flex; align-items: center; gap: 5px; }
   .legend i { width: 14px; height: 10px; border-radius: 3px; background: var(--ink-3); }
   .legend i[data-style='dashed'] { background: color-mix(in oklab, var(--ink-3) 45%, transparent); }
   .legend i[data-style='faint'], .legend i[data-style='plain'] { background: none; border: 1px dashed var(--ink-3); }
-  h2 { margin: 8px 4px 0; color: var(--accent); font-size: 13px; font-weight: 600; }
-  .muted { color: var(--ink-3); margin: 4px; }
+  h2 { margin: var(--s-2) var(--s-1) 0; color: var(--accent); font-size: var(--fs-sm); font-weight: 600; }
+  .muted { color: var(--ink-3); margin: var(--s-1); }
   .error { color: var(--danger); }
-  .list { list-style: none; margin: 0; padding: 0; background: var(--surface); border-radius: 16px; overflow: hidden; }
+  .list { list-style: none; margin: 0; padding: 0; background: var(--surface); border-radius: var(--r-md); overflow: hidden; }
   .list li + li { border-top: 1px solid var(--line); }
-  .list li > button { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
-  .list time { width: 64px; flex: none; color: var(--ink-3); font-size: 13px; white-space: nowrap; }
-  .what { flex: 1; min-width: 0; font-size: 15px; line-height: 20px; }
+  .list li > button { display: flex; align-items: center; gap: var(--s-3); width: 100%; padding: 10px var(--s-3); border: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+  .list time { width: 64px; flex: none; color: var(--ink-3); font-size: var(--fs-sm); white-space: nowrap; }
+  .what { flex: 1; min-width: 0; font-size: var(--fs-md); line-height: 20px; }
   .tag { font-size: 11px; line-height: 14px; font-weight: 700; padding: 1px 7px; border-radius: 8px; background: var(--l-tag-fill); color: var(--l-tag-ink); border: 1px var(--l-dash) var(--l-tag-border); white-space: nowrap; }
-  .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 0 12px 12px 64px; }
-  .actions label { display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--ink-2); }
-  .actions input { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+  .actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-4); padding: 0 var(--s-3) var(--s-3) 64px; }
+  .actions label { display: flex; gap: 6px; align-items: center; font-size: var(--fs-sm); color: var(--ink-2); }
+  .actions input { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px var(--s-2); }
   .note { margin: 0; width: 100%; color: var(--ink-2); font-size: 14px; }
   .link { border: 0; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; padding: 6px 0; }
   .link:disabled { color: var(--ink-3); }
-  .log { display: flex; align-items: center; gap: 10px; padding: 10px 4px; border: 0; background: none; color: var(--accent); font: inherit; font-size: 15px; font-weight: 500; cursor: pointer; }
-  .saved-head { display: flex; align-items: center; gap: 8px; padding: 8px 4px; border: 0; background: none; font: inherit; text-align: left; cursor: pointer; color: var(--ink-3); }
+  .log { display: flex; align-items: center; gap: 10px; padding: 10px var(--s-1); border: 0; background: none; color: var(--accent); font: inherit; font-size: var(--fs-md); font-weight: 500; cursor: pointer; }
+  .saved-head { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-2) var(--s-1); border: 0; background: none; font: inherit; text-align: left; cursor: pointer; color: var(--ink-3); }
   .saved-head > span { flex: 1; display: grid; }
-  .saved-head strong { color: var(--ink-2); font-size: 13px; }
+  .saved-head strong { color: var(--ink-2); font-size: var(--fs-sm); }
   .saved { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-  .saved li { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 10px 12px; background: var(--surface); border-radius: 14px; }
-  .saved li time { color: var(--ink-3); font-size: 12px; }
+  .saved li { display: grid; grid-template-columns: 1fr auto; gap: 2px var(--s-3); padding: 10px var(--s-3); background: var(--surface); border-radius: var(--r-control); }
+  .saved li time { color: var(--ink-3); font-size: var(--fs-xs); }
   .saved li .link { grid-row: 1 / 3; grid-column: 2; }
   .saved li.undone .what { color: var(--ink-3); text-decoration: line-through; }
 </style>

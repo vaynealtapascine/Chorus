@@ -65,15 +65,15 @@
 </section>
 
 <style>
-  .trash-page { display: grid; gap: 8px; max-width: 720px; align-content: start; }
-  .back { display: inline-flex; align-items: center; gap: 4px; color: var(--accent); text-decoration: none; font-size: 14px; }
+  .trash-page { display: grid; gap: var(--s-2); max-width: 720px; align-content: start; }
+  .back { display: inline-flex; align-items: center; gap: var(--s-1); color: var(--accent); text-decoration: none; font-size: 14px; }
   .icon { display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 50%; background: none; color: var(--ink); cursor: pointer; }
-  input { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; }
-  .row { display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 10px 4px; }
-  .tile { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; flex: none; color: var(--tone); background: color-mix(in srgb, var(--tone) 16%, transparent); }
+  input { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-row); padding: 10px 14px; }
+  .row { display: flex; align-items: center; gap: var(--s-3); min-height: 60px; padding: 10px var(--s-1); }
+  .tile { display: grid; place-items: center; width: 40px; height: 40px; border-radius: var(--r-row); flex: none; color: var(--tone); background: color-mix(in srgb, var(--tone) 16%, transparent); }
   .text { flex: 1; min-width: 0; display: grid; }
-  .text strong { font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .text span { color: var(--ink-3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .restore { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 14px; border: 0; border-radius: 999px; background: var(--surface-2); color: var(--ink); font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; }
+  .text strong { font-size: var(--fs-md); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .text span { color: var(--ink-3); font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .restore { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 14px; border: 0; border-radius: var(--r-full); background: var(--surface-2); color: var(--ink); font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; }
   .restore:disabled { color: var(--ink-3); cursor: default; }
 </style>

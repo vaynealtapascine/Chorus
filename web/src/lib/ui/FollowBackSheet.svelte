@@ -26,5 +26,5 @@
 </Sheet>
 
 <style>
-  p { margin: 0 4px; color: var(--ink-2); font-size: 14px; line-height: 20px; }
+  p { margin: 0 var(--s-1); color: var(--ink-2); font-size: 14px; line-height: 20px; }
 </style>

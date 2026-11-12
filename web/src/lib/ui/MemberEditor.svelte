@@ -376,52 +376,52 @@
 {/if}
 
 <style>
-  .editor { display: grid; gap: 12px; align-content: start; padding-bottom: 72px; }
-  header { display: flex; align-items: center; gap: 8px; }
+  .editor { display: grid; gap: var(--s-3); align-content: start; padding-bottom: 72px; }
+  header { display: flex; align-items: center; gap: var(--s-2); }
   header > div { flex: 1; min-width: 0; }
   h1 { margin: 0; font-size: 20px; line-height: 26px; }
-  header p { margin: 0; color: var(--ink-3); font-size: 13px; }
-  .back { display: grid; place-items: center; width: 40px; height: 40px; font-size: 28px; color: var(--ink); text-decoration: none; }
+  header p { margin: 0; color: var(--ink-3); font-size: var(--fs-sm); }
+  .back { display: grid; place-items: center; width: 40px; height: 40px; font-size: var(--fs-2xl); color: var(--ink); text-decoration: none; }
   .check { display: grid; place-items: center; width: 40px; height: 40px; border: 0; background: none; color: var(--accent); cursor: pointer; }
   .check:disabled { color: var(--ink-3); cursor: default; }
-  .tag { border-radius: 999px; background: var(--surface-2); color: var(--ink-3); font-size: 12px; padding: 3px 10px; }
-  .identity { display: flex; align-items: center; gap: 16px; }
-  .avatar { width: 84px; height: 84px; display: grid; place-items: center; border-radius: 50%; overflow: hidden; font-size: 36px; font-weight: 700; background: var(--ring); color: var(--avatar-ink); }
-  .pill { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 16px; border: 0; border-radius: 999px; background: var(--surface-2); color: var(--ink); font: inherit; font-size: 15px; cursor: pointer; }
+  .tag { border-radius: var(--r-full); background: var(--surface-2); color: var(--ink-3); font-size: var(--fs-xs); padding: 3px 10px; }
+  .identity { display: flex; align-items: center; gap: var(--s-4); }
+  .avatar { width: 84px; height: 84px; display: grid; place-items: center; border-radius: 50%; overflow: hidden; font-size: var(--fs-3xl); font-weight: 700; background: var(--ring); color: var(--avatar-ink); }
+  .pill { display: inline-flex; align-items: center; gap: var(--s-2); min-height: 40px; padding: 0 var(--s-4); border: 0; border-radius: var(--r-full); background: var(--surface-2); color: var(--ink); font: inherit; font-size: var(--fs-md); cursor: pointer; }
   .pill.file input { display: none; }
-  .field { display: grid; gap: 2px; padding: 8px 14px; border-radius: 14px; background: var(--surface-2); color: var(--ink-3); font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+  .field { display: grid; gap: 2px; padding: var(--s-2) 14px; border-radius: var(--r-control); background: var(--surface-2); color: var(--ink-3); font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
   .field.strong:focus-within { box-shadow: inset 0 0 0 1.5px var(--accent); }
   .field.strong span { color: var(--accent); }
-  .field input, .field textarea { font: inherit; font-size: 16px; letter-spacing: 0; text-transform: none; font-weight: 400; color: var(--ink); background: none; border: 0; padding: 2px 0; min-width: 0; resize: vertical; }
+  .field input, .field textarea { font: inherit; font-size: var(--fs-base); letter-spacing: 0; text-transform: none; font-weight: 400; color: var(--ink); background: none; border: 0; padding: 2px 0; min-width: 0; resize: vertical; }
   .field input:focus, .field textarea:focus { outline: none; }
-  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  .error { margin: 0; color: var(--danger); font-size: 13px; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-3); }
+  .error { margin: 0; color: var(--danger); font-size: var(--fs-sm); }
   .muted { color: var(--ink-3); }
-  .foot { display: grid; justify-items: center; gap: 4px; }
-  .archive, .restore, .quiet { min-height: 44px; border: 0; background: none; font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
+  .foot { display: grid; justify-items: center; gap: var(--s-1); }
+  .archive, .restore, .quiet { min-height: 44px; border: 0; background: none; font: inherit; font-size: var(--fs-md); font-weight: 600; cursor: pointer; }
   .archive { color: var(--danger); }
   .restore { color: var(--accent); }
   .quiet { color: var(--ink-3); font-weight: 400; font-size: 14px; }
   .savebar { position: fixed; left: 0; right: 0; bottom: 0; display: flex; justify-content: center; padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); background: var(--bg); z-index: 5; }
-  .save { flex: 1; max-width: 560px; min-height: 48px; border: 0; border-radius: 14px; background: var(--accent); color: var(--on-accent); font: inherit; font-size: 16px; font-weight: 600; cursor: pointer; }
+  .save { flex: 1; max-width: 560px; min-height: 48px; border: 0; border-radius: var(--r-control); background: var(--accent); color: var(--on-accent); font: inherit; font-size: var(--fs-base); font-weight: 600; cursor: pointer; }
   .save:disabled { background: var(--surface-2); color: var(--ink-3); cursor: default; }
-  .crop { display: grid; gap: 8px; justify-items: start; }
-  .crop canvas { width: 192px; height: 192px; border-radius: 16px; border: 1px solid var(--line); }
-  .crop label { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink-2); }
-  .banner-preview { height: 110px; border-radius: 14px; overflow: hidden; background: var(--surface-2); }
+  .crop { display: grid; gap: var(--s-2); justify-items: start; }
+  .crop canvas { width: 192px; height: 192px; border-radius: var(--r-md); border: 1px solid var(--line); }
+  .crop label { display: flex; align-items: center; gap: var(--s-2); font-size: 14px; color: var(--ink-2); }
+  .banner-preview { height: 110px; border-radius: var(--r-control); overflow: hidden; background: var(--surface-2); }
   .banner-preview :global(img) { width: 100%; height: 100%; object-fit: cover; }
   .handle { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 6px 14px; }
   .handle .h { flex: 1; font-weight: 600; overflow-wrap: anywhere; }
-  .shown { font-size: 12px; color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 1px 8px; }
+  .shown { font-size: var(--fs-xs); color: var(--accent); background: var(--accent-soft); border-radius: var(--r-full); padding: 1px var(--s-2); }
   .link { border: 0; background: none; color: var(--accent); font: inherit; font-size: 14px; cursor: pointer; }
-  .claim { display: flex; gap: 8px; padding: 4px 12px; }
-  .claim input { flex: 1; min-width: 0; font: inherit; color: var(--ink); background: var(--surface-2); border: 0; border-radius: 12px; padding: 10px 14px; }
-  .claim .save { flex: none; min-height: 40px; padding: 0 18px; font-size: 15px; }
-  .tag-row { display: flex; align-items: center; gap: 8px; }
-  .tag-row input { width: 7em; font: inherit; color: var(--ink); background: var(--surface-2); border: 0; border-radius: 10px; padding: 8px 10px; }
-  .dashed { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; border: 1.5px dashed var(--line); border-radius: 16px; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
-  .label { margin: 4px 0 0; color: var(--ink-2); font-size: 14px; }
-  .seg { display: flex; gap: 3px; padding: 3px; border-radius: 12px; background: var(--surface-2); }
-  .seg button { flex: 1; min-height: 34px; border: 0; border-radius: 9px; background: none; color: var(--ink-3); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
+  .claim { display: flex; gap: var(--s-2); padding: var(--s-1) var(--s-3); }
+  .claim input { flex: 1; min-width: 0; font: inherit; color: var(--ink); background: var(--surface-2); border: 0; border-radius: var(--r-row); padding: 10px 14px; }
+  .claim .save { flex: none; min-height: 40px; padding: 0 18px; font-size: var(--fs-md); }
+  .tag-row { display: flex; align-items: center; gap: var(--s-2); }
+  .tag-row input { width: 7em; font: inherit; color: var(--ink); background: var(--surface-2); border: 0; border-radius: var(--r-sm); padding: var(--s-2) 10px; }
+  .dashed { display: flex; align-items: center; justify-content: center; gap: var(--s-2); min-height: 48px; border: 1.5px dashed var(--line); border-radius: var(--r-md); background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
+  .label { margin: var(--s-1) 0 0; color: var(--ink-2); font-size: 14px; }
+  .seg { display: flex; gap: 3px; padding: 3px; border-radius: var(--r-row); background: var(--surface-2); }
+  .seg button { flex: 1; min-height: 34px; border: 0; border-radius: 9px; background: none; color: var(--ink-3); font: inherit; font-size: var(--fs-sm); font-weight: 500; cursor: pointer; }
   .seg button[aria-checked='true'] { background: var(--accent); color: var(--on-accent); font-weight: 600; }
 </style>

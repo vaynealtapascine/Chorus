@@ -36,5 +36,5 @@
   <div><button disabled={!body.trim()}>Save changes</button><button type="button" onclick={onclose}>Cancel</button></div>
 </form>
 <style>
-  form, label { display: grid; gap: 8px; } form { padding: 12px 0; } input, textarea { box-sizing: border-box; width: 100%; padding: 10px; font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm); } div { display: flex; gap: 12px; } button { min-height: 44px; cursor: pointer; color: var(--accent); background: none; border: 0; } p { color: var(--danger); }
+  form, label { display: grid; gap: var(--s-2); } form { padding: var(--s-3) 0; } input, textarea { box-sizing: border-box; width: 100%; padding: 10px; font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm); } div { display: flex; gap: var(--s-3); } button { min-height: 44px; cursor: pointer; color: var(--accent); background: none; border: 0; } p { color: var(--danger); }
 </style>

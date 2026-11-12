@@ -148,21 +148,21 @@
 
 <style>
   .icon-btn { width: 44px; height: 44px; display: grid; place-items: center; border: 0; background: none; color: var(--ink-2); border-radius: 50%; cursor: pointer; }
-  .search { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
-  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px 0; padding: 4px 0; max-height: 44vh; overflow: auto; }
+  .search { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-sm); padding: var(--s-3) 14px; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px 0; padding: var(--s-1) 0; max-height: 44vh; overflow: auto; }
   .pick { display: grid; justify-items: center; gap: 6px; padding: 0; border: 0; background: none; color: var(--ink); font: inherit; cursor: pointer; min-width: 0; }
   .ring { padding: 3px; border-radius: 50%; border: 2.5px solid transparent; display: grid; }
   .pick.on .ring { border-color: var(--l-ring); }
   .pick[data-style='faint'] .ring, .pick[data-style='dashed'] .ring { border-width: 2px; }
   .pick[data-style='plain'] .ring { background: var(--line); }
-  .nm { max-width: 100%; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .nm { max-width: 100%; font-size: var(--fs-sm); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pick.on .nm { font-weight: 600; }
   .tag { font-size: 10px; line-height: 13px; font-weight: 700; padding: 1px 7px; border-radius: 8px; background: var(--l-tag-fill); color: var(--l-tag-ink); border: 1px var(--l-dash) var(--l-tag-border); max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tag.empty { visibility: hidden; height: 15px; padding: 0; border: 0; }
-  .none { grid-column: 1 / -1; color: var(--ink-3); padding: 8px; }
+  .none { grid-column: 1 / -1; color: var(--ink-3); padding: var(--s-2); }
   .opts { display: grid; gap: 10px; padding: 10px 14px 14px; }
-  .opts label, .alerts { display: grid; gap: 4px; font-size: 13px; color: var(--ink-2); }
-  .opts input { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  .opts label, .alerts { display: grid; gap: var(--s-1); font-size: var(--fs-sm); color: var(--ink-2); }
+  .opts input { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: var(--s-2) 10px; }
   .out { justify-self: start; color: var(--danger); }
-  .sum { margin: 0; color: var(--ink-3); font-size: 12px; text-align: center; }
+  .sum { margin: 0; color: var(--ink-3); font-size: var(--fs-xs); text-align: center; }
 </style>

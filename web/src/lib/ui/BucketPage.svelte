@@ -104,14 +104,14 @@
 {/if}
 
 <style>
-  .look { display: flex; align-items: center; gap: 12px; padding: 16px 16px 0; }
-  .tile { width: 56px; height: 56px; border-radius: 14px; border: 0; cursor: pointer; color: var(--ink-2); }
+  .look { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-4) var(--s-4) 0; }
+  .tile { width: 56px; height: 56px; border-radius: var(--r-control); border: 0; cursor: pointer; color: var(--ink-2); }
   .name { flex: 1; }
-  .swatches { display: flex; gap: 10px; padding: 14px 16px 4px; }
+  .swatches { display: flex; gap: 10px; padding: 14px var(--s-4) var(--s-1); }
   .swatches button { width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--bg); background: var(--c); cursor: pointer; padding: 0; }
   .swatches button.on { border-color: var(--ink); }
-  .create { display: flex; padding: 16px; }
-  .pad { padding: 0 16px; }
+  .create { display: flex; padding: var(--s-4); }
+  .pad { padding: 0 var(--s-4); }
   .check { width: 24px; height: 24px; border-radius: 7px; border: 2px solid var(--ink-3); display: grid; place-items: center; color: var(--on-accent); }
   .check.on { background: var(--accent); border-color: var(--accent); }
   .remove { background: var(--danger); }

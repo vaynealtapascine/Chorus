@@ -249,40 +249,40 @@
 {/if}
 
 <style>
-  .hero { display: flex; align-items: center; gap: 16px; padding: 18px 16px 0; }
-  .hero-text { flex: 1; min-width: 0; display: grid; gap: 4px; justify-items: start; }
+  .hero { display: flex; align-items: center; gap: var(--s-4); padding: 18px var(--s-4) 0; }
+  .hero-text { flex: 1; min-width: 0; display: grid; gap: var(--s-1); justify-items: start; }
   h1 { margin: 0; font-size: 24px; line-height: 30px; font-weight: 600; }
   .meta { color: var(--ink-3); font-size: 14px; }
   .pills { display: flex; flex-wrap: wrap; gap: 6px; }
-  .bio { margin: 12px 16px 0; font-size: 15px; line-height: 21px; }
-  .buttons { padding: 14px 16px; }
+  .bio { margin: var(--s-3) var(--s-4) 0; font-size: var(--fs-md); line-height: 21px; }
+  .buttons { padding: 14px var(--s-4); }
   .around { margin-top: 2px; }
   .card-head { display: flex; align-items: center; }
-  .card-head strong { flex: 1; font-size: 16px; font-weight: 600; }
-  .card-head span { color: var(--ink-3); font-size: 13px; }
+  .card-head strong { flex: 1; font-size: var(--fs-base); font-weight: 600; }
+  .card-head span { color: var(--ink-3); font-size: var(--fs-sm); }
   .faces { display: flex; gap: 14px; overflow-x: auto; }
-  .face { display: grid; justify-items: center; gap: 6px; width: 72px; text-align: center; font-size: 13px; }
+  .face { display: grid; justify-items: center; gap: 6px; width: 72px; text-align: center; font-size: var(--fs-sm); }
   .face small { color: var(--ink-3); font-size: 11px; margin-top: -4px; }
   .fr-card p { margin: 0; display: flex; align-items: center; gap: 6px; }
-  .stats { padding: 8px 16px 0; }
-  .history { margin: 8px 16px 0; color: var(--accent); font-size: 13px; }
+  .stats { padding: var(--s-2) var(--s-4) 0; }
+  .history { margin: var(--s-2) var(--s-4) 0; color: var(--accent); font-size: var(--fs-sm); }
   .history summary { cursor: pointer; padding: 6px 0; }
   .history p { margin: 2px 0; }
-  .members { display: flex; gap: 14px; overflow-x: auto; padding: 0 16px; }
-  .member { display: grid; justify-items: center; gap: 4px; width: 64px; color: var(--ink); text-decoration: none; text-align: center; }
-  .member strong { font-size: 13px; font-weight: 500; max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .members { display: flex; gap: 14px; overflow-x: auto; padding: 0 var(--s-4); }
+  .member { display: grid; justify-items: center; gap: var(--s-1); width: 64px; color: var(--ink); text-decoration: none; text-align: center; }
+  .member strong { font-size: var(--fs-sm); font-weight: 500; max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .member small { color: var(--ink-3); font-size: 11px; }
   .strong { font-weight: 600 !important; }
   .chev { color: var(--ink-3); display: grid; }
-  .about { display: grid; gap: 10px; padding: 16px; }
-  .field { display: grid; gap: 2px; padding: 12px 14px; border-radius: 14px; background: var(--surface); }
-  .field span { color: var(--ink-2); font-size: 12px; }
+  .about { display: grid; gap: 10px; padding: var(--s-4); }
+  .field { display: grid; gap: 2px; padding: var(--s-3) 14px; border-radius: var(--r-control); background: var(--surface); }
+  .field span { color: var(--ink-2); font-size: var(--fs-xs); }
   .posts { display: grid; }
   .menu { display: grid; gap: 2px; }
-  .menu button, .menu a { display: flex; align-items: center; gap: 14px; padding: 12px; border: 0; border-radius: 12px; background: none; color: var(--ink); font: inherit; font-size: 16px; text-align: left; text-decoration: none; cursor: pointer; }
+  .menu button, .menu a { display: flex; align-items: center; gap: 14px; padding: var(--s-3); border: 0; border-radius: var(--r-row); background: none; color: var(--ink); font: inherit; font-size: var(--fs-base); text-align: left; text-decoration: none; cursor: pointer; }
   .menu button:hover, .menu a:hover { background: var(--surface-2); }
   .menu :global(.icon) { color: var(--ink-2); }
-  .menu small { margin-left: auto; color: var(--ink-3); font-size: 13px; }
+  .menu small { margin-left: auto; color: var(--ink-3); font-size: var(--fs-sm); }
   .menu .danger, .menu .danger :global(.icon) { color: var(--danger); }
   .danger-fill { background: var(--danger); }
 </style>

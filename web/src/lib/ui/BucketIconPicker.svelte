@@ -41,8 +41,8 @@
 </div>
 
 <style>
-  .look { display: grid; gap: 8px; }
-  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+  .look { display: grid; gap: var(--s-2); }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1); }
   button { width: 34px; height: 34px; display: grid; place-items: center; border: 2px solid transparent; border-radius: 50%;
     background: var(--surface-2); color: var(--ink-3); cursor: pointer; padding: 0; }
   button:hover { color: var(--ink); }
@@ -50,7 +50,7 @@
   .swatch.on { border-color: var(--ink); }
   .emoji { display: inline-grid; place-items: center; width: 44px; height: 34px; border-radius: 17px; border: 2px solid transparent; background: var(--surface-2); }
   .emoji.on { border-color: var(--accent); background: var(--accent-soft); }
-  .emoji input { width: 36px; border: 0; background: none; text-align: center; font-size: 18px; color: var(--ink); padding: 0; }
+  .emoji input { width: 36px; border: 0; background: none; text-align: center; font-size: var(--fs-lg); color: var(--ink); padding: 0; }
   input[type='color'] { width: 34px; height: 34px; padding: 0; border: 0; background: none; cursor: pointer; }
   .hint { color: var(--ink-3); font-size: var(--fs-sm); }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }

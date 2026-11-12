@@ -69,18 +69,18 @@
 {/if}
 
 <style>
-  .list { display: grid; gap: 4px; }
-  .row { display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 8px 8px 8px 6px; border: 0; border-radius: 12px; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+  .list { display: grid; gap: var(--s-1); }
+  .row { display: flex; align-items: center; gap: var(--s-3); min-height: 60px; padding: var(--s-2) var(--s-2) var(--s-2) 6px; border: 0; border-radius: var(--r-row); background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
   .row:hover { background: var(--surface-2); }
   .row > :global(.icon) { color: var(--ink-3); }
-  .tile { width: 40px; height: 40px; display: grid; place-items: center; flex: none; border-radius: 10px; font-size: 18px;
+  .tile { width: 40px; height: 40px; display: grid; place-items: center; flex: none; border-radius: var(--r-sm); font-size: var(--fs-lg);
     background: color-mix(in srgb, var(--c, var(--ink-3)) 22%, var(--surface)); color: var(--c, var(--ink-2)); }
   .info { display: grid; flex: 1; min-width: 0; }
-  .info strong { font-size: 16px; font-weight: 600; }
-  .info span { color: var(--ink-3); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .dashed { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 52px; margin-top: 8px; border: 1.5px dashed var(--line); border-radius: 16px; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
-  .field { font: inherit; color: var(--ink); background: var(--surface-2); border: 0; border-radius: 12px; padding: 12px 14px; }
-  .remove { display: flex; align-items: center; gap: 12px; min-height: 48px; border: 0; background: none; color: var(--danger); font: inherit; cursor: pointer; padding: 0 4px; }
-  .go { flex: 1; min-height: 44px; border: 0; border-radius: 14px; background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
+  .info strong { font-size: var(--fs-base); font-weight: 600; }
+  .info span { color: var(--ink-3); font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dashed { display: flex; align-items: center; justify-content: center; gap: var(--s-2); min-height: 52px; margin-top: var(--s-2); border: 1.5px dashed var(--line); border-radius: var(--r-md); background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
+  .field { font: inherit; color: var(--ink); background: var(--surface-2); border: 0; border-radius: var(--r-row); padding: var(--s-3) 14px; }
+  .remove { display: flex; align-items: center; gap: var(--s-3); min-height: 48px; border: 0; background: none; color: var(--danger); font: inherit; cursor: pointer; padding: 0 var(--s-1); }
+  .go { flex: 1; min-height: 44px; border: 0; border-radius: var(--r-control); background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
   .go:disabled { background: var(--surface-2); color: var(--ink-3); cursor: default; }
 </style>

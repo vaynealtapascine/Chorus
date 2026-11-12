@@ -62,15 +62,15 @@
 {/if}
 
 <style>
-  .page { display: grid; gap: 12px; max-width: 720px; align-content: start; }
-  .card { display: grid; gap: 14px; padding: 14px; border-radius: 16px; background: var(--surface-2); }
-  h2 { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 16px; }
-  .row { display: flex; align-items: center; gap: 12px; }
-  .tile { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; background: var(--accent-soft); color: var(--accent); flex: none; }
-  h2 .tile { width: 32px; height: 32px; border-radius: 10px; }
+  .page { display: grid; gap: var(--s-3); max-width: 720px; align-content: start; }
+  .card { display: grid; gap: 14px; padding: 14px; border-radius: var(--r-md); background: var(--surface-2); }
+  h2 { display: flex; align-items: center; gap: 10px; margin: 0; font-size: var(--fs-base); }
+  .row { display: flex; align-items: center; gap: var(--s-3); }
+  .tile { display: grid; place-items: center; width: 40px; height: 40px; border-radius: var(--r-row); background: var(--accent-soft); color: var(--accent); flex: none; }
+  h2 .tile { width: 32px; height: 32px; border-radius: var(--r-sm); }
   .titles { flex: 1; min-width: 0; display: grid; }
-  .titles strong { font-size: 15px; }
-  .titles span { color: var(--ink-3); font-size: 13px; }
-  .pill { min-height: 36px; padding: 0 16px; border: 0; border-radius: 999px; background: var(--surface-3, var(--surface)); color: var(--ink); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+  .titles strong { font-size: var(--fs-md); }
+  .titles span { color: var(--ink-3); font-size: var(--fs-sm); }
+  .pill { min-height: 36px; padding: 0 var(--s-4); border: 0; border-radius: var(--r-full); background: var(--surface-3, var(--surface)); color: var(--ink); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
   .error { margin: 0; color: var(--danger); }
 </style>

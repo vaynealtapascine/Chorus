@@ -69,24 +69,24 @@
 </section>
 
 <style>
-  .card { background: var(--surface); padding: 16px; border-radius: var(--r-lg); display: grid; gap: 16px; }
-  .front-heading { display: flex; align-items: center; gap: 8px; }
+  .card { background: var(--surface); padding: var(--s-4); border-radius: var(--r-lg); display: grid; gap: var(--s-4); }
+  .front-heading { display: flex; align-items: center; gap: var(--s-2); }
   .front-heading > span:last-child { color: var(--ink-3); margin-left: auto; font-size: var(--fs-xs); }
   .front-dot { width: 14px; height: 14px; border: 2px solid var(--accent); border-radius: 50%; box-shadow: inset 0 0 0 2px var(--surface); background: var(--accent); }
-  .layer { display: grid; gap: 10px; padding: 12px; border-radius: 20px; border: 1px dashed var(--line); }
+  .layer { display: grid; gap: 10px; padding: var(--s-3); border-radius: 20px; border: 1px dashed var(--line); }
   .conscious { border-color: color-mix(in srgb, var(--accent) 65%, transparent); background: color-mix(in srgb, var(--accent) 3%, transparent); }
   .front { border-style: solid; border-color: var(--accent); background: var(--accent-soft); border-radius: var(--r-md); padding: 10px; }
-  .layer-heading { display: flex; gap: 8px; align-items: baseline; padding: 0 2px 2px; color: var(--accent); font-size: var(--fs-xs); }
+  .layer-heading { display: flex; gap: var(--s-2); align-items: baseline; padding: 0 2px 2px; color: var(--accent); font-size: var(--fs-xs); }
   .layer-heading > span { color: var(--ink-3); }
-  .front-person { display: flex; align-items: center; gap: 10px; background: var(--surface); padding: 10px; border-radius: 12px; min-width: 0; }
+  .front-person { display: flex; align-items: center; gap: 10px; background: var(--surface); padding: 10px; border-radius: var(--r-row); min-width: 0; }
   .avatar { display: grid; place-items: center; width: 42px; height: 42px; flex: none; background: var(--ring); color: var(--avatar-ink); border: 2px solid var(--ring); border-radius: 50%; overflow: hidden; font-weight: 700; }
   .person-name { display: grid; gap: 2px; font-size: var(--fs-md); font-weight: 600; overflow-wrap: anywhere; }
   .primary { color: var(--ink-3); font-size: var(--fs-xs); font-weight: 400; }
   .duration { margin-left: auto; color: var(--ink-3); font-size: var(--fs-xs); white-space: nowrap; font-variant-numeric: tabular-nums; }
-  .layer-footer { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; align-items: center; color: var(--ink-2); font-size: var(--fs-xs); }
-  .chips { display: flex; flex-wrap: wrap; justify-content: end; gap: 4px; }
-  .member-chip { padding: 4px 10px; border-radius: 999px; background: var(--surface-2); color: var(--ink); }
+  .layer-footer { display: flex; flex-wrap: wrap; gap: var(--s-2); justify-content: space-between; align-items: center; color: var(--ink-2); font-size: var(--fs-xs); }
+  .chips { display: flex; flex-wrap: wrap; justify-content: end; gap: var(--s-1); }
+  .member-chip { padding: var(--s-1) 10px; border-radius: var(--r-full); background: var(--surface-2); color: var(--ink); }
   .none, .empty { color: var(--ink-3); font-size: var(--fs-xs); }
-  .empty { margin: 4px 0; }
-  @media (max-width: 420px) { .card { padding: 12px; } .layer { padding: 10px; } .front { padding: 8px; } }
+  .empty { margin: var(--s-1) 0; }
+  @media (max-width: 420px) { .card { padding: var(--s-3); } .layer { padding: 10px; } .front { padding: var(--s-2); } }
 </style>

@@ -69,25 +69,25 @@
 </article>
 
 <style>
-  .post { padding: 10px 16px; background: var(--bg); border-bottom: 1px solid var(--line); min-width: 0; cursor: pointer; }
+  .post { padding: 10px var(--s-4); background: var(--bg); border-bottom: 1px solid var(--line); min-width: 0; cursor: pointer; }
   .post:hover { background: color-mix(in srgb, var(--surface) 60%, var(--bg)); }
-  .frame { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 12px; }
+  .frame { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: var(--s-3); }
   .avatar { display: inline-grid; width: 40px; height: 40px; border-radius: 50%; overflow: hidden; background: var(--avatar-bg); color: var(--avatar-ink); place-items: center; font-weight: 700; text-decoration: none; }
   .tags { color: var(--accent); font-size: var(--fs-sm); overflow-wrap: anywhere; }
-  .main { display: grid; gap: 4px; min-width: 0; align-content: start; }
-  .identity { display: flex; align-items: center; gap: 4px; min-width: 0; line-height: 20px; }
-  .authors { font-weight: 600; font-size: 15px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .main { display: grid; gap: var(--s-1); min-width: 0; align-content: start; }
+  .identity { display: flex; align-items: center; gap: var(--s-1); min-width: 0; line-height: 20px; }
+  .authors { font-weight: 600; font-size: var(--fs-md); color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .handle { color: var(--ink-3); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 0 1 auto; }
   .when { color: var(--ink-3); font-size: 14px; white-space: nowrap; }
   .when a { color: inherit; text-decoration: none; }
   .when a:hover, .reply-ref:hover { text-decoration: underline; }
   .from, .reply-ref, .meta-line { color: var(--ink-3); font-size: var(--fs-xs); text-decoration: none; justify-self: start; }
   h3, p { margin: 0; }
-  h3 { font-size: 16px; line-height: 22px; }
-  .body { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; line-height: 21px; }
+  h3 { font-size: var(--fs-base); line-height: 22px; }
+  .body { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--fs-md); line-height: 21px; }
   .clamped { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }
-  .expand { color: var(--accent); justify-self: start; padding: 4px 0; font-size: var(--fs-sm); font-weight: 600; text-decoration: none; }
-  .cw { display: flex; align-items: center; gap: 8px; min-height: 48px; border: 0; border-radius: 10px; background: var(--surface-2); color: var(--ink-2); padding: 0 10px; text-align: left; font: inherit; font-size: var(--fs-sm); cursor: pointer; }
+  .expand { color: var(--accent); justify-self: start; padding: var(--s-1) 0; font-size: var(--fs-sm); font-weight: 600; text-decoration: none; }
+  .cw { display: flex; align-items: center; gap: var(--s-2); min-height: 48px; border: 0; border-radius: var(--r-sm); background: var(--surface-2); color: var(--ink-2); padding: 0 10px; text-align: left; font: inherit; font-size: var(--fs-sm); cursor: pointer; }
   .cw span:first-child { flex: 1; }
   .cw-toggle { color: var(--accent); font-weight: 600; }
 </style>

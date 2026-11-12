@@ -216,19 +216,19 @@
 </section>
 
 <style>
-  .find { display: flex; align-items: center; gap: 8px; padding: 0 4px 0 14px; border-radius: var(--r-full); background: var(--surface-2); color: var(--ink-3); }
-  .find input { flex: 1; min-width: 0; border: 0; background: none; color: var(--ink); padding: 12px 0; font: inherit; }
+  .find { display: flex; align-items: center; gap: var(--s-2); padding: 0 var(--s-1) 0 14px; border-radius: var(--r-full); background: var(--surface-2); color: var(--ink-3); }
+  .find input { flex: 1; min-width: 0; border: 0; background: none; color: var(--ink); padding: var(--s-3) 0; font: inherit; }
   .find .plus { display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 50%; background: none; color: var(--accent); }
-  .card { flex: 1; display: flex; align-items: center; gap: 12px; min-width: 0; padding: 8px 8px 8px 0; }
-  .feeds > .card { padding: 8px 8px 8px 0; border-bottom: 1px solid var(--line); }
-  .tile { display: grid; place-items: center; width: 40px; height: 40px; flex: none; border-radius: 12px; background: var(--accent-soft); color: var(--accent); }
+  .card { flex: 1; display: flex; align-items: center; gap: var(--s-3); min-width: 0; padding: var(--s-2) var(--s-2) var(--s-2) 0; }
+  .feeds > .card { padding: var(--s-2) var(--s-2) var(--s-2) 0; border-bottom: 1px solid var(--line); }
+  .tile { display: grid; place-items: center; width: 40px; height: 40px; flex: none; border-radius: var(--r-row); background: var(--accent-soft); color: var(--accent); }
   .card .text { flex: 1; min-width: 0; display: grid; text-align: left; border: 0; background: none; padding: 0; font: inherit; color: var(--ink); }
-  .card .text strong { font-weight: 600; font-size: 15px; }
-  .card .text span { color: var(--ink-3); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card .text strong { font-weight: 600; font-size: var(--fs-md); }
+  .card .text span { color: var(--ink-3); font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pin { display: grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: 50%; background: none; color: var(--ink-3); }
   .pin.on { color: var(--accent); }
-  .link-btn { border: 0; background: none; color: var(--accent); font: inherit; padding: 8px 0; }
-  .lists-row { display: flex; align-items: center; gap: 14px; padding: 14px 4px; border: 0; border-top: 1px solid var(--line); background: none; color: var(--ink); font: inherit; font-weight: 600; text-align: left; }
+  .link-btn { border: 0; background: none; color: var(--accent); font: inherit; padding: var(--s-2) 0; }
+  .lists-row { display: flex; align-items: center; gap: 14px; padding: 14px var(--s-1); border: 0; border-top: 1px solid var(--line); background: none; color: var(--ink); font: inherit; font-weight: 600; text-align: left; }
   .lists-row span { flex: 1; }
   .feeds, .editor, .preview, .shared { display: grid; gap: var(--s-3); }
   p, h2 { margin: 0; }

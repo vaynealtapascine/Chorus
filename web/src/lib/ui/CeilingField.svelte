@@ -92,17 +92,17 @@
 </div>
 
 <style>
-  .field { display: grid; gap: 4px; padding: 10px 0; border-top: 1px solid var(--line); }
-  .head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .field { display: grid; gap: var(--s-1); padding: 10px 0; border-top: 1px solid var(--line); }
+  .head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-3); }
   .label { color: var(--ink); font-weight: 500; }
   small, .inherited { color: var(--ink-3); font-size: var(--fs-sm); }
   .link { border: 0; background: none; color: var(--accent); font: inherit; font-size: var(--fs-sm); cursor: pointer; padding: 2px 0; white-space: nowrap; }
-  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; color: var(--ink-2); }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) 14px; color: var(--ink-2); }
   label { display: inline-flex; align-items: center; gap: 6px; }
   .pad { padding: 0; }
   .sw { display: inline-flex; align-items: center; gap: 6px; }
   input[type='number'] { width: 5.5em; }
   input[type='number'], input[type='time'], select { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line);
-    border-radius: var(--r-sm); padding: 5px 8px; }
+    border-radius: var(--r-sm); padding: 5px var(--s-2); }
   .error { margin: 0; color: var(--danger); font-size: var(--fs-sm); }
 </style>

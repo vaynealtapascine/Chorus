@@ -12,10 +12,10 @@
 </div>
 
 <style>
-  .form-note { display: flex; gap: 10px; padding: 10px 12px; border-radius: 12px; background: var(--accent-soft); color: var(--ink); }
+  .form-note { display: flex; gap: 10px; padding: 10px var(--s-3); border-radius: var(--r-row); background: var(--accent-soft); color: var(--ink); }
   .form-note > :global(.icon) { color: var(--accent); margin-top: 1px; }
   .form-note.warning { background: color-mix(in oklab, var(--danger) 14%, transparent); }
   .form-note.warning > :global(.icon), .form-note.warning strong { color: var(--danger); }
   strong { display: block; color: var(--accent); font-size: 14px; line-height: 19px; font-weight: 600; }
-  p { margin: 0; font-size: 13px; line-height: 18px; }
+  p { margin: 0; font-size: var(--fs-sm); line-height: 18px; }
 </style>

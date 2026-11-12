@@ -96,17 +96,17 @@
 {/snippet}
 
 <style>
-  .picker { display: grid; gap: 8px; }
-  .box { display: grid; gap: 8px; padding: 10px; border-radius: var(--r, 14px); border: 1.5px dashed color-mix(in oklab, var(--ink-3) 40%, transparent); }
+  .picker { display: grid; gap: var(--s-2); }
+  .box { display: grid; gap: var(--s-2); padding: 10px; border-radius: var(--r, 14px); border: 1.5px dashed color-mix(in oklab, var(--ink-3) 40%, transparent); }
   .box.first { background: var(--surface-2); border: 1px solid color-mix(in oklab, var(--accent) 50%, transparent); }
-  .box.single { border: 1px solid var(--line); border-radius: 14px; }
+  .box.single { border: 1px solid var(--line); border-radius: var(--r-control); }
   .box.on { background: color-mix(in oklab, var(--accent) 10%, transparent); border: 2px solid var(--accent); }
-  .choice { display: flex; align-items: center; gap: 10px; width: 100%; padding: 2px 4px; border: 0; background: none; color: var(--ink); font: inherit; cursor: pointer; text-align: left; }
+  .choice { display: flex; align-items: center; gap: 10px; width: 100%; padding: 2px var(--s-1); border: 0; background: none; color: var(--ink); font: inherit; cursor: pointer; text-align: left; }
   .text { flex: 1; display: grid; }
-  .t { display: flex; align-items: center; gap: 4px; font-size: 14px; font-weight: 600; }
+  .t { display: flex; align-items: center; gap: var(--s-1); font-size: 14px; font-weight: 600; }
   .t :global(.icon) { color: var(--ink-3); }
   .box.on > .choice .t { color: var(--accent); }
-  .a { color: var(--ink-3); font-size: 12px; }
+  .a { color: var(--ink-3); font-size: var(--fs-xs); }
   .radio { width: 22px; height: 22px; flex: none; border-radius: 50%; border: 2px solid var(--line); display: grid; place-items: center; }
   .radio.on { border-color: var(--accent); }
   .radio.on::after { content: ''; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }

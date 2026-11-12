@@ -98,19 +98,19 @@
 </section>
 
 <style>
-  .bundle { display: grid; gap: 10px; padding: 14px; border-radius: 16px; background: var(--surface-2); }
-  .head { display: flex; align-items: center; gap: 12px; }
-  .tile { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; background: var(--accent-soft); color: var(--accent); flex: none; }
+  .bundle { display: grid; gap: 10px; padding: 14px; border-radius: var(--r-md); background: var(--surface-2); }
+  .head { display: flex; align-items: center; gap: var(--s-3); }
+  .tile { display: grid; place-items: center; width: 40px; height: 40px; border-radius: var(--r-row); background: var(--accent-soft); color: var(--accent); flex: none; }
   .titles { flex: 1; min-width: 0; display: grid; }
-  .titles strong { font-size: 15px; }
-  .titles span { color: var(--ink-3); font-size: 13px; }
-  .pill { display: inline-flex; align-items: center; min-height: 36px; padding: 0 16px; border: 0; border-radius: 999px; background: var(--surface-3, var(--surface)); color: var(--ink); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; text-decoration: none; }
+  .titles strong { font-size: var(--fs-md); }
+  .titles span { color: var(--ink-3); font-size: var(--fs-sm); }
+  .pill { display: inline-flex; align-items: center; min-height: 36px; padding: 0 var(--s-4); border: 0; border-radius: var(--r-full); background: var(--surface-3, var(--surface)); color: var(--ink); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; text-decoration: none; }
   .pill.go { background: var(--accent); color: var(--on-accent); }
   .pill:disabled { color: var(--ink-3); cursor: default; }
   .bar { height: 6px; border-radius: 3px; background: var(--surface-3, var(--surface)); overflow: hidden; }
   .bar span { display: block; height: 100%; background: var(--accent); transition: width var(--t-base) var(--ease); }
-  .foot { display: flex; justify-content: space-between; gap: 12px; color: var(--ink-3); font-size: 12px; }
+  .foot { display: flex; justify-content: space-between; gap: var(--s-3); color: var(--ink-3); font-size: var(--fs-xs); }
   .phase { color: var(--accent); font-weight: 600; }
   .link { border: 0; background: none; padding: 0; color: var(--accent); font: inherit; cursor: pointer; }
-  .error { margin: 0; color: var(--danger); font-size: 13px; }
+  .error { margin: 0; color: var(--danger); font-size: var(--fs-sm); }
 </style>

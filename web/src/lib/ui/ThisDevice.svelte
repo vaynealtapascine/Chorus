@@ -103,12 +103,12 @@
 {/if}
 
 <style>
-  .page { display: grid; gap: 12px; max-width: 720px; align-content: start; }
-  .note { margin: 0; color: var(--ink-3); font-size: 13px; padding: 0 4px; }
+  .page { display: grid; gap: var(--s-3); max-width: 720px; align-content: start; }
+  .note { margin: 0; color: var(--ink-3); font-size: var(--fs-sm); padding: 0 var(--s-1); }
   .note.error { color: var(--danger); }
-  .usage { display: grid; gap: 8px; padding: 14px; border-radius: 16px; background: var(--surface-2); }
-  .head { display: flex; justify-content: space-between; gap: 12px; }
-  .head span { color: var(--ink-3); font-size: 13px; }
+  .usage { display: grid; gap: var(--s-2); padding: 14px; border-radius: var(--r-md); background: var(--surface-2); }
+  .head { display: flex; justify-content: space-between; gap: var(--s-3); }
+  .head span { color: var(--ink-3); font-size: var(--fs-sm); }
   .bar { display: flex; height: 8px; border-radius: 4px; background: var(--surface-3, var(--surface)); overflow: hidden; }
   .msg { background: var(--accent); }
   .files { background: var(--sun); }

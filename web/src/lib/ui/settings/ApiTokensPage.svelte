@@ -118,28 +118,28 @@
 {/if}
 
 <style>
-  .page { display: grid; gap: 12px; max-width: 720px; align-content: start; }
-  .add { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 16px; border: 0; border-radius: 999px; background: var(--accent); color: var(--on-accent); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
-  .card { display: grid; gap: 14px; padding: 14px; border-radius: 16px; background: var(--surface-2); }
-  h2 { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 16px; }
+  .page { display: grid; gap: var(--s-3); max-width: 720px; align-content: start; }
+  .add { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 var(--s-4); border: 0; border-radius: var(--r-full); background: var(--accent); color: var(--on-accent); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+  .card { display: grid; gap: 14px; padding: 14px; border-radius: var(--r-md); background: var(--surface-2); }
+  h2 { display: flex; align-items: center; gap: 10px; margin: 0; font-size: var(--fs-base); }
   .count { margin-left: auto; color: var(--ink-3); font-size: 14px; font-weight: 400; }
-  .row { display: flex; align-items: flex-start; gap: 12px; }
-  .tile { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; background: var(--accent-soft); color: var(--accent); flex: none; }
-  .tile.warn { width: 32px; height: 32px; border-radius: 10px; background: color-mix(in oklab, var(--sun) 22%, transparent); color: var(--sun); }
+  .row { display: flex; align-items: flex-start; gap: var(--s-3); }
+  .tile { display: grid; place-items: center; width: 40px; height: 40px; border-radius: var(--r-row); background: var(--accent-soft); color: var(--accent); flex: none; }
+  .tile.warn { width: 32px; height: 32px; border-radius: var(--r-sm); background: color-mix(in oklab, var(--sun) 22%, transparent); color: var(--sun); }
   .titles { flex: 1; min-width: 0; display: grid; gap: 2px; }
-  .titles strong { font-size: 15px; }
-  .titles span { color: var(--ink-3); font-size: 13px; }
-  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
-  code { font-family: var(--font-mono); background: var(--surface-3, var(--surface)); padding: 2px 8px; border-radius: 8px; font-size: 12px; word-break: break-all; }
-  .secret { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: var(--surface-3, var(--surface)); }
-  .secret code { flex: 1; background: none; padding: 0; font-size: 13px; }
+  .titles strong { font-size: var(--fs-md); }
+  .titles span { color: var(--ink-3); font-size: var(--fs-sm); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: var(--s-1); }
+  code { font-family: var(--font-mono); background: var(--surface-3, var(--surface)); padding: 2px var(--s-2); border-radius: 8px; font-size: var(--fs-xs); word-break: break-all; }
+  .secret { display: flex; align-items: center; gap: 10px; padding: 10px var(--s-3); border-radius: var(--r-row); background: var(--surface-3, var(--surface)); }
+  .secret code { flex: 1; background: none; padding: 0; font-size: var(--fs-sm); }
   .copy { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; color: var(--ink); font: inherit; font-size: 14px; cursor: pointer; }
-  .revoke, .link { border: 0; background: none; color: var(--danger); font: inherit; font-size: 14px; cursor: pointer; padding: 6px 8px; }
+  .revoke, .link { border: 0; background: none; color: var(--danger); font: inherit; font-size: 14px; cursor: pointer; padding: 6px var(--s-2); }
   .link { color: var(--accent); justify-self: start; padding: 0; }
-  .hint { margin: 0; color: var(--ink-3); font-size: 13px; }
+  .hint { margin: 0; color: var(--ink-3); font-size: var(--fs-sm); }
   .error { margin: 0; color: var(--danger); }
-  form { display: grid; gap: 12px; }
-  input { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
-  .primary { flex: 1; min-height: 48px; border: 0; border-radius: 14px; background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
+  form { display: grid; gap: var(--s-3); }
+  input { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-row); padding: var(--s-3) 14px; }
+  .primary { flex: 1; min-height: 48px; border: 0; border-radius: var(--r-control); background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
   .primary:disabled { opacity: .5; cursor: default; }
 </style>

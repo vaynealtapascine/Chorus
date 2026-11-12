@@ -251,77 +251,77 @@
 
 <style>
   .home { display: grid; gap: 10px; max-width: 720px; padding-bottom: 96px; }
-  .tabs { display: flex; gap: 8px; overflow-x: auto; align-items: center; padding-bottom: 12px; margin-bottom: 2px; border-bottom: 1px solid var(--line); }
-  .tabs button { display: flex; align-items: center; gap: 6px; padding: 7px 12px 7px 10px; min-height: 34px; border-radius: 18px; border: 1px solid transparent; background: var(--surface-2); color: var(--ink); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap; }
+  .tabs { display: flex; gap: var(--s-2); overflow-x: auto; align-items: center; padding-bottom: var(--s-3); margin-bottom: 2px; border-bottom: 1px solid var(--line); }
+  .tabs button { display: flex; align-items: center; gap: 6px; padding: 7px var(--s-3) 7px 10px; min-height: 34px; border-radius: 18px; border: 1px solid transparent; background: var(--surface-2); color: var(--ink); font: inherit; font-size: var(--fs-sm); font-weight: 500; cursor: pointer; white-space: nowrap; }
   .tabs button :global(.icon) { color: var(--ink-3); }
-  .tabs .count { font-size: 12px; font-weight: 600; color: var(--ink-3); }
+  .tabs .count { font-size: var(--fs-xs); font-weight: 600; color: var(--ink-3); }
   .tabs button.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
   .tabs button.on :global(.icon), .tabs button.on .count { color: var(--accent); }
   /* on a phone the tabs share the app bar's panel, as in Figma F3.1 */
-  @media (max-width: 1023px) { .tabs { margin: -16px -16px 2px; padding: 2px 16px 12px; background: var(--surface); } }
+  @media (max-width: 1023px) { .tabs { margin: -16px -16px 2px; padding: 2px var(--s-4) var(--s-3); background: var(--surface); } }
   .add-front { width: 32px; height: 32px; flex: none; display: grid; place-items: center; border: 1px dashed var(--line); border-radius: 50%; color: var(--ink-3); }
-  .follow-state { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; padding: 6px 12px; border-radius: 12px; background: var(--surface); color: var(--ink-2); font-size: 13px; }
+  .follow-state { display: flex; flex-wrap: wrap; gap: var(--s-2); align-items: center; justify-content: space-between; padding: 6px var(--s-3); border-radius: var(--r-row); background: var(--surface); color: var(--ink-2); font-size: var(--fs-sm); }
   .link { background: none; border: 0; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; min-height: 40px; }
-  .card { background: var(--surface); border-radius: 22px; padding: 12px; display: grid; gap: 10px; }
-  .card-head { display: flex; align-items: center; gap: 8px; padding: 2px 0 0 4px; min-width: 0; }
+  .card { background: var(--surface); border-radius: var(--r-lg); padding: var(--s-3); display: grid; gap: 10px; }
+  .card-head { display: flex; align-items: center; gap: var(--s-2); padding: 2px 0 0 var(--s-1); min-width: 0; }
   .card-head > :global(.icon) { color: var(--accent); }
-  .card-head strong { font-size: 16px; font-weight: 600; }
-  .since { flex: 1; min-width: 0; color: var(--ink-3); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .note { margin: 0 4px; color: var(--ink-2); font-size: 13px; }
+  .card-head strong { font-size: var(--fs-base); font-weight: 600; }
+  .since { flex: 1; min-width: 0; color: var(--ink-3); font-size: var(--fs-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .note { margin: 0 var(--s-1); color: var(--ink-2); font-size: var(--fs-sm); }
   .menu-wrap { position: relative; }
-  .menu { position: absolute; right: 0; top: 100%; z-index: 5; display: grid; min-width: 190px; padding: 6px; background: var(--surface-2); border-radius: 12px; box-shadow: var(--shadow-pop); }
-  .menu > * { text-align: left; background: none; border: 0; padding: 10px 12px; border-radius: 8px; color: var(--ink); font: inherit; font-size: 14px; text-decoration: none; cursor: pointer; }
+  .menu { position: absolute; right: 0; top: 100%; z-index: 5; display: grid; min-width: 190px; padding: 6px; background: var(--surface-2); border-radius: var(--r-row); box-shadow: var(--shadow-pop); }
+  .menu > * { text-align: left; background: none; border: 0; padding: 10px var(--s-3); border-radius: 8px; color: var(--ink); font: inherit; font-size: 14px; text-decoration: none; cursor: pointer; }
   .menu > *:hover { background: var(--surface-3, var(--surface)); }
   .icon-btn { width: 32px; height: 32px; flex: none; display: grid; place-items: center; background: none; border: 0; border-radius: 50%; color: var(--ink-3); cursor: pointer; }
   .icon-btn.add { color: var(--l-label); }
   .layer { border: 1.5px var(--l-dash) var(--l-border); background: var(--l-fill); border-radius: var(--r, 18px); padding-bottom: 10px; display: grid; gap: 6px; }
   .layer > .layer, .layer > .inner { margin: -1.5px -1.5px 0; }
-  .layer.inner { border-radius: 16px; padding: 10px 8px 8px; gap: 6px; }
-  .layer-label { display: flex; align-items: center; gap: 6px; padding: 0 0 2px 4px; min-width: 0; }
-  .layer-label strong { color: var(--l-label); font-size: 12px; font-weight: 700; }
+  .layer.inner { border-radius: var(--r-md); padding: 10px var(--s-2) var(--s-2); gap: 6px; }
+  .layer-label { display: flex; align-items: center; gap: 6px; padding: 0 0 2px var(--s-1); min-width: 0; }
+  .layer-label strong { color: var(--l-label); font-size: var(--fs-xs); font-weight: 700; }
   .layer-label span { flex: 1; min-width: 0; color: var(--ink-3); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .row { display: flex; align-items: center; width: 100%; border-radius: 12px; background: var(--surface); color: var(--ink); }
+  .row { display: flex; align-items: center; width: 100%; border-radius: var(--r-row); background: var(--surface); color: var(--ink); }
   .row.simple { background: var(--accent-soft); }
-  .row .main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 8px 4px 8px 8px; border: 0; border-radius: 12px; background: none; color: inherit; font: inherit; cursor: pointer; text-align: left; }
+  .row .main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: var(--s-2) var(--s-1) var(--s-2) var(--s-2); border: 0; border-radius: var(--r-row); background: none; color: inherit; font: inherit; cursor: pointer; text-align: left; }
   .info { flex: 1; min-width: 0; display: grid; gap: 1px; text-align: left; }
-  .info strong { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .info > span { color: var(--ink-3); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .took { color: var(--ink-3); font-size: 13px; font-weight: 600; }
-  .none { margin: 0; padding: 8px; color: var(--ink-2); font-size: 13px; }
-  .layer-foot { display: flex; align-items: center; gap: 8px; padding: 2px 4px 0 10px; }
+  .info strong { font-size: var(--fs-md); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .info > span { color: var(--ink-3); font-size: var(--fs-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .took { color: var(--ink-3); font-size: var(--fs-sm); font-weight: 600; }
+  .none { margin: 0; padding: var(--s-2); color: var(--ink-2); font-size: var(--fs-sm); }
+  .layer-foot { display: flex; align-items: center; gap: var(--s-2); padding: 2px var(--s-1) 0 10px; }
   .foot-label { display: grid; }
-  .foot-label strong { color: var(--l-label); font-size: 12px; font-weight: 700; line-height: 16px; }
+  .foot-label strong { color: var(--l-label); font-size: var(--fs-xs); font-weight: 700; line-height: 16px; }
   .foot-label span { color: var(--ink-3); font-size: 11px; line-height: 14px; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .chips.end { flex: 1; justify-content: flex-end; }
-  .chips.pad { padding: 0 12px 10px; }
-  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 3px; border-radius: 16px; border: 0; background: var(--surface-2); color: var(--ink); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
+  .chips.pad { padding: 0 var(--s-3) 10px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 3px; border-radius: var(--r-md); border: 0; background: var(--surface-2); color: var(--ink); font: inherit; font-size: var(--fs-sm); font-weight: 500; cursor: pointer; }
   .chip.faint { color: var(--ink-3); }
-  .chip small { color: var(--ink-3); font-size: 12px; }
+  .chip small { color: var(--ink-3); font-size: var(--fs-xs); }
   .tag { font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 8px; background: var(--l-tag-fill); color: var(--l-tag-ink); border: 1px var(--l-dash) var(--l-tag-border); }
-  .separate { border-radius: 16px; background: var(--line); }
-  .sep-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px 10px 14px; background: none; border: 0; color: var(--ink); font: inherit; cursor: pointer; text-align: left; }
+  .separate { border-radius: var(--r-md); background: var(--line); }
+  .sep-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px var(--s-3) 10px 14px; background: none; border: 0; color: var(--ink); font: inherit; cursor: pointer; text-align: left; }
   .sep-title { color: var(--ink) !important; font-size: 14px !important; font-weight: 500; }
   .sep-title strong { font-size: 14px; font-weight: 700; }
   .stack { display: flex; }
   .stack > :global(*) + :global(*) { margin-left: -6px; }
   .mute-face { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; background: var(--line); color: var(--ink-2); font-size: 11px; font-weight: 700; }
-  .away, .other { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px 10px 14px; border: 0; border-radius: 16px; background: var(--surface); color: var(--ink-3); font: inherit; cursor: pointer; text-align: left; }
+  .away, .other { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px var(--s-3) 10px 14px; border: 0; border-radius: var(--r-md); background: var(--surface); color: var(--ink-3); font: inherit; cursor: pointer; text-align: left; }
   .away .info { font-size: 14px; font-weight: 500; }
-  .other { gap: 12px; padding: 10px 12px; color: var(--ink); }
+  .other { gap: var(--s-3); padding: 10px var(--s-3); color: var(--ink); }
   .round { width: 36px; height: 36px; flex: none; display: grid; place-items: center; border-radius: 50%; background: var(--surface-2); color: var(--ink-2); }
-  .others-head { display: flex; justify-content: space-between; padding: 6px 4px 0; font-size: 13px; font-weight: 600; color: var(--ink-3); }
+  .others-head { display: flex; justify-content: space-between; padding: 6px var(--s-1) 0; font-size: var(--fs-sm); font-weight: 600; color: var(--ink-3); }
   .others-head a { color: var(--accent); text-decoration: none; }
-  .rest { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 4px; background: none; border: 0; border-radius: 12px; color: var(--ink-3); font: inherit; font-size: 13px; cursor: pointer; text-align: left; }
+  .rest { display: flex; align-items: center; gap: var(--s-2); width: 100%; padding: 6px var(--s-1); background: none; border: 0; border-radius: var(--r-row); color: var(--ink-3); font: inherit; font-size: var(--fs-sm); cursor: pointer; text-align: left; }
   .rest-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .turn { display: grid; }
   .turn.down { transform: rotate(90deg); }
   .chev { display: grid; transform: rotate(90deg); }
   .chev.up { transform: rotate(-90deg); }
-  .fab { position: fixed; right: max(16px, calc(50vw - 360px)); bottom: calc(92px + env(safe-area-inset-bottom)); z-index: 15; display: flex; align-items: center; gap: 8px; padding: 14px 20px 14px 16px; border: 0; border-radius: 999px; background: var(--accent); color: var(--on-accent); font: inherit; font-size: 15px; font-weight: 600; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35); cursor: pointer; }
+  .fab { position: fixed; right: max(16px, calc(50vw - 360px)); bottom: calc(92px + env(safe-area-inset-bottom)); z-index: 15; display: flex; align-items: center; gap: var(--s-2); padding: 14px var(--s-5) 14px var(--s-4); border: 0; border-radius: var(--r-full); background: var(--accent); color: var(--on-accent); font: inherit; font-size: var(--fs-md); font-weight: 600; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35); cursor: pointer; }
   @media (min-width: 1024px) { .fab { bottom: 24px; right: 32px; } }
-  .device-tools { margin-top: 16px; border-top: 1px solid var(--line); color: var(--ink-3); padding-block: 16px; }
-  .device-tools summary { cursor: pointer; font-size: var(--fs-sm); padding-block: 8px; }
+  .device-tools { margin-top: var(--s-4); border-top: 1px solid var(--line); color: var(--ink-3); padding-block: var(--s-4); }
+  .device-tools summary { cursor: pointer; font-size: var(--fs-sm); padding-block: var(--s-2); }
   .data-links { display: grid; gap: var(--s-1); justify-items: start; }
   .data-links a { color: var(--accent); text-decoration: none; font-size: var(--fs-sm); }
   .data-links h2 { font-size: var(--fs-sm); font-weight: 600; color: var(--ink-2); }

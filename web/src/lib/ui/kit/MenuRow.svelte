@@ -23,13 +23,13 @@
 {/if}
 
 <style>
-  .menu-row { display: flex; align-items: center; gap: 16px; width: 100%; min-height: 52px; padding: 8px 12px; border: 0; border-radius: 12px;
+  .menu-row { display: flex; align-items: center; gap: var(--s-4); width: 100%; min-height: 52px; padding: var(--s-2) var(--s-3); border: 0; border-radius: var(--r-row);
     background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; text-decoration: none; }
   .menu-row:hover:not(:disabled) { background: var(--surface-2); }
   .menu-row > :global(.icon) { color: var(--ink-2); }
   .text { flex: 1; min-width: 0; display: grid; }
-  .label { font-size: 16px; line-height: 21px; }
-  .sub { color: var(--ink-3); font-size: 13px; line-height: 17px; }
+  .label { font-size: var(--fs-base); line-height: 21px; }
+  .sub { color: var(--ink-3); font-size: var(--fs-sm); line-height: 17px; }
   .selected { background: var(--accent-soft); }
   .selected .label { color: var(--accent); font-weight: 600; }
   .check { display: inline-flex; color: var(--accent); }

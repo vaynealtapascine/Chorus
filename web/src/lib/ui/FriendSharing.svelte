@@ -148,20 +148,20 @@
 {/if}
 
 <style>
-  .seen { margin-top: 12px; }
-  .seen-title { display: flex; align-items: center; gap: 8px; color: var(--accent); font-size: 14px; }
+  .seen { margin-top: var(--s-3); }
+  .seen-title { display: flex; align-items: center; gap: var(--s-2); color: var(--accent); font-size: 14px; }
   .seen p { margin: 0; }
   .who { display: flex; align-items: center; gap: 10px; }
   .chev { color: var(--ink-3); display: grid; }
   a.fr-chip { text-decoration: none; }
   .menu { display: grid; gap: 2px; }
-  .menu button { display: flex; align-items: center; gap: 14px; padding: 12px; border: 0; border-radius: 12px; background: none; color: var(--ink); font: inherit; font-size: 16px; text-align: left; cursor: pointer; }
+  .menu button { display: flex; align-items: center; gap: 14px; padding: var(--s-3); border: 0; border-radius: var(--r-row); background: none; color: var(--ink); font: inherit; font-size: var(--fs-base); text-align: left; cursor: pointer; }
   .menu button:hover { background: var(--surface-2); }
-  .menu small { margin-left: auto; color: var(--ink-3); font-size: 13px; }
-  .member { display: flex; align-items: center; gap: 12px; padding: 6px 4px; }
+  .menu small { margin-left: auto; color: var(--ink-3); font-size: var(--fs-sm); }
+  .member { display: flex; align-items: center; gap: var(--s-3); padding: 6px var(--s-1); }
   .member .fr-text { flex: 1; display: grid; min-width: 0; }
-  .member .fr-text span { color: var(--ink-3); font-size: 13px; }
-  .member select { font: inherit; font-size: 13px; color: var(--ink); background: var(--surface-2); border: 0; border-radius: 10px; padding: 6px 8px; }
+  .member .fr-text span { color: var(--ink-3); font-size: var(--fs-sm); }
+  .member select { font: inherit; font-size: var(--fs-sm); color: var(--ink); background: var(--surface-2); border: 0; border-radius: var(--r-sm); padding: 6px var(--s-2); }
   .flush { margin: 0 -16px; }
   .remove { background: var(--danger); }
 </style>

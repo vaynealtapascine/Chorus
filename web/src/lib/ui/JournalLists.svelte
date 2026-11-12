@@ -86,18 +86,18 @@
 </section>
 
 <style>
-  .row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 4px; border: 0; border-bottom: 1px solid var(--line); background: none; color: var(--ink); font: inherit; text-align: left; justify-self: stretch; }
-  .tile { display: grid; place-items: center; width: 44px; height: 44px; flex: none; border-radius: 12px; background: var(--accent-soft); color: var(--accent); }
+  .row { display: flex; align-items: center; gap: var(--s-3); width: 100%; padding: 10px var(--s-1); border: 0; border-bottom: 1px solid var(--line); background: none; color: var(--ink); font: inherit; text-align: left; justify-self: stretch; }
+  .tile { display: grid; place-items: center; width: 44px; height: 44px; flex: none; border-radius: var(--r-row); background: var(--accent-soft); color: var(--accent); }
   .text { flex: 1; min-width: 0; display: grid; gap: 2px; }
   .text strong { font-weight: 600; }
-  .text > span { color: var(--ink-3); font-size: 13px; }
+  .text > span { color: var(--ink-3); font-size: var(--fs-sm); }
   .pills { display: flex; gap: 6px; flex-wrap: wrap; }
-  .pills em { font-style: normal; padding: 1px 8px; border-radius: var(--r-full); background: var(--surface-2); font-size: 12px; }
+  .pills em { font-style: normal; padding: 1px var(--s-2); border-radius: var(--r-full); background: var(--surface-2); font-size: var(--fs-xs); }
   .faces { display: flex; }
   .faces :global(.face) { margin-left: -8px; box-shadow: 0 0 0 2px var(--bg); }
-  .new { display: flex; align-items: center; gap: 8px; justify-self: stretch; justify-content: center; padding: 14px; border: 1px dashed var(--line); border-radius: 12px; background: none; }
+  .new { display: flex; align-items: center; gap: var(--s-2); justify-self: stretch; justify-content: center; padding: 14px; border: 1px dashed var(--line); border-radius: var(--r-row); background: none; }
   .back { display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 0; background: none; transform: rotate(180deg); }
-  .actions { display: flex; gap: 8px; justify-content: flex-end; }
+  .actions { display: flex; gap: var(--s-2); justify-content: flex-end; }
   .primary { background: var(--accent); color: var(--on-accent); border: 0; border-radius: var(--r-sm); padding: var(--s-2) var(--s-4); }
   .list-head h2 { flex: 1; }
   .lists, .create, .timeline { display: grid; gap: var(--s-3); }

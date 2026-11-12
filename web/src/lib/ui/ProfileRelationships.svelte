@@ -153,15 +153,15 @@
 
 <style>
   .who { flex: 1; min-width: 0; display: grid; gap: 2px; }
-  .pill { justify-self: start; padding: 1px 10px; border-radius: var(--r-full); background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 500; }
-  .act { padding: 6px 14px; border: 1px solid var(--line); border-radius: var(--r-full); color: var(--ink); text-decoration: none; background: none; font: inherit; font-weight: 600; font-size: 13px; }
+  .pill { justify-self: start; padding: 1px 10px; border-radius: var(--r-full); background: var(--accent-soft); color: var(--accent); font-size: var(--fs-xs); font-weight: 500; }
+  .act { padding: 6px 14px; border: 1px solid var(--line); border-radius: var(--r-full); color: var(--ink); text-decoration: none; background: none; font: inherit; font-weight: 600; font-size: var(--fs-sm); }
   .more { display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; background: none; color: var(--ink-3); border-radius: 50%; }
-  .add { display: flex; align-items: center; gap: 8px; padding: 12px; border: 1px dashed var(--line); border-radius: 12px; background: none; justify-self: stretch; justify-content: center; }
+  .add { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-3); border: 1px dashed var(--line); border-radius: var(--r-row); background: none; justify-self: stretch; justify-content: center; }
   .primary { background: var(--accent); color: var(--on-accent); border: 0; border-radius: var(--r-sm); padding: var(--s-2) var(--s-4); }
   .actions { display: flex; justify-content: space-between; align-items: center; }
   .link-btn { border: 0; background: none; }
   .danger { color: var(--danger); }
-  .type { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; }
+  .type { display: flex; justify-content: space-between; align-items: center; padding: var(--s-1) 0; }
   .relations, .editor { display: grid; gap: var(--s-3); }
   .relations ul { list-style: none; display: grid; gap: var(--s-2); margin: 0; padding: 0; }
   .link, .editor { padding: var(--s-3); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); }

@@ -200,31 +200,31 @@
   @media (prefers-reduced-motion: reduce) { .sheet { animation: none; } }
   .top { display: flex; justify-content: space-between; align-items: center; }
   h2 { margin: 0; font-size: var(--fs-lg); }
-  .ghost, .link { border: 0; background: none; color: var(--accent); font: inherit; cursor: pointer; padding: 4px 0; }
+  .ghost, .link { border: 0; background: none; color: var(--accent); font: inherit; cursor: pointer; padding: var(--s-1) 0; }
   .link input { display: none; }
-  .face { display: flex; align-items: center; gap: 16px; }
-  .disc { width: 72px; height: 72px; flex: none; border-radius: 50%; display: grid; place-items: center; overflow: hidden; font-size: 28px; font-weight: 700; }
+  .face { display: flex; align-items: center; gap: var(--s-4); }
+  .disc { width: 72px; height: 72px; flex: none; border-radius: 50%; display: grid; place-items: center; overflow: hidden; font-size: var(--fs-2xl); font-weight: 700; }
   .face-actions { display: grid; gap: 2px; justify-items: start; }
   .field { display: grid; gap: 6px; font-size: var(--fs-sm); color: var(--ink-2); border: 0; margin: 0; padding: 0; min-width: 0; }
   .field legend { padding: 0; margin-bottom: 6px; }
-  input:not([type]), textarea, .search { font: inherit; font-size: 15px; color: var(--ink); background: var(--surface-2);
-    border: 1px solid var(--line); border-radius: var(--r-sm); padding: 8px 10px; min-width: 0; }
+  input:not([type]), textarea, .search { font: inherit; font-size: var(--fs-md); color: var(--ink); background: var(--surface-2);
+    border: 1px solid var(--line); border-radius: var(--r-sm); padding: var(--s-2) 10px; min-width: 0; }
   textarea { resize: vertical; }
-  .row2 { display: grid; grid-template-columns: 96px 1fr; gap: 12px; }
+  .row2 { display: grid; grid-template-columns: 96px 1fr; gap: var(--s-3); }
   .swatches { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
   .swatch { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; }
   .swatch.on { border-color: var(--ink); }
   input[type='color'] { width: 30px; height: 30px; padding: 0; border: 0; background: none; cursor: pointer; }
-  .radio { display: flex; align-items: center; gap: 8px; color: var(--ink); padding: 4px 0; }
+  .radio { display: flex; align-items: center; gap: var(--s-2); color: var(--ink); padding: var(--s-1) 0; }
   .people { display: grid; gap: 2px; max-height: 260px; overflow: auto; }
-  .person { display: flex; align-items: center; gap: 10px; padding: 6px 4px; border-radius: var(--r-sm); cursor: pointer; }
+  .person { display: flex; align-items: center; gap: 10px; padding: 6px var(--s-1); border-radius: var(--r-sm); cursor: pointer; }
   .person:hover { background: var(--surface-2); }
-  .avatar { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; overflow: hidden; font-size: 13px; font-weight: 700; flex: none; }
+  .avatar { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; overflow: hidden; font-size: var(--fs-sm); font-weight: 700; flex: none; }
   .hint { margin: 0; color: var(--ink-3); font-size: var(--fs-xs); }
   .error { margin: 0; color: var(--danger); font-size: var(--fs-sm); }
-  .actions { display: flex; align-items: center; gap: 12px; }
+  .actions { display: flex; align-items: center; gap: var(--s-3); }
   .why { flex: 1; color: var(--ink-3); font-size: var(--fs-xs); }
-  .primary { border: 0; border-radius: var(--r-full); padding: 9px 20px; background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
+  .primary { border: 0; border-radius: var(--r-full); padding: 9px var(--s-5); background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
   .primary:disabled { opacity: .5; cursor: default; }
-  .danger { border: 1px solid var(--danger); border-radius: var(--r-full); padding: 8px 16px; background: none; color: var(--danger); font: inherit; cursor: pointer; }
+  .danger { border: 1px solid var(--danger); border-radius: var(--r-full); padding: var(--s-2) var(--s-4); background: none; color: var(--danger); font: inherit; cursor: pointer; }
 </style>

@@ -299,42 +299,42 @@
 
 <style>
   .shell { min-height: 100dvh; display: grid; grid-template-columns: 240px minmax(0, 1fr); }
-  .skip { position: fixed; top: -100px; left: 16px; z-index: 100; padding: 12px; background: var(--accent); color: var(--on-accent); border-radius: var(--r-sm); }
+  .skip { position: fixed; top: -100px; left: 16px; z-index: 100; padding: var(--s-3); background: var(--accent); color: var(--on-accent); border-radius: var(--r-sm); }
   .skip:focus { top: 12px; }
-  .app-nav { position: sticky; top: 0; height: 100dvh; display: flex; flex-direction: column; padding: 20px 16px; border-right: 1px solid var(--line); background: var(--bg); gap: 20px; }
-  .identity { display: flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; padding: 0 8px; min-height: 48px; }
+  .app-nav { position: sticky; top: 0; height: 100dvh; display: flex; flex-direction: column; padding: var(--s-5) var(--s-4); border-right: 1px solid var(--line); background: var(--bg); gap: var(--s-5); }
+  .identity { display: flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; padding: 0 var(--s-2); min-height: 48px; }
   .system-avatar { width: 40px; height: 40px; border-radius: 50%; background: var(--accent); color: var(--on-accent); display: grid; place-items: center; font-weight: 700; flex: none; }
   .identity-text { display: grid; min-width: 0; font-size: var(--fs-sm); }
   .identity-text strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .identity-text > span { color: var(--ink-3); font-size: var(--fs-xs); }
-  nav { display: grid; gap: 4px; }
-  nav a { display: flex; gap: 12px; align-items: center; padding: 12px; min-height: 48px; color: var(--ink-2); text-decoration: none; border-radius: var(--r-full); font-size: var(--fs-md); font-weight: 500; }
+  nav { display: grid; gap: var(--s-1); }
+  nav a { display: flex; gap: var(--s-3); align-items: center; padding: var(--s-3); min-height: 48px; color: var(--ink-2); text-decoration: none; border-radius: var(--r-full); font-size: var(--fs-md); font-weight: 500; }
   nav a.on { background: var(--surface-2); color: var(--ink); font-weight: 700; }
   .tab-icon { position: relative; display: inline-grid; }
-  .badge { position: absolute; top: -6px; right: -10px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--sun); color: var(--on-sun);
+  .badge { position: absolute; top: -6px; right: -10px; min-width: 16px; height: 16px; padding: 0 var(--s-1); border-radius: 8px; background: var(--sun); color: var(--on-sun);
     font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; }
   nav a.on :global(.icon) { color: var(--accent); }
   nav a:hover { background: var(--surface); }
-  .desktop-tools { border-top: 1px solid var(--line); padding-top: 16px; }
-  .front-summary { margin-top: auto; display: grid; gap: 8px; text-align: left; background: var(--surface); border: 0; border-radius: var(--r-md); padding: 12px; cursor: pointer; }
+  .desktop-tools { border-top: 1px solid var(--line); padding-top: var(--s-4); }
+  .front-summary { margin-top: auto; display: grid; gap: var(--s-2); text-align: left; background: var(--surface); border: 0; border-radius: var(--r-md); padding: var(--s-3); cursor: pointer; }
   .front-summary-title { display: flex; align-items: center; gap: 6px; color: var(--ink-2); font-size: var(--fs-xs); }
-  .front-stack { display: flex; padding-left: 4px; }
+  .front-stack { display: flex; padding-left: var(--s-1); }
   .mini-avatar { display: grid; place-items: center; width: 30px; height: 30px; background: var(--member); color: var(--member-ink); border: 2px solid var(--member); border-radius: 50%; overflow: hidden; margin-left: -4px; font-size: var(--fs-xs); }
   .front-summary-names { font-size: var(--fs-sm); overflow-wrap: anywhere; }
   .shortcut { color: var(--ink-3); font-size: var(--fs-xs); }
   .workspace { min-width: 0; }
-  .app-bar { display: flex; align-items: center; gap: 12px; min-height: 76px; padding: 12px 24px; background: var(--surface); border-bottom: 1px solid var(--line); }
+  .app-bar { display: flex; align-items: center; gap: var(--s-3); min-height: 76px; padding: var(--s-3) var(--s-6); background: var(--surface); border-bottom: 1px solid var(--line); }
   .app-bar > div { min-width: 0; }
   .app-bar strong { display: block; font-size: 20px; line-height: 26px; }
   .account-subtitle { display: block; color: var(--ink-3); font-size: var(--fs-xs); }
   .mobile-switch { display: none; }
   .sections-pill { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 14px; border: 0; border-radius: var(--r-full); background: var(--surface-2); color: var(--ink); font: inherit; font-size: var(--fs-sm); font-weight: 600; cursor: pointer; }
   @media (max-width: 1023px) { .app-bar.subpage { display: none; } }
-  main { padding: 24px; max-width: 1200px; margin-inline: auto; min-width: 0; outline: none; }
+  main { padding: var(--s-6); max-width: 1200px; margin-inline: auto; min-width: 0; outline: none; }
   .chat-page main { padding: 0; max-width: none; }
   /* a page fades in when you go to it (owner, 2026-11-07) */
   main > :global(*) { animation: chorus-fade-in var(--t-fast) var(--ease); }
-  .storage-full { margin: 0; padding: 12px 24px; font-size: var(--fs-sm); background: var(--accent-soft); }
+  .storage-full { margin: 0; padding: var(--s-3) var(--s-6); font-size: var(--fs-sm); background: var(--accent-soft); }
   /* wide screens: the sidebar and the page sit together in the middle; the sidebar keeps its width
      and takes the left margin as padding (it used to shrink to ~100 px past 1800 px) */
   @media (min-width: 1600px) {
@@ -356,12 +356,12 @@
     .app-nav { position: fixed; inset: auto 0 0; z-index: 10; height: auto; padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); background: var(--surface); border: 0; border-top: 1px solid var(--line); display: block; }
     .identity, .desktop-tools, .front-summary { display: none; }
     nav { display: flex; justify-content: space-around; gap: 0; }
-    nav a { flex: 1; flex-direction: column; gap: 4px; padding: 6px 2px; font-size: 11px; border-radius: 12px; min-width: 0; min-height: 56px; }
+    nav a { flex: 1; flex-direction: column; gap: var(--s-1); padding: 6px 2px; font-size: 11px; border-radius: var(--r-row); min-width: 0; min-height: 56px; }
     nav a.on { background: transparent; color: var(--accent); }
     nav a.wide-only { display: none; }
-    .app-bar { min-height: 72px; padding: 10px 16px; gap: 4px; }
+    .app-bar { min-height: 72px; padding: 10px var(--s-4); gap: var(--s-1); }
     .mobile-switch { display: inline-grid; }
-    main { padding: 16px; }
+    main { padding: var(--s-4); }
   }
   :global(body.capture) .app-nav, :global(body.capture) .app-bar, :global(body.capture .toast) { display: none !important; }
   :global(body.capture) .shell { display: block; padding: 0; }

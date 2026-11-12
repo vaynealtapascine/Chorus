@@ -66,14 +66,14 @@
 <style>
   .author { display: flex; align-items: center; gap: 10px; }
   .face { flex: none; display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; overflow: hidden; background: var(--c); }
-  .real { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); font-size: 15px; }
+  .real { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); font-size: var(--fs-md); }
   .arrow { color: var(--ink-3); }
-  .author > input { flex: 1.2; min-width: 0; height: 40px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); color: var(--ink); font: inherit; }
+  .author > input { flex: 1.2; min-width: 0; height: 40px; padding: 0 var(--s-3); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); color: var(--ink); font: inherit; }
   .dot { flex: none; width: 32px; height: 32px; display: grid; place-items: center; cursor: pointer; }
   .dot.off { opacity: 0.4; cursor: default; }
   .dot input { width: 16px; height: 16px; padding: 0; border: 0; background: none; border-radius: 50%; cursor: inherit; }
   .dot input::-webkit-color-swatch-wrapper { padding: 0; } .dot input::-webkit-color-swatch { border: 0; border-radius: 50%; }
   .start { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .note { color: var(--ink-3); font-size: 12px; line-height: 16px; }
-  .chips { display: flex; gap: 8px; }
+  .note { color: var(--ink-3); font-size: var(--fs-xs); line-height: 16px; }
+  .chips { display: flex; gap: var(--s-2); }
 </style>

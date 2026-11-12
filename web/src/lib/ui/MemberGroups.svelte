@@ -86,24 +86,24 @@
 {/if}
 
 <style>
-  .groups { display: grid; gap: 12px; }
-  .card { display: grid; border-radius: 16px; background: var(--surface-2); overflow: hidden; }
-  .head { display: flex; align-items: center; gap: 12px; padding: 14px; border: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+  .groups { display: grid; gap: var(--s-3); }
+  .card { display: grid; border-radius: var(--r-md); background: var(--surface-2); overflow: hidden; }
+  .head { display: flex; align-items: center; gap: var(--s-3); padding: 14px; border: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
   .info { display: grid; flex: 1; min-width: 0; }
-  .info strong { font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .sub { color: var(--ink-3); font-size: 13px; line-height: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .info strong { font-size: var(--fs-base); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sub { color: var(--ink-3); font-size: var(--fs-sm); line-height: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .chev { display: inline-flex; color: var(--ink-2); transform: rotate(90deg); transition: transform var(--t-fast) var(--ease); }
   .chev.up { transform: rotate(-90deg); }
-  .member { display: flex; align-items: center; padding: 4px 4px 4px 30px; }
-  .member a { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; padding: 4px 0; color: var(--ink); text-decoration: none; }
-  .member .info strong { font-size: 15px; }
+  .member { display: flex; align-items: center; padding: var(--s-1) var(--s-1) var(--s-1) 30px; }
+  .member a { display: flex; align-items: center; gap: var(--s-3); flex: 1; min-width: 0; padding: var(--s-1) 0; color: var(--ink); text-decoration: none; }
+  .member .info strong { font-size: var(--fs-md); }
   .avatar { width: 32px; height: 32px; display: grid; place-items: center; flex: none; border-radius: 50%; overflow: hidden; background: var(--ring); color: var(--avatar-ink); font-weight: 700; font-size: 14px; }
   .icon { display: grid; place-items: center; width: 40px; height: 40px; border: 0; background: none; color: var(--ink-3); cursor: pointer; border-radius: 50%; }
-  .foot { display: flex; align-items: center; padding: 0 4px 6px 18px; }
-  .link { display: inline-flex; align-items: center; gap: 8px; flex: 1; justify-content: flex-start; min-height: 40px; border: 0; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
-  .dashed { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 52px; border: 1.5px dashed var(--line); border-radius: 16px; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
-  .field { font: inherit; color: var(--ink); background: var(--surface-2); border: 0; border-radius: 12px; padding: 12px 14px; }
-  .remove { display: flex; align-items: center; gap: 12px; min-height: 48px; border: 0; background: none; color: var(--danger); font: inherit; cursor: pointer; padding: 0 4px; }
-  .go { flex: 1; min-height: 44px; border: 0; border-radius: 14px; background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
+  .foot { display: flex; align-items: center; padding: 0 var(--s-1) 6px 18px; }
+  .link { display: inline-flex; align-items: center; gap: var(--s-2); flex: 1; justify-content: flex-start; min-height: 40px; border: 0; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
+  .dashed { display: flex; align-items: center; justify-content: center; gap: var(--s-2); min-height: 52px; border: 1.5px dashed var(--line); border-radius: var(--r-md); background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
+  .field { font: inherit; color: var(--ink); background: var(--surface-2); border: 0; border-radius: var(--r-row); padding: var(--s-3) 14px; }
+  .remove { display: flex; align-items: center; gap: var(--s-3); min-height: 48px; border: 0; background: none; color: var(--danger); font: inherit; cursor: pointer; padding: 0 var(--s-1); }
+  .go { flex: 1; min-height: 44px; border: 0; border-radius: var(--r-control); background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
   .go:disabled { background: var(--surface-2); color: var(--ink-3); cursor: default; }
 </style>

@@ -165,23 +165,23 @@
 {/if}
 
 <style>
-  .page { display: grid; gap: 4px; align-content: start; }
-  header { display: flex; align-items: center; gap: 8px; }
+  .page { display: grid; gap: var(--s-1); align-content: start; }
+  header { display: flex; align-items: center; gap: var(--s-2); }
   header div { flex: 1; min-width: 0; }
   h1 { margin: 0; font-size: 20px; line-height: 26px; }
   .back, .done { display: grid; place-items: center; width: 40px; height: 40px; color: var(--ink); text-decoration: none; }
-  .back { font-size: 28px; }
+  .back { font-size: var(--fs-2xl); }
   .done { color: var(--accent); }
-  .choice, .part { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 56px; padding: 8px 14px; border: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+  .choice, .part { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 56px; padding: var(--s-2) 14px; border: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
   .radio { width: 22px; height: 22px; flex: none; border-radius: 50%; border: 2px solid var(--ink-3); box-sizing: border-box; }
   .radio.on { border: 6px solid var(--accent); }
-  .text { flex: 1; font-size: 16px; }
+  .text { flex: 1; font-size: var(--fs-base); }
   .text.on { font-weight: 600; }
   .tile { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 8px; background: var(--surface-3, var(--surface)); color: var(--ink-2); flex: none; }
-  .title { flex: 1; font-size: 16px; }
-  .pill { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 13px; font-weight: 500; padding: 5px 10px; white-space: nowrap; }
+  .title { flex: 1; font-size: var(--fs-base); }
+  .pill { display: inline-flex; align-items: center; gap: var(--s-1); border-radius: var(--r-full); background: var(--accent-soft); color: var(--accent); font-size: var(--fs-sm); font-weight: 500; padding: 5px 10px; white-space: nowrap; }
   .pill.quiet { background: var(--surface); color: var(--ink-2); }
   .part > :global(.icon) { color: var(--ink-3); }
-  .go { flex: 1; min-height: 44px; border: 0; border-radius: 14px; background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
+  .go { flex: 1; min-height: 44px; border: 0; border-radius: var(--r-control); background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
   .muted { color: var(--ink-3); }
 </style>

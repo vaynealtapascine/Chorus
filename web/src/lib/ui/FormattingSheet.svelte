@@ -34,12 +34,12 @@
 
 <style>
   .styles, .marks, .blocks { display: flex; gap: 6px; }
-  button { flex: 1; min-height: 44px; border: 0; border-radius: 12px; background: var(--surface-2); color: var(--ink); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+  button { flex: 1; min-height: 44px; border: 0; border-radius: var(--r-row); background: var(--surface-2); color: var(--ink); font: inherit; font-size: var(--fs-sm); font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
   .marks button { min-height: 48px; color: var(--ink-2); }
   .styles button[aria-checked='true'], .marks button[aria-pressed='true'] { background: var(--accent-soft); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
   .h1, .h2 { font-weight: 700; }
-  .h1 { font-size: 15px; }
+  .h1 { font-size: var(--fs-md); }
   .quote { font-style: italic; }
   .code { font-family: ui-monospace, monospace; }
-  .done { flex: none; margin-left: auto; padding: 0 20px; background: var(--accent); color: var(--on-accent); font-weight: 600; }
+  .done { flex: none; margin-left: auto; padding: 0 var(--s-5); background: var(--accent); color: var(--on-accent); font-weight: 600; }
 </style>

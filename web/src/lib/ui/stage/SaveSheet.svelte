@@ -47,17 +47,17 @@
 {/if}
 
 <style>
-  .name { display: grid; gap: 4px; color: var(--ink-3); font-size: 13px; }
-  .name input { height: 48px; padding: 0 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); color: var(--ink); font: inherit; font-size: 16px; }
-  h3 { margin: 4px 4px 0; color: var(--ink-3); font-size: 13px; font-weight: 500; }
+  .name { display: grid; gap: var(--s-1); color: var(--ink-3); font-size: var(--fs-sm); }
+  .name input { height: 48px; padding: 0 14px; border: 1px solid var(--line); border-radius: var(--r-row); background: var(--surface-2); color: var(--ink); font: inherit; font-size: var(--fs-base); }
+  h3 { margin: var(--s-1) var(--s-1) 0; color: var(--ink-3); font-size: var(--fs-sm); font-weight: 500; }
   .saved { display: flex; align-items: center; min-height: 56px; }
-  .open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 8px 0 8px 14px; border: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+  .open { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--s-3); padding: var(--s-2) 0 var(--s-2) 14px; border: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
   .open > :global(.icon) { color: var(--ink-2); }
   .text { flex: 1; min-width: 0; display: grid; }
-  .text strong { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .text span { color: var(--ink-3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .text strong { font-size: var(--fs-md); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .text span { color: var(--ink-3); font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .more { width: 44px; height: 44px; display: grid; place-items: center; border: 0; background: none; color: var(--ink-3); cursor: pointer; }
-  .neutral, .primary { min-height: 48px; border: 0; border-radius: 24px; font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
+  .neutral, .primary { min-height: 48px; border: 0; border-radius: 24px; font: inherit; font-size: var(--fs-md); font-weight: 600; cursor: pointer; }
   .neutral { flex: 1; background: var(--surface-2); color: var(--ink); }
   .primary { flex: 2; background: var(--accent); color: var(--on-accent); }
   .primary:disabled { background: var(--surface-3); color: var(--ink-3); cursor: default; }

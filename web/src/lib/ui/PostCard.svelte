@@ -264,37 +264,37 @@
 </dialog>
 
 <style>
-  .also { margin: 0 4px; color: var(--ink-3); font-size: 13px; line-height: 18px; }
-  .post { padding: 10px 16px; background: var(--bg); border-bottom: 1px solid var(--line); min-width: 0; }
+  .also { margin: 0 var(--s-1); color: var(--ink-3); font-size: var(--fs-sm); line-height: 18px; }
+  .post { padding: 10px var(--s-4); background: var(--bg); border-bottom: 1px solid var(--line); min-width: 0; }
   .post:not(.full) { cursor: pointer; }
   .post:not(.full):hover { background: color-mix(in srgb, var(--surface) 60%, var(--bg)); }
   .reposted { display: flex; align-items: center; gap: 6px; margin: 0 0 6px 28px; color: var(--ink-3); font-size: var(--fs-xs); font-weight: 600; }
   /* compact: the avatar column runs beside the post; full: avatar and names, then the post at full width */
-  .frame { position: relative; display: grid; grid-template-columns: 40px minmax(0, 1fr); column-gap: 12px; row-gap: 4px; }
+  .frame { position: relative; display: grid; grid-template-columns: 40px minmax(0, 1fr); column-gap: var(--s-3); row-gap: var(--s-1); }
   .frame > .avatar { grid-row: 1 / span 2; }
   .frame > .identity { grid-column: 2; grid-row: 1; }
   .frame > .main { grid-column: 2; grid-row: 2; }
-  .full { padding: 16px 20px; }
-  .full .frame { grid-template-columns: 48px minmax(0, 1fr); row-gap: 12px; align-items: center; }
+  .full { padding: var(--s-4) var(--s-5); }
+  .full .frame { grid-template-columns: 48px minmax(0, 1fr); row-gap: var(--s-3); align-items: center; }
   .full .frame > .avatar { grid-row: 1; width: 48px; height: 48px; }
-  .full .frame > .main { grid-column: 1 / -1; gap: 8px; }
-  .full .body { font-size: 16px; line-height: 24px; }
+  .full .frame > .main { grid-column: 1 / -1; gap: var(--s-2); }
+  .full .body { font-size: var(--fs-base); line-height: 24px; }
   .full h3 { font-size: 24px; line-height: 30px; }
-  .detail-time { color: var(--ink-3); font-size: var(--fs-sm); margin-top: 4px; }
-  .stats { display: flex; flex-wrap: wrap; gap: 16px; padding: 12px 0; border-top: 1px solid var(--line); color: var(--ink-3); font-size: var(--fs-sm); }
+  .detail-time { color: var(--ink-3); font-size: var(--fs-sm); margin-top: var(--s-1); }
+  .stats { display: flex; flex-wrap: wrap; gap: var(--s-4); padding: var(--s-3) 0; border-top: 1px solid var(--line); color: var(--ink-3); font-size: var(--fs-sm); }
   .stats strong { color: var(--ink); font-weight: 700; }
   .stat { border: 0; background: none; padding: 0; color: inherit; font: inherit; cursor: pointer; }
   .stat:hover { text-decoration: underline; }
   .full .lock { display: none; }
-  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
-  .chip, .aud-pill { padding: 3px 10px; border-radius: var(--r-full); background: var(--surface-2); color: var(--ink-2); font-size: 12px; font-weight: 500; white-space: nowrap; }
+  .chips { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+  .chip, .aud-pill { padding: 3px 10px; border-radius: var(--r-full); background: var(--surface-2); color: var(--ink-2); font-size: var(--fs-xs); font-weight: 500; white-space: nowrap; }
   .aud-pill { margin-left: auto; }
-  .actions.large { position: sticky; bottom: 0; z-index: 2; background: var(--bg); margin: 0; padding: 4px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .actions.large { position: sticky; bottom: 0; z-index: 2; background: var(--bg); margin: 0; padding: var(--s-1) 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
   .actions.large .act { min-height: 44px; }
   .avatar { display: inline-grid; width: 40px; height: 40px; border-radius: 50%; overflow: hidden; background: var(--avatar-bg); color: var(--avatar-ink); place-items: center; font-weight: 700; text-decoration: none; }
-  .main { display: grid; gap: 4px; min-width: 0; align-content: start; }
-  .identity { display: flex; align-items: center; gap: 4px; min-width: 0; padding-right: 36px; line-height: 20px; }
-  .authors { font-weight: 600; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .main { display: grid; gap: var(--s-1); min-width: 0; align-content: start; }
+  .identity { display: flex; align-items: center; gap: var(--s-1); min-width: 0; padding-right: 36px; line-height: 20px; }
+  .authors { font-weight: 600; font-size: var(--fs-md); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .authors a { color: var(--ink); text-decoration: none; }
   .handle { color: var(--ink-3); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 0 1 auto; }
   .authors a:hover { text-decoration: underline; }
@@ -302,42 +302,42 @@
   .when a { color: inherit; text-decoration: none; }
   .when a:hover, .reply-ref:hover { text-decoration: underline; }
   .lock { display: inline-flex; color: var(--ink-3); margin-left: 2px; }
-  .audience { color: var(--ink-3); font-size: var(--fs-xs); margin-left: 4px; white-space: nowrap; }
+  .audience { color: var(--ink-3); font-size: var(--fs-xs); margin-left: var(--s-1); white-space: nowrap; }
   .reply-ref { color: var(--ink-3); font-size: var(--fs-xs); text-decoration: none; justify-self: start; }
   h3, p { margin: 0; }
-  h3 { font-size: 16px; line-height: 22px; }
-  .body { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; line-height: 21px; }
-  .expand { border: 0; background: none; color: var(--accent); justify-self: start; padding: 4px 0; font: inherit; font-size: var(--fs-sm); font-weight: 600; cursor: pointer; text-decoration: none; }
+  h3 { font-size: var(--fs-base); line-height: 22px; }
+  .body { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--fs-md); line-height: 21px; }
+  .expand { border: 0; background: none; color: var(--accent); justify-self: start; padding: var(--s-1) 0; font: inherit; font-size: var(--fs-sm); font-weight: 600; cursor: pointer; text-decoration: none; }
   .meta-line, .tags { color: var(--ink-3); font-size: var(--fs-xs); }
   .mood { color: var(--ink-2); font-size: var(--fs-xs); }
-  .tags { display: flex; flex-wrap: wrap; gap: 8px; color: var(--accent); }
-  .cw { display: flex; align-items: center; gap: 8px; min-height: 48px; border: 0; border-radius: 10px; background: var(--surface-2); color: var(--ink-2); padding: 0 10px; text-align: left; font: inherit; font-size: var(--fs-sm); cursor: pointer; }
+  .tags { display: flex; flex-wrap: wrap; gap: var(--s-2); color: var(--accent); }
+  .cw { display: flex; align-items: center; gap: var(--s-2); min-height: 48px; border: 0; border-radius: var(--r-sm); background: var(--surface-2); color: var(--ink-2); padding: 0 10px; text-align: left; font: inherit; font-size: var(--fs-sm); cursor: pointer; }
   .cw span:first-child { flex: 1; }
   .cw-toggle { color: var(--accent); font-weight: 600; }
   /* every action but the last gets an equal cell, so the icons fall at even steps (Android's row) */
   .actions { display: flex; align-items: center; margin: 0 -8px; }
   .actions > .act, .actions > .pop-anchor { flex: 1; }
   .actions > .act.last { flex: none; }
-  .act { display: inline-flex; align-items: center; gap: 4px; min-height: 36px; padding: 0 8px; border: 0; background: none; color: var(--ink-3); font: inherit; font-size: 13px; cursor: pointer; }
+  .act { display: inline-flex; align-items: center; gap: var(--s-1); min-height: 36px; padding: 0 var(--s-2); border: 0; background: none; color: var(--ink-3); font: inherit; font-size: var(--fs-sm); cursor: pointer; }
   .act:hover:not(:disabled) { color: var(--accent); }
   .act:disabled { cursor: default; opacity: .6; }
   .act.on { color: var(--accent); }
   .act.heart.on, .act.heart:hover:not(:disabled) { color: var(--danger); }
-  .notice { color: var(--ink-3); font-size: var(--fs-xs); margin-left: 8px; }
+  .notice { color: var(--ink-3); font-size: var(--fs-xs); margin-left: var(--s-2); }
   .pop-anchor { position: relative; display: inline-flex; }
   .overflow { position: absolute; top: -5px; right: -8px; }
   .more { display: grid; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 50%; background: none; color: var(--ink-3); cursor: pointer; }
   .more:hover { background: var(--surface-2); }
-  .menu { position: absolute; top: 100%; left: 0; z-index: 5; display: grid; min-width: 160px; padding: 6px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); box-shadow: 0 8px 24px rgb(0 0 0 / .18); }
+  .menu { position: absolute; top: 100%; left: 0; z-index: 5; display: grid; min-width: 160px; padding: 6px; border: 1px solid var(--line); border-radius: var(--r-row); background: var(--surface); box-shadow: 0 8px 24px rgb(0 0 0 / .18); }
   .menu.right { left: auto; right: 0; }
-  .menu button, .menu a { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 0; border-radius: 8px; background: none; color: var(--ink); font: inherit; font-size: var(--fs-sm); text-align: left; text-decoration: none; cursor: pointer; }
+  .menu button, .menu a { display: flex; align-items: center; gap: 10px; padding: 10px var(--s-3); border: 0; border-radius: 8px; background: none; color: var(--ink); font: inherit; font-size: var(--fs-sm); text-align: left; text-decoration: none; cursor: pointer; }
   .menu button:hover:not(:disabled), .menu a:hover { background: var(--surface-2); }
   .menu button:disabled { color: var(--ink-3); cursor: default; }
-  .disclose { max-width: 360px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); color: var(--ink); padding: 20px; }
+  .disclose { max-width: 360px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); color: var(--ink); padding: var(--s-5); }
   .disclose::backdrop { background: rgb(0 0 0 / .4); }
-  .disclose h2 { margin: 0 0 8px; font-size: 18px; }
+  .disclose h2 { margin: 0 0 var(--s-2); font-size: var(--fs-lg); }
   .disclose p { color: var(--ink-2); font-size: var(--fs-sm); line-height: 1.5; }
-  .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
-  .dialog-actions button { border: 0; border-radius: 999px; padding: 8px 16px; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
+  .dialog-actions { display: flex; justify-content: flex-end; gap: var(--s-2); margin-top: var(--s-4); }
+  .dialog-actions button { border: 0; border-radius: var(--r-full); padding: var(--s-2) var(--s-4); background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
   .dialog-actions .primary { background: var(--accent); color: var(--on-accent, #fff); }
 </style>

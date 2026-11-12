@@ -153,28 +153,28 @@
 {/if}
 
 <style>
-  .fields { display: grid; gap: 16px; align-items: start; }
+  .fields { display: grid; gap: var(--s-4); align-items: start; }
   .fields.wide { grid-template-columns: minmax(0, 1fr) 320px; }
-  .list { display: grid; gap: 8px; }
-  .item { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; min-height: 60px; padding: 8px 8px 8px 0; border: 0; border-radius: 12px; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+  .list { display: grid; gap: var(--s-2); }
+  .item { display: flex; align-items: center; gap: var(--s-3); flex: 1; min-width: 0; min-height: 60px; padding: var(--s-2) var(--s-2) var(--s-2) 0; border: 0; border-radius: var(--r-row); background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
   .item.on { background: var(--surface-2); }
   .item > :global(.icon) { color: var(--ink-3); }
-  .tile { width: 40px; height: 40px; display: grid; place-items: center; flex: none; border-radius: 10px; background: var(--accent-soft); color: var(--accent); }
+  .tile { width: 40px; height: 40px; display: grid; place-items: center; flex: none; border-radius: var(--r-sm); background: var(--accent-soft); color: var(--accent); }
   .info { display: grid; flex: 1; min-width: 0; }
-  .info strong { font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .info span { color: var(--ink-3); font-size: 13px; }
-  .pill { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 500; padding: 4px 10px; white-space: nowrap; }
+  .info strong { font-size: var(--fs-base); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .info span { color: var(--ink-3); font-size: var(--fs-sm); }
+  .pill { display: inline-flex; align-items: center; gap: var(--s-1); border-radius: var(--r-full); background: var(--accent-soft); color: var(--accent); font-size: var(--fs-xs); font-weight: 500; padding: var(--s-1) 10px; white-space: nowrap; }
   .pill.quiet { background: var(--surface-2); color: var(--ink-2); }
-  .dashed { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 52px; border: 1.5px dashed var(--line); border-radius: 16px; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
-  .panel { padding: 16px; border-radius: 16px; background: var(--surface-2); position: sticky; top: 16px; }
-  .detail { display: grid; gap: 12px; }
-  h2 { margin: 0; font-size: 16px; }
-  .name { display: grid; gap: 2px; padding: 8px 14px; border-radius: 14px; background: var(--surface); color: var(--accent); font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+  .dashed { display: flex; align-items: center; justify-content: center; gap: var(--s-2); min-height: 52px; border: 1.5px dashed var(--line); border-radius: var(--r-md); background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
+  .panel { padding: var(--s-4); border-radius: var(--r-md); background: var(--surface-2); position: sticky; top: 16px; }
+  .detail { display: grid; gap: var(--s-3); }
+  h2 { margin: 0; font-size: var(--fs-base); }
+  .name { display: grid; gap: 2px; padding: var(--s-2) 14px; border-radius: var(--r-control); background: var(--surface); color: var(--accent); font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
   .name:focus-within { box-shadow: inset 0 0 0 1.5px var(--accent); }
-  .name input { font: inherit; font-size: 16px; letter-spacing: 0; text-transform: none; font-weight: 400; color: var(--ink); background: none; border: 0; padding: 2px 0; min-width: 0; }
+  .name input { font: inherit; font-size: var(--fs-base); letter-spacing: 0; text-transform: none; font-weight: 400; color: var(--ink); background: none; border: 0; padding: 2px 0; min-width: 0; }
   .name input:focus { outline: none; }
-  .error { margin: 0; color: var(--danger); font-size: 13px; }
-  .retire { justify-self: start; border: 0; background: none; color: var(--danger); font: inherit; font-weight: 600; cursor: pointer; padding: 8px 0; }
-  .go { min-height: 44px; border: 0; border-radius: 14px; background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
+  .error { margin: 0; color: var(--danger); font-size: var(--fs-sm); }
+  .retire { justify-self: start; border: 0; background: none; color: var(--danger); font: inherit; font-weight: 600; cursor: pointer; padding: var(--s-2) 0; }
+  .go { min-height: 44px; border: 0; border-radius: var(--r-control); background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
   .go:disabled { background: var(--surface); color: var(--ink-3); cursor: default; }
 </style>

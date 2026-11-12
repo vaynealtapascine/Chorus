@@ -266,35 +266,35 @@
   .page { position: fixed; inset: 0; z-index: 35; background: var(--bg); color: var(--ink); display: grid; justify-items: center; }
   .column { position: relative; width: min(100%, 640px); height: 100%; display: flex; flex-direction: column; min-height: 0; background: var(--bg); }
   @media (min-width: 641px) { .column { border-inline: 1px solid var(--line); } }
-  header { display: flex; align-items: center; gap: 4px; padding: 6px 8px; }
+  header { display: flex; align-items: center; gap: var(--s-1); padding: 6px var(--s-2); }
   .titles { flex: 1; min-width: 0; display: grid; }
   h2 { margin: 0; font-size: 19px; font-weight: 600; line-height: 24px; }
-  .titles span { color: var(--ink-3); font-size: 13px; }
+  .titles span { color: var(--ink-3); font-size: var(--fs-sm); }
   .icon { width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 50%; background: none; color: var(--ink-2); cursor: pointer; }
   .icon:hover { background: var(--surface-2); }
-  .search { display: flex; align-items: center; gap: 8px; margin: 4px 16px 8px; padding: 0 14px; min-height: 44px; border-radius: var(--r-full); background: var(--surface-2); color: var(--ink-3); }
+  .search { display: flex; align-items: center; gap: var(--s-2); margin: var(--s-1) var(--s-4) var(--s-2); padding: 0 14px; min-height: 44px; border-radius: var(--r-full); background: var(--surface-2); color: var(--ink-3); }
   .search:focus-within { box-shadow: 0 0 0 2px var(--accent); }
-  .search input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--ink); font: inherit; font-size: 15px; }
-  .chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 16px 0; }
-  .chip { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 10px 0 4px; border: 0; border-radius: 20px; background: var(--surface-2); color: var(--ink);
-    font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
-  .scroll :global(.section-label) { padding-inline: 16px; }
+  .search input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--ink); font: inherit; font-size: var(--fs-md); }
+  .chips { display: flex; flex-wrap: wrap; gap: var(--s-2); padding: var(--s-1) var(--s-4) 0; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 10px 0 var(--s-1); border: 0; border-radius: 20px; background: var(--surface-2); color: var(--ink);
+    font: inherit; font-size: var(--fs-sm); font-weight: 600; cursor: pointer; }
+  .scroll :global(.section-label) { padding-inline: var(--s-4); }
   .scroll { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 96px; }
   .row-wrap { position: relative; }
-  .row { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 56px; padding: 8px 16px; border: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; user-select: none; -webkit-touch-callout: none; }
+  .row { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 56px; padding: var(--s-2) var(--s-4); border: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; user-select: none; -webkit-touch-callout: none; }
   .row:hover:not(:disabled) { background: var(--surface); }
   .row:disabled { cursor: default; }
   .row-wrap .row { padding-right: 60px; }
   .row.action { min-height: 60px; }
   .disc { width: 40px; height: 40px; flex: none; display: grid; place-items: center; border-radius: 50%; background: var(--accent-soft); color: var(--accent); }
-  .label { color: var(--accent); font-size: 15px; font-weight: 500; }
+  .label { color: var(--accent); font-size: var(--fs-md); font-weight: 500; }
   .avatar { width: 40px; height: 40px; flex: none; border-radius: 50%; display: grid; place-items: center; overflow: hidden; background: var(--surface-3, var(--surface-2)); color: var(--ink-2); font-weight: 700; }
   .avatar :global(img) { width: 100%; height: 100%; object-fit: cover; }
   .avatar.sm { width: 32px; height: 32px; font-size: 14px; }
-  .avatar.xs { width: 26px; height: 26px; font-size: 12px; }
+  .avatar.xs { width: 26px; height: 26px; font-size: var(--fs-xs); }
   .who { flex: 1; min-width: 0; display: grid; }
-  .who strong { font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .who small { color: var(--ink-3); font-size: 12px; line-height: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .who strong { font-size: var(--fs-md); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .who small { color: var(--ink-3); font-size: var(--fs-xs); line-height: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .who small.accent { color: var(--accent); }
   .check { width: 26px; height: 26px; flex: none; display: grid; place-items: center; border-radius: 50%; border: 1.5px solid var(--ink-3); color: var(--on-accent); }
   .check.on { background: var(--accent); border-color: var(--accent); }
@@ -305,8 +305,8 @@
     background: var(--accent); color: var(--on-accent); box-shadow: var(--shadow-pop); cursor: pointer; }
   .next:disabled { background: var(--surface-3, var(--surface-2)); color: var(--ink-3); box-shadow: none; cursor: default; }
   .senders { display: grid; }
-  .error { margin: 8px 16px; color: var(--danger); font-size: 14px; }
-  .name { font: inherit; font-size: 16px; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
-  .create { width: 100%; min-height: 44px; border: 0; border-radius: 14px; background: var(--accent); color: var(--on-accent); font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
+  .error { margin: var(--s-2) var(--s-4); color: var(--danger); font-size: 14px; }
+  .name { font: inherit; font-size: var(--fs-base); color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-row); padding: var(--s-3) 14px; }
+  .create { width: 100%; min-height: 44px; border: 0; border-radius: var(--r-control); background: var(--accent); color: var(--on-accent); font: inherit; font-size: var(--fs-md); font-weight: 600; cursor: pointer; }
   .create:disabled { background: var(--surface-3, var(--surface-2)); color: var(--ink-3); cursor: default; }
 </style>

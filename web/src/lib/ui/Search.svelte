@@ -257,31 +257,31 @@
   </Sheet>
 {/if}
 <style>
-  .search-page { display: grid; gap: 8px; align-content: start; padding: 8px 16px 16px; min-width: 0; overflow: auto; }
-  header { display: flex; align-items: center; gap: 4px; }
+  .search-page { display: grid; gap: var(--s-2); align-content: start; padding: var(--s-2) var(--s-4) var(--s-4); min-width: 0; overflow: auto; }
+  header { display: flex; align-items: center; gap: var(--s-1); }
   .back, .clear { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: 50%; background: none; color: var(--ink-2); cursor: pointer; }
   .clear { width: 32px; height: 32px; }
-  .field { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 8px 0 14px; border-radius: 22px; background: var(--surface-2); color: var(--ink-3); }
-  .field input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--ink); font: inherit; font-size: 16px; caret-color: var(--accent); }
+  .field { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--s-2); min-height: 44px; padding: 0 var(--s-2) 0 14px; border-radius: var(--r-lg); background: var(--surface-2); color: var(--ink-3); }
+  .field input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--ink); font: inherit; font-size: var(--fs-base); caret-color: var(--accent); }
   .field:focus-within { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent) 60%, transparent); }
-  .chips { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0; scrollbar-width: none; }
+  .chips { display: flex; gap: var(--s-2); overflow-x: auto; padding: var(--s-1) 0; scrollbar-width: none; }
   .chips button { flex: none; min-height: 34px; padding: 0 14px; border: 1px solid var(--line); border-radius: 17px; background: none; color: var(--ink-2); font: inherit; font-size: 14px; cursor: pointer; }
   .chips button.on { border-color: var(--accent); background: var(--accent-soft, var(--surface-2)); color: var(--accent); }
   .count, .where { margin: 0; color: var(--ink-3); font-size: var(--fs-sm); }
   .match { display: grid; gap: 6px; padding: 10px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
   .match:hover { background: color-mix(in srgb, var(--ink) 3%, transparent); }
-  .matched { background: var(--surface); border-radius: 12px; padding: 4px 8px; }
-  .row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 6px 0; border: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+  .matched { background: var(--surface); border-radius: var(--r-row); padding: var(--s-1) var(--s-2); }
+  .row { display: flex; align-items: center; gap: var(--s-3); width: 100%; min-height: 56px; padding: 6px 0; border: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
   .disc { flex: none; width: 40px; height: 40px; display: grid; place-items: center; border-radius: 50%; background: var(--surface-2); color: var(--ink-2); font-weight: 700; }
   .line { flex: 1; min-width: 0; display: grid; }
   .line strong, .line small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .line small { color: var(--ink-3); font-size: var(--fs-xs); }
-  .media { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+  .media { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-1); }
   .tile { aspect-ratio: 1; overflow: hidden; border-radius: 8px; background: var(--surface-2); cursor: pointer; }
   .tile :global(img) { width: 100%; height: 100%; object-fit: cover; }
-  .more { min-height: 44px; border: 1px solid var(--line); border-radius: 12px; background: none; color: var(--accent); font: inherit; cursor: pointer; }
+  .more { min-height: 44px; border: 1px solid var(--line); border-radius: var(--r-row); background: none; color: var(--accent); font: inherit; cursor: pointer; }
   .more:disabled { opacity: .5; cursor: default; }
-  .choice { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 46px; padding: 8px 20px; border: 0; background: none; color: var(--ink); font: inherit; font-size: 15px; text-align: left; cursor: pointer; }
+  .choice { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); width: 100%; min-height: 46px; padding: var(--s-2) var(--s-5); border: 0; background: none; color: var(--ink); font: inherit; font-size: var(--fs-md); text-align: left; cursor: pointer; }
   .choice :global(.icon) { color: var(--accent); }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 </style>

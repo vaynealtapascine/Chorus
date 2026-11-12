@@ -31,5 +31,5 @@
   {/each}
 </details>
 <style>
-  details { color: var(--ink-2); font-size: var(--fs-sm); } summary, button { cursor: pointer; padding: 8px 0; } section { border-top: 1px solid var(--line); padding: 12px 0; white-space: pre-wrap; overflow-wrap: anywhere; } p { color: var(--ink-3); } button { color: var(--accent); background: none; border: 0; }
+  details { color: var(--ink-2); font-size: var(--fs-sm); } summary, button { cursor: pointer; padding: var(--s-2) 0; } section { border-top: 1px solid var(--line); padding: var(--s-3) 0; white-space: pre-wrap; overflow-wrap: anywhere; } p { color: var(--ink-3); } button { color: var(--accent); background: none; border: 0; }
 </style>

@@ -99,25 +99,25 @@
 {/if}
 
 <style>
-  .page { display: grid; gap: 12px; max-width: 840px; align-content: start; }
-  .pill { min-height: 36px; padding: 0 16px; border: 0; border-radius: 999px; background: var(--surface-2); color: var(--ink); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
-  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
-  .tile, .card { display: grid; gap: 4px; padding: 14px; border-radius: 16px; background: var(--surface-2); align-content: start; }
-  .card { gap: 12px; }
-  .disc { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); }
-  .tile .disc { margin-bottom: 8px; }
-  .k { color: var(--ink-3); font-size: 13px; }
+  .page { display: grid; gap: var(--s-3); max-width: 840px; align-content: start; }
+  .pill { min-height: 36px; padding: 0 var(--s-4); border: 0; border-radius: var(--r-full); background: var(--surface-2); color: var(--ink); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--s-3); }
+  .tile, .card { display: grid; gap: var(--s-1); padding: 14px; border-radius: var(--r-md); background: var(--surface-2); align-content: start; }
+  .card { gap: var(--s-3); }
+  .disc { display: grid; place-items: center; width: 32px; height: 32px; border-radius: var(--r-sm); background: var(--accent-soft); color: var(--accent); }
+  .tile .disc { margin-bottom: var(--s-2); }
+  .k { color: var(--ink-3); font-size: var(--fs-sm); }
   .tile strong { font-size: 20px; }
-  .s { color: var(--ink-3); font-size: 13px; overflow-wrap: anywhere; }
+  .s { color: var(--ink-3); font-size: var(--fs-sm); overflow-wrap: anywhere; }
   .head { display: flex; align-items: center; gap: 10px; }
-  h2 { margin: 0; font-size: 16px; flex: 1; }
-  .count { color: var(--accent); font-size: 13px; font-weight: 600; }
+  h2 { margin: 0; font-size: var(--fs-base); flex: 1; }
+  .count { color: var(--accent); font-size: var(--fs-sm); font-weight: 600; }
   .bar { height: 6px; border-radius: 3px; background: var(--surface-3, var(--surface)); overflow: hidden; }
   .bar span { display: block; height: 100%; background: var(--accent); }
-  ul { list-style: none; margin: 0; padding: 12px 14px; display: grid; gap: 12px; border-radius: 12px; background: var(--surface); }
+  ul { list-style: none; margin: 0; padding: var(--s-3) 14px; display: grid; gap: var(--s-3); border-radius: var(--r-row); background: var(--surface); }
   li { display: flex; align-items: center; gap: 10px; }
   li :global(.icon) { color: var(--accent); }
-  li span { color: var(--ink-3); font-size: 13px; }
+  li span { color: var(--ink-3); font-size: var(--fs-sm); }
   .link { justify-self: start; border: 0; background: none; padding: 0; color: var(--accent); font: inherit; cursor: pointer; }
   .error { margin: 0; color: var(--danger); }
 </style>

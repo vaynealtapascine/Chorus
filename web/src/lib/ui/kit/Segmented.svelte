@@ -12,7 +12,7 @@
 </div>
 
 <style>
-  .segmented { display: flex; gap: 3px; padding: 3px; border-radius: 12px; background: var(--surface-2); }
-  button { flex: 1; min-height: 34px; border: 0; border-radius: 9px; background: none; color: var(--ink-3); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
+  .segmented { display: flex; gap: 3px; padding: 3px; border-radius: var(--r-row); background: var(--surface-2); }
+  button { flex: 1; min-height: 34px; border: 0; border-radius: 9px; background: none; color: var(--ink-3); font: inherit; font-size: var(--fs-sm); font-weight: 500; cursor: pointer; }
   button[aria-checked='true'] { background: var(--accent); color: var(--on-accent); font-weight: 600; }
 </style>

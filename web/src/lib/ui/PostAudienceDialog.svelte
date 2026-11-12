@@ -40,16 +40,16 @@
 </dialog>
 
 <style>
-  .audience-dialog { width: min(380px, 90vw); border: 1px solid var(--line); border-radius: 16px; background: var(--surface); color: var(--ink); padding: 20px; overflow: visible; }
+  .audience-dialog { width: min(380px, 90vw); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); color: var(--ink); padding: var(--s-5); overflow: visible; }
   .audience-dialog::backdrop { background: rgb(0 0 0 / .4); }
-  h2 { margin: 0 0 12px; font-size: 18px; }
+  h2 { margin: 0 0 var(--s-3); font-size: var(--fs-lg); }
   /* the chip sits right so its right-aligned menu floats below the dialog like a popup */
-  .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--ink-2); font-size: var(--fs-sm); }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); color: var(--ink-2); font-size: var(--fs-sm); }
 
   .note, .error { margin: 10px 0 0; font-size: var(--fs-sm); color: var(--ink-2); }
   .error { color: var(--danger); }
-  .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
-  .dialog-actions button { border: 0; border-radius: 999px; padding: 8px 16px; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
+  .dialog-actions { display: flex; justify-content: flex-end; gap: var(--s-2); margin-top: var(--s-4); }
+  .dialog-actions button { border: 0; border-radius: var(--r-full); padding: var(--s-2) var(--s-4); background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
   .dialog-actions .primary { background: var(--accent); color: var(--on-accent, #fff); }
   .dialog-actions .primary:disabled { opacity: .5; cursor: default; }
 </style>

@@ -93,10 +93,10 @@
 {/if}
 
 <style>
-  .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 14px; min-height: 52px; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); padding: var(--s-2) 14px; min-height: 52px; }
   .seg { width: 190px; }
-  .name { flex: 1; min-width: 0; font: inherit; font-size: 15px; color: var(--ink); background: none; border: 0; padding: 12px 4px; }
+  .name { flex: 1; min-width: 0; font: inherit; font-size: var(--fs-md); color: var(--ink); background: none; border: 0; padding: var(--s-3) var(--s-1); }
   .icon { display: grid; place-items: center; width: 40px; height: 40px; border: 0; background: none; color: var(--ink-3); cursor: pointer; }
-  .new { display: flex; align-items: center; gap: 8px; padding: 0 14px; min-height: 48px; border: 1.5px dashed var(--line); border-radius: 16px; color: var(--accent); }
-  .new input { flex: 1; font: inherit; color: var(--ink); background: none; border: 0; padding: 12px 0; }
+  .new { display: flex; align-items: center; gap: var(--s-2); padding: 0 14px; min-height: 48px; border: 1.5px dashed var(--line); border-radius: var(--r-md); color: var(--accent); }
+  .new input { flex: 1; font: inherit; color: var(--ink); background: none; border: 0; padding: var(--s-3) 0; }
 </style>

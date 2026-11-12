@@ -18,8 +18,8 @@
 {:else}<button class="value-row" {disabled} {onclick}>{@render inner()}</button>{/if}
 
 <style>
-  .value-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 46px; padding: 10px 14px; border: 0; background: none;
-    color: var(--ink); font: inherit; font-size: 15px; text-align: left; cursor: pointer; text-decoration: none; }
+  .value-row { display: flex; align-items: center; gap: var(--s-3); width: 100%; min-height: 46px; padding: 10px 14px; border: 0; background: none;
+    color: var(--ink); font: inherit; font-size: var(--fs-md); text-align: left; cursor: pointer; text-decoration: none; }
   .value-row:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 4%, transparent); }
   .value-row > :global(.icon) { color: var(--ink-2); }
   .label { flex: 1; min-width: 0; }

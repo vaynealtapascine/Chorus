@@ -126,23 +126,23 @@
 {/if}
 
 <style>
-  .page { display: grid; gap: 12px; max-width: 720px; align-content: start; }
-  .add { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 16px; border: 0; border-radius: 999px; background: var(--accent); color: var(--on-accent); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
-  .card { display: grid; gap: 12px; padding: 14px; border-radius: 16px; background: var(--surface-2); }
-  h2 { margin: 0; font-size: 16px; }
+  .page { display: grid; gap: var(--s-3); max-width: 720px; align-content: start; }
+  .add { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 var(--s-4); border: 0; border-radius: var(--r-full); background: var(--accent); color: var(--on-accent); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+  .card { display: grid; gap: var(--s-3); padding: 14px; border-radius: var(--r-md); background: var(--surface-2); }
+  h2 { margin: 0; font-size: var(--fs-base); }
   .head { display: flex; align-items: center; gap: 10px; }
-  .tile { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; background: var(--accent-soft); color: var(--accent); flex: none; }
+  .tile { display: grid; place-items: center; width: 40px; height: 40px; border-radius: var(--r-row); background: var(--accent-soft); color: var(--accent); flex: none; }
   .url { flex: 1; min-width: 0; font-family: var(--font-mono); font-size: 14px; font-weight: 500; word-break: break-all; }
-  .pill { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 14px; border: 0; border-radius: 999px; background: var(--surface-3, var(--surface)); color: var(--ink); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 14px; border: 0; border-radius: var(--r-full); background: var(--surface-3, var(--surface)); color: var(--ink); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-  code { font-family: var(--font-mono); background: var(--surface-3, var(--surface)); padding: 3px 10px; border-radius: 999px; font-size: 12px; word-break: break-all; }
+  code { font-family: var(--font-mono); background: var(--surface-3, var(--surface)); padding: 3px 10px; border-radius: var(--r-full); font-size: var(--fs-xs); word-break: break-all; }
   code.off { color: var(--ink-3); }
-  .hint { color: var(--ink-3); font-size: 13px; }
-  .error { color: var(--danger); font-size: 13px; margin: 0; }
+  .hint { color: var(--ink-3); font-size: var(--fs-sm); }
+  .error { color: var(--danger); font-size: var(--fs-sm); margin: 0; }
   .link { border: 0; background: none; padding: 0; color: var(--accent); font: inherit; cursor: pointer; justify-self: start; }
-  form { display: grid; gap: 12px; }
-  input { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
-  .primary, .danger { flex: 1; min-height: 48px; border: 0; border-radius: 14px; background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
+  form { display: grid; gap: var(--s-3); }
+  input { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-row); padding: var(--s-3) 14px; }
+  .primary, .danger { flex: 1; min-height: 48px; border: 0; border-radius: var(--r-control); background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
   .danger { background: var(--surface-2); color: var(--danger); }
   .primary:disabled { opacity: .5; cursor: default; }
 </style>

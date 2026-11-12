@@ -199,27 +199,27 @@
   .options summary { cursor: pointer; color: var(--accent); font-size: var(--fs-sm); }
   .options .scope { margin-top: var(--s-2); }
   header { display: grid; gap: 2px; }
-  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-  .tile { display: grid; gap: 2px; align-content: start; min-width: 0; padding: 12px; border-radius: 16px; background: var(--surface); }
+  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s-2); }
+  .tile { display: grid; gap: 2px; align-content: start; min-width: 0; padding: var(--s-3); border-radius: var(--r-md); background: var(--surface); }
   .tile .k { font-size: 11px; font-weight: 500; color: var(--ink-2); }
   .tile strong { font-size: 20px; line-height: 24px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tile .s { font-size: 11px; line-height: 14px; color: var(--ink-3); }
   .cols { display: flex; align-items: flex-end; gap: 10px; height: 140px; }
-  .cols.tight, .col-labels.tight { gap: 4px; }
+  .cols.tight, .col-labels.tight { gap: var(--s-1); }
   .col { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column-reverse; gap: 2px; padding: 0 3px; box-sizing: border-box; }
   .seg-bit { display: block; border-radius: 4px; }
   .empty-col { display: block; height: 3px; border-radius: 2px; background: var(--surface-2); }
   .col-labels { display: flex; gap: 10px; }
   .col-labels span { flex: 1; min-width: 0; text-align: center; font-size: 11px; color: var(--ink-3); white-space: nowrap; overflow: hidden; }
-  .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; color: var(--ink-2); }
+  .legend { display: flex; flex-wrap: wrap; gap: var(--s-1) var(--s-3); font-size: 11px; color: var(--ink-2); }
   .legend span { display: inline-flex; align-items: center; gap: 5px; }
   .legend i { width: 8px; height: 8px; border-radius: 50%; }
-  .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .buttons button { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; border: 0; border-radius: 14px; background: var(--surface); color: var(--ink); font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
-  .pattern { display: flex; align-items: center; gap: 16px; min-height: 62px; padding: 8px 4px; color: var(--ink-2); }
+  .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-2); }
+  .buttons button { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; border: 0; border-radius: var(--r-control); background: var(--surface); color: var(--ink); font: inherit; font-size: var(--fs-md); font-weight: 600; cursor: pointer; }
+  .pattern { display: flex; align-items: center; gap: var(--s-4); min-height: 62px; padding: var(--s-2) var(--s-1); color: var(--ink-2); }
   .pattern div { display: grid; }
-  .pattern strong { font-size: 16px; font-weight: 400; color: var(--ink); }
-  .pattern span { font-size: 13px; color: var(--ink-3); }
+  .pattern strong { font-size: var(--fs-base); font-weight: 400; color: var(--ink); }
+  .pattern span { font-size: var(--fs-sm); color: var(--ink-3); }
   .bars { display: grid; gap: var(--s-1); }
   .bar-row { display: grid; grid-template-columns: minmax(3.2rem, auto) 1fr 3.8rem; gap: var(--s-2); align-items: center; font-size: var(--fs-xs); }
   .bar-label, .pair-label { color: var(--ink-2); white-space: nowrap; }

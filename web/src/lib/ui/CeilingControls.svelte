@@ -27,6 +27,6 @@
 
 <style>
   details { width: 100%; min-width: 0; }
-  summary { cursor: pointer; color: var(--accent); padding-block: 8px; }
-  .hint { font-size: var(--fs-sm); color: var(--ink-3); max-width: 65ch; margin: 0 0 4px; }
+  summary { cursor: pointer; color: var(--accent); padding-block: var(--s-2); }
+  .hint { font-size: var(--fs-sm); color: var(--ink-3); max-width: 65ch; margin: 0 0 var(--s-1); }
 </style>

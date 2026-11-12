@@ -36,11 +36,11 @@
 </nav>
 
 <style>
-  .rail { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 6px 12px; background: var(--bg); border-right: 1px solid var(--line); min-height: 0; overflow-y: auto; }
+  .rail { display: flex; flex-direction: column; align-items: center; gap: var(--s-1); padding: 10px 6px var(--s-3); background: var(--bg); border-right: 1px solid var(--line); min-height: 0; overflow-y: auto; }
   .menu { width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 50%; background: none; color: var(--ink-3); cursor: pointer; }
   .menu:hover { background: var(--surface-2); color: var(--ink); }
-  .item { position: relative; width: 64px; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 4px;
-    border: 0; border-radius: 12px; background: none; color: var(--ink-3); text-decoration: none; cursor: pointer; font: inherit;
+  .item { position: relative; width: 64px; display: flex; flex-direction: column; align-items: center; gap: var(--s-1); padding: var(--s-2) var(--s-1);
+    border: 0; border-radius: var(--r-row); background: none; color: var(--ink-3); text-decoration: none; cursor: pointer; font: inherit;
     transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
   .item:hover { background: var(--surface); color: var(--ink-2); }
   .item.on { background: var(--accent-soft); color: var(--accent); }

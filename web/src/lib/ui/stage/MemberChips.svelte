@@ -21,6 +21,6 @@
 </div>
 
 <style>
-  .chips { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
-  .face { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; overflow: hidden; background: var(--c); font-size: 12px; }
+  .chips { display: flex; gap: var(--s-2); overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+  .face { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; overflow: hidden; background: var(--c); font-size: var(--fs-xs); }
 </style>

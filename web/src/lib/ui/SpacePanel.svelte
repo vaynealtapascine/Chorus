@@ -191,32 +191,32 @@
 {/if}
 
 <style>
-  h3 { margin: 0; padding: 12px 16px 4px; font-size: 12px; font-weight: 600; color: var(--accent); text-align: left; }
-  .desc { margin: 4px 16px 8px; color: var(--ink-2); font-size: 14px; text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; }
-  .note { display: flex; gap: 8px; align-items: flex-start; margin: 8px 16px; padding: 10px; border-radius: var(--r-md); background: var(--surface-2); color: var(--ink-2); font-size: 13px; text-align: left; }
-  .link { display: flex; align-items: center; gap: 8px; margin: 4px 8px; padding: 8px; border: 0; border-radius: var(--r-sm); background: none; color: var(--accent); font: inherit; font-size: 14px; cursor: pointer; }
+  h3 { margin: 0; padding: var(--s-3) var(--s-4) var(--s-1); font-size: var(--fs-xs); font-weight: 600; color: var(--accent); text-align: left; }
+  .desc { margin: var(--s-1) var(--s-4) var(--s-2); color: var(--ink-2); font-size: 14px; text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .note { display: flex; gap: var(--s-2); align-items: flex-start; margin: var(--s-2) var(--s-4); padding: 10px; border-radius: var(--r-md); background: var(--surface-2); color: var(--ink-2); font-size: var(--fs-sm); text-align: left; }
+  .link { display: flex; align-items: center; gap: var(--s-2); margin: var(--s-1) var(--s-2); padding: var(--s-2); border: 0; border-radius: var(--r-sm); background: none; color: var(--accent); font: inherit; font-size: 14px; cursor: pointer; }
   .link:hover { background: var(--surface-2); }
-  .people { list-style: none; margin: 0; padding: 0 8px; display: grid; gap: 1px; }
-  .person, .add { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: var(--r-sm); color: var(--ink); text-decoration: none; text-align: left; }
+  .people { list-style: none; margin: 0; padding: 0 var(--s-2); display: grid; gap: 1px; }
+  .person, .add { display: flex; align-items: center; gap: 10px; padding: 6px var(--s-2); border-radius: var(--r-sm); color: var(--ink); text-decoration: none; text-align: left; }
   .add { width: 100%; border: 0; background: none; font: inherit; color: var(--accent); cursor: pointer; }
   .add:hover, .link-row:hover, .link-row.on { background: var(--surface-2); }
   .face { width: 34px; height: 34px; flex: none; border-radius: 50%; display: grid; place-items: center; overflow: hidden; background: var(--surface-3, var(--surface-2)); color: var(--ink-2); font-weight: 700; font-size: 14px; }
   .face.plus { background: var(--accent-soft); color: var(--accent); }
   .who { flex: 1; min-width: 0; display: grid; font-size: 14px; overflow-wrap: anywhere; }
-  .who small { color: var(--ink-3); font-size: 12px; }
-  .role { color: var(--ink-3); font-size: 12px; }
-  select { font: inherit; font-size: 12px; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 2px 4px; }
+  .who small { color: var(--ink-3); font-size: var(--fs-xs); }
+  .role { color: var(--ink-3); font-size: var(--fs-xs); }
+  select { font: inherit; font-size: var(--fs-xs); color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 2px var(--s-1); }
   .x { width: 28px; height: 28px; display: grid; place-items: center; border: 0; border-radius: 50%; background: none; color: var(--ink-3); cursor: pointer; }
   .x:hover { background: var(--surface-2); color: var(--danger); }
-  .adding { display: grid; gap: 4px; padding: 8px; border-radius: var(--r-md); background: var(--surface-2); font-size: 14px; text-align: left; }
-  .row-actions { display: flex; justify-content: flex-end; gap: 8px; }
+  .adding { display: grid; gap: var(--s-1); padding: var(--s-2); border-radius: var(--r-md); background: var(--surface-2); font-size: 14px; text-align: left; }
+  .row-actions { display: flex; justify-content: flex-end; gap: var(--s-2); }
   .ghost { border: 0; background: none; color: var(--accent); font: inherit; cursor: pointer; }
   .primary { border: 0; border-radius: var(--r-full); padding: 6px 14px; background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
   .primary:disabled { opacity: .5; cursor: default; }
-  .private-start { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 16px; font-size: 13px; color: var(--ink-2); }
-  .leave { padding: 16px; border-top: 1px solid var(--line); margin-top: 12px; }
+  .private-start { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); margin: var(--s-3) var(--s-4); font-size: var(--fs-sm); color: var(--ink-2); }
+  .leave { padding: var(--s-4); border-top: 1px solid var(--line); margin-top: var(--s-3); }
   .danger { width: 100%; border: 0; border-radius: var(--r-md); padding: 10px; background: none; color: var(--danger); font: inherit; cursor: pointer; }
   .danger:hover { background: var(--surface-2); }
-  .hint { margin: 0; color: var(--ink-3); font-size: 13px; }
-  .error { margin: 8px 16px; color: var(--danger); font-size: 13px; }
+  .hint { margin: 0; color: var(--ink-3); font-size: var(--fs-sm); }
+  .error { margin: var(--s-2) var(--s-4); color: var(--danger); font-size: var(--fs-sm); }
 </style>

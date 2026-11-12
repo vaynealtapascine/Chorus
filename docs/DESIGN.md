@@ -81,6 +81,8 @@ typography:
     fontFamily: "JetBrains Mono Variable, ui-monospace, monospace"
 rounded:
   sm: "10px"
+  row: "12px"
+  control: "14px"
   md: "16px"
   lg: "22px"
   full: "999px"

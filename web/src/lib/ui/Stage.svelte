@@ -285,7 +285,7 @@
 {/if}
 
 <style>
-  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chips { display: flex; flex-wrap: wrap; gap: var(--s-2); }
   select { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: var(--s-1) var(--s-2); }
   .cw-toggle { display: block; padding: var(--s-2); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); color: var(--ink); cursor: pointer; text-align: left; font: inherit; }
 
@@ -297,17 +297,17 @@
   .capturing { padding-top: var(--s-6); }
   .time-edit { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-size: var(--fs-xs); cursor: pointer; }
   .thread { color: var(--accent); font-size: var(--fs-sm); font-weight: 600; }
-  .reacts { display: flex; flex-wrap: wrap; gap: 4px; }
-  .react { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 10px; background: var(--surface-3); color: var(--ink-2); font-size: 12px; }
-  .chan { display: flex; align-items: center; gap: 8px; font-size: 17px; font-weight: 600; color: var(--ink); padding: var(--s-3) 0 var(--s-2); }
+  .reacts { display: flex; flex-wrap: wrap; gap: var(--s-1); }
+  .react { display: inline-flex; align-items: center; gap: var(--s-1); padding: 2px var(--s-2); border-radius: var(--r-sm); background: var(--surface-3); color: var(--ink-2); font-size: var(--fs-xs); }
+  .chan { display: flex; align-items: center; gap: var(--s-2); font-size: 17px; font-weight: 600; color: var(--ink); padding: var(--s-3) 0 var(--s-2); }
   .chan :global(.icon) { color: var(--ink-3); }
-  .chan span { margin-left: auto; font-size: 12px; font-weight: 400; color: var(--ink-3); }
+  .chan span { margin-left: auto; font-size: var(--fs-xs); font-weight: 400; color: var(--ink-3); }
   .item { display: flex; gap: var(--s-3); padding: var(--s-2); border-radius: var(--r-md); align-items: flex-start; }
   .item.picking { cursor: pointer; align-items: center; }
   .item.dim { opacity: 0.45; }
   .avatar {
     flex: none; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 50%;
-    background: var(--surface-2); box-shadow: 0 0 0 2px var(--ring); font-size: 16px; color: var(--name); overflow: hidden;
+    background: var(--surface-2); box-shadow: 0 0 0 2px var(--ring); font-size: var(--fs-base); color: var(--name); overflow: hidden;
   }
   .blur .avatar { filter: blur(5px); }
   .body { min-width: 0; display: grid; gap: 2px; }

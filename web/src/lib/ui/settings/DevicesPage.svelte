@@ -9,5 +9,5 @@
 </section>
 
 <style>
-  .page { display: grid; gap: 12px; max-width: 720px; align-content: start; }
+  .page { display: grid; gap: var(--s-3); max-width: 720px; align-content: start; }
 </style>

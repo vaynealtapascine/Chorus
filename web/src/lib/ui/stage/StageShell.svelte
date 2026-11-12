@@ -66,19 +66,19 @@
 <style>
   .stage { position: fixed; inset: 0; z-index: 45; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; background: var(--bg); color: var(--ink); }
   .stage.capturing { grid-template-rows: minmax(0, 1fr); }
-  .bar { display: flex; align-items: center; gap: 4px; padding: 4px 12px 4px 4px; background: var(--surface); border-bottom: 1px solid var(--line); }
+  .bar { display: flex; align-items: center; gap: var(--s-1); padding: var(--s-1) var(--s-3) var(--s-1) var(--s-1); background: var(--surface); border-bottom: 1px solid var(--line); }
   .icon-btn { width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 50%; background: none; color: var(--ink-2); cursor: pointer; text-decoration: none; }
-  .titles { flex: 1; min-width: 0; display: grid; padding-left: 4px; }
+  .titles { flex: 1; min-width: 0; display: grid; padding-left: var(--s-1); }
   .titles strong { font-size: 17px; line-height: 22px; }
-  .titles span { color: var(--ink-3); font-size: 12px; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .titles span { color: var(--ink-3); font-size: var(--fs-xs); line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .capture { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 14px; border: 0; border-radius: 18px; background: var(--accent); color: var(--on-accent);
     font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
   .capture:disabled { background: var(--surface-3); color: var(--ink-3); cursor: default; }
   .preview { overflow: auto; min-height: 0; overscroll-behavior: contain; }
   .tools { display: flex; flex-direction: column; min-height: 0; }
-  .panel { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 10px; max-height: 330px; overflow: auto; padding: 14px 16px; background: var(--surface); border-radius: 20px 20px 0 0; }
-  .tabs { display: flex; padding: 4px; background: var(--surface); }
-  .tabs button { flex: 1; min-width: 0; display: grid; justify-items: center; gap: 3px; padding: 6px 0; border: 0; border-radius: 12px; background: none; color: var(--ink-2);
+  .panel { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 10px; max-height: 330px; overflow: auto; padding: 14px var(--s-4); background: var(--surface); border-radius: 20px 20px 0 0; }
+  .tabs { display: flex; padding: var(--s-1); background: var(--surface); }
+  .tabs button { flex: 1; min-width: 0; display: grid; justify-items: center; gap: 3px; padding: 6px 0; border: 0; border-radius: var(--r-row); background: none; color: var(--ink-2);
     font: inherit; font-size: 11px; line-height: 14px; font-weight: 500; cursor: pointer; white-space: nowrap; }
   .pill { display: grid; place-items: center; width: 48px; height: 26px; border-radius: 13px; }
   .tabs button[aria-selected='true'] { color: var(--accent); font-weight: 600; }
@@ -91,11 +91,11 @@
     .panel { max-height: none; flex: 1; border-radius: 0; }
     .tabs { border-bottom: 1px solid var(--line); }
   }
-  .pills { position: fixed; inset: 0; pointer-events: none; display: flex; flex-direction: column; justify-content: space-between; align-items: center; padding: 12px 16px 28px; transition: opacity 400ms; }
+  .pills { position: fixed; inset: 0; pointer-events: none; display: flex; flex-direction: column; justify-content: space-between; align-items: center; padding: var(--s-3) var(--s-4) 28px; transition: opacity 400ms; }
   .pills.gone { opacity: 0; }
-  .hint, .done { pointer-events: auto; display: inline-flex; align-items: center; gap: 8px; border-radius: 22px; background: var(--surface-2); color: var(--ink); font-size: 13px; }
-  .hint { padding: 8px 14px; color: var(--ink); } .hint :global(.icon) { color: var(--accent); }
-  .done { min-height: 44px; padding: 0 20px; border: 0; font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
+  .hint, .done { pointer-events: auto; display: inline-flex; align-items: center; gap: var(--s-2); border-radius: var(--r-lg); background: var(--surface-2); color: var(--ink); font-size: var(--fs-sm); }
+  .hint { padding: var(--s-2) 14px; color: var(--ink); } .hint :global(.icon) { color: var(--accent); }
+  .done { min-height: 44px; padding: 0 var(--s-5); border: 0; font: inherit; font-size: var(--fs-md); font-weight: 600; cursor: pointer; }
   .done :global(.icon) { color: var(--accent); }
   .gone .hint, .gone .done { pointer-events: none; }
 </style>

@@ -95,8 +95,8 @@
 
 <style>
   .friends { display: grid; border-top: 1px solid var(--line); }
-  .quiet { margin: 0; padding: 20px 16px; color: var(--ink-3); }
-  .quiet p { margin: 0 0 8px; }
+  .quiet { margin: 0; padding: var(--s-5) var(--s-4); color: var(--ink-3); }
+  .quiet p { margin: 0 0 var(--s-2); }
   .older { text-align: center; }
   .quiet button { border: 0; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; padding: 0; }
 </style>

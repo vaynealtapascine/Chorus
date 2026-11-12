@@ -29,6 +29,6 @@
 {/if}
 
 <style>
-  .search { font: inherit; color: var(--ink); background: var(--surface-2); border: 0; border-radius: 12px; padding: 10px 14px; }
-  .go { flex: 1; min-height: 44px; border: 0; border-radius: 14px; background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
+  .search { font: inherit; color: var(--ink); background: var(--surface-2); border: 0; border-radius: var(--r-row); padding: 10px 14px; }
+  .go { flex: 1; min-height: 44px; border: 0; border-radius: var(--r-control); background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
 </style>

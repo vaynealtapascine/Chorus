@@ -43,7 +43,7 @@
 </section>
 
 <style>
-  .page { display: grid; gap: 12px; max-width: 720px; align-content: start; }
-  .more { padding: 4px; }
-  summary { cursor: pointer; color: var(--accent); font-weight: 600; padding: 8px 0; }
+  .page { display: grid; gap: var(--s-3); max-width: 720px; align-content: start; }
+  .more { padding: var(--s-1); }
+  summary { cursor: pointer; color: var(--accent); font-weight: 600; padding: var(--s-2) 0; }
 </style>

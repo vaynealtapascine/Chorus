@@ -47,7 +47,7 @@
 {/if}
 
 <style>
-  .banner { display: flex; align-items: center; gap: 10px; padding: 10px 16px; font-size: var(--fs-sm); color: var(--ink);
+  .banner { display: flex; align-items: center; gap: 10px; padding: 10px var(--s-4); font-size: var(--fs-sm); color: var(--ink);
     background: color-mix(in srgb, var(--sun) 18%, transparent); }
   .banner.asleep { background: color-mix(in srgb, var(--danger) 15%, transparent); }
   span { flex: 1; min-width: 0; }

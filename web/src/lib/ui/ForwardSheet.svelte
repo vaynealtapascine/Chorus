@@ -80,22 +80,22 @@
 
 <style>
   .find { display: flex; align-items: center; gap: 10px; min-height: 44px; color: var(--ink-3); }
-  .find input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--ink); font: inherit; font-size: 15px; }
-  .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
-  .face { display: grid; justify-items: center; align-content: start; gap: 6px; padding: 6px 2px; border: 0; border-radius: 12px; background: none; color: var(--ink-2); font: inherit; cursor: pointer; }
+  .find input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--ink); font: inherit; font-size: var(--fs-md); }
+  .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s-1); }
+  .face { display: grid; justify-items: center; align-content: start; gap: 6px; padding: 6px 2px; border: 0; border-radius: var(--r-row); background: none; color: var(--ink-2); font: inherit; cursor: pointer; }
   .face:hover:not(:disabled) { background: var(--surface-2); }
   .ring { position: relative; width: 60px; height: 60px; display: grid; place-items: center; border-radius: 50%; border: 2px solid transparent; }
   .face.on .ring { border-color: var(--accent); }
   .disc { width: 52px; height: 52px; display: grid; place-items: center; overflow: hidden; border-radius: 50%; font-weight: 700; font-size: 20px; }
   .disc :global(img) { width: 100%; height: 100%; object-fit: cover; }
   .tick { position: absolute; right: -2px; bottom: -2px; width: 22px; height: 22px; display: grid; place-items: center; border: 2px solid var(--surface); border-radius: 50%; background: var(--accent); color: var(--on-accent); }
-  .name { max-width: 100%; font-size: 12px; line-height: 15px; text-align: center; overflow: hidden; display: -webkit-box; line-clamp: 2; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+  .name { max-width: 100%; font-size: var(--fs-xs); line-height: 15px; text-align: center; overflow: hidden; display: -webkit-box; line-clamp: 2; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
   .face.on .name { color: var(--accent); font-weight: 600; }
   .me { width: 36px; height: 36px; flex: none; display: grid; place-items: center; overflow: hidden; border-radius: 50%; font-weight: 700; font-size: 14px; }
   .me :global(img) { width: 100%; height: 100%; object-fit: cover; }
-  .comment { flex: 1; min-width: 0; min-height: 44px; padding: 0 16px; border: 0; border-radius: 22px; background: var(--surface-2); color: var(--ink); font: inherit; font-size: 15px; outline: 0; }
+  .comment { flex: 1; min-width: 0; min-height: 44px; padding: 0 var(--s-4); border: 0; border-radius: var(--r-lg); background: var(--surface-2); color: var(--ink); font: inherit; font-size: var(--fs-md); outline: 0; }
   .comment:focus { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent) 60%, transparent); }
   .go { flex: none; width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 50%; background: var(--accent); color: var(--on-accent); cursor: pointer; }
-  .go.wide { width: 100%; border-radius: 14px; font: inherit; font-size: 15px; font-weight: 600; }
+  .go.wide { width: 100%; border-radius: var(--r-control); font: inherit; font-size: var(--fs-md); font-weight: 600; }
   .go:disabled { background: var(--surface-3, var(--surface-2)); color: var(--ink-3); cursor: default; }
 </style>

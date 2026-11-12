@@ -59,18 +59,18 @@
 </Sheet>
 
 <style>
-  .picks { display: flex; gap: 8px; }
-  .picks button { font: inherit; font-size: 13px; font-weight: 500; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line);
+  .picks { display: flex; gap: var(--s-2); }
+  .picks button { font: inherit; font-size: var(--fs-sm); font-weight: 500; padding: 6px var(--s-3); border-radius: 8px; border: 1px solid var(--line);
     background: none; color: var(--ink-2); cursor: pointer; }
   .picks button.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
-  ul { list-style: none; margin: 0; padding: 0; border-radius: 14px; background: var(--surface-2); overflow: hidden; }
+  ul { list-style: none; margin: 0; padding: 0; border-radius: var(--r-control); background: var(--surface-2); overflow: hidden; }
   li + li { border-top: 1px solid var(--line); }
-  li button { width: 100%; min-height: 56px; display: flex; align-items: center; gap: 14px; padding: 8px 12px; border: 0; background: none;
+  li button { width: 100%; min-height: 56px; display: flex; align-items: center; gap: 14px; padding: var(--s-2) var(--s-3); border: 0; background: none;
     color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
   .name { flex: 1; min-width: 0; display: grid; }
   .name strong, .name small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .name strong { font-size: 15px; font-weight: 600; }
-  .name small { color: var(--ink-3); font-size: 12px; }
+  .name strong { font-size: var(--fs-md); font-weight: 600; }
+  .name small { color: var(--ink-3); font-size: var(--fs-xs); }
   .check { width: 26px; height: 26px; flex: none; display: grid; place-items: center; border-radius: 50%; border: 1.5px solid var(--ink-3); color: var(--on-accent); }
   .check.on { border-color: var(--accent); background: var(--accent); }
 </style>

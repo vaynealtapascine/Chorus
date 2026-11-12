@@ -14,10 +14,10 @@
 </div>
 
 <style>
-  .tabs { display: flex; gap: 4px; padding: 0 4px; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
-  button { position: relative; display: inline-flex; align-items: center; gap: 6px; flex: none; border: 0; background: none; padding: 12px;
-    color: var(--ink-3); font: inherit; font-size: 15px; font-weight: 500; cursor: pointer; }
+  .tabs { display: flex; gap: var(--s-1); padding: 0 var(--s-1); border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+  button { position: relative; display: inline-flex; align-items: center; gap: 6px; flex: none; border: 0; background: none; padding: var(--s-3);
+    color: var(--ink-3); font: inherit; font-size: var(--fs-md); font-weight: 500; cursor: pointer; }
   button[aria-selected='true'] { color: var(--ink); font-weight: 600; }
   button[aria-selected='true']::after { content: ''; position: absolute; left: 12px; right: 12px; bottom: 0; height: 3px; border-radius: 2px; background: var(--accent); }
-  .count { border-radius: 999px; background: var(--surface-3, var(--surface-2)); color: var(--ink); font-size: 11px; font-weight: 600; padding: 1px 6px; }
+  .count { border-radius: var(--r-full); background: var(--surface-3, var(--surface-2)); color: var(--ink); font-size: 11px; font-weight: 600; padding: 1px 6px; }
 </style>

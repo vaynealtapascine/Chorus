@@ -164,11 +164,11 @@
 
 <style>
   .chev { color: var(--ink-3); display: grid; }
-  .pad { padding: 0 16px; }
+  .pad { padding: 0 var(--s-4); }
   .times { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .flush { margin: 0; }
   .menu { display: grid; gap: 2px; }
-  .menu button { display: flex; align-items: center; justify-content: space-between; padding: 12px; border: 0; border-radius: 12px; background: none; color: var(--ink); font: inherit; font-size: 16px; text-align: left; cursor: pointer; }
+  .menu button { display: flex; align-items: center; justify-content: space-between; padding: var(--s-3); border: 0; border-radius: var(--r-row); background: none; color: var(--ink); font: inherit; font-size: var(--fs-base); text-align: left; cursor: pointer; }
   .menu button:hover { background: var(--surface-2); }
   .menu :global(.icon) { color: var(--accent); }
 </style>

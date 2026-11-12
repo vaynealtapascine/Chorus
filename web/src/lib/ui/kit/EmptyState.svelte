@@ -16,9 +16,9 @@
 </div>
 
 <style>
-  .empty-state { display: grid; justify-items: center; gap: 12px; padding: 32px 24px; text-align: center; }
+  .empty-state { display: grid; justify-items: center; gap: var(--s-3); padding: var(--s-8) var(--s-6); text-align: center; }
   .disc { width: 56px; height: 56px; display: grid; place-items: center; border-radius: 50%; background: var(--accent-soft); color: var(--accent); }
-  p { margin: 0; color: var(--ink-2); font-size: 16px; font-weight: 600; }
-  .act { min-height: 44px; min-width: 120px; max-width: 220px; display: grid; place-items: center; padding: 10px 16px; border: 0; border-radius: 14px;
-    background: var(--surface-2); color: var(--ink); font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; text-decoration: none; }
+  p { margin: 0; color: var(--ink-2); font-size: var(--fs-base); font-weight: 600; }
+  .act { min-height: 44px; min-width: 120px; max-width: 220px; display: grid; place-items: center; padding: 10px var(--s-4); border: 0; border-radius: var(--r-control);
+    background: var(--surface-2); color: var(--ink); font: inherit; font-size: var(--fs-md); font-weight: 600; cursor: pointer; text-decoration: none; }
 </style>

@@ -40,15 +40,15 @@
 {/if}
 
 <style>
-  .page { display: grid; gap: 12px; max-width: 720px; align-content: start; }
-  .card { display: grid; gap: 12px; padding: 14px; border-radius: 16px; background: var(--surface-2); }
-  .head { display: flex; align-items: center; gap: 12px; }
-  .tile { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; flex: none; color: var(--danger); background: color-mix(in srgb, var(--danger) 16%, transparent); }
+  .page { display: grid; gap: var(--s-3); max-width: 720px; align-content: start; }
+  .card { display: grid; gap: var(--s-3); padding: 14px; border-radius: var(--r-md); background: var(--surface-2); }
+  .head { display: flex; align-items: center; gap: var(--s-3); }
+  .tile { display: grid; place-items: center; width: 40px; height: 40px; border-radius: var(--r-row); flex: none; color: var(--danger); background: color-mix(in srgb, var(--danger) 16%, transparent); }
   .titles { display: grid; min-width: 0; }
-  .titles span { color: var(--danger); font-size: 13px; }
-  blockquote { margin: 0; padding: 10px 12px; border-radius: 10px; border-left: 3px solid var(--accent); background: var(--surface); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 9em; overflow: hidden; }
-  .actions { display: flex; gap: 8px; }
+  .titles span { color: var(--danger); font-size: var(--fs-sm); }
+  blockquote { margin: 0; padding: 10px var(--s-3); border-radius: var(--r-sm); border-left: 3px solid var(--accent); background: var(--surface); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 9em; overflow: hidden; }
+  .actions { display: flex; gap: var(--s-2); }
   .grow { flex: 1; }
-  .pill { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 14px; border: 0; border-radius: 999px; background: var(--surface); color: var(--ink); font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 14px; border: 0; border-radius: var(--r-full); background: var(--surface); color: var(--ink); font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; }
   .pill.danger { background: none; color: var(--danger); }
 </style>

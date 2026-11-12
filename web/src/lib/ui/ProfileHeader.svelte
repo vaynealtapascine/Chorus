@@ -37,9 +37,9 @@
   .banner :global(img) { width: 100%; height: 100%; object-fit: cover; }
   .bar { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--s-3); margin: -48px 0 0 var(--s-4); min-height: 48px; }
   .avatar { display: grid; place-items: center; width: 96px; height: 96px; flex: none; border-radius: 50%; overflow: hidden;
-    background: var(--ring); color: var(--avatar-ink); font-size: 36px; font-weight: 700; box-shadow: 0 0 0 4px var(--bg); }
+    background: var(--ring); color: var(--avatar-ink); font-size: var(--fs-3xl); font-weight: 700; box-shadow: 0 0 0 4px var(--bg); }
   .avatar :global(img) { width: 100%; height: 100%; object-fit: cover; }
-  .actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--s-2); padding-bottom: 4px; }
+  .actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--s-2); padding-bottom: var(--s-1); }
   h1 { margin: var(--s-1) 0 0; overflow-wrap: anywhere; }
   .subtitle { margin: 0; color: var(--ink-3); }
   .handle { margin: calc(-1 * var(--s-1)) 0 0; color: var(--ink-2); overflow-wrap: anywhere; }

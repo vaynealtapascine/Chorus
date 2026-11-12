@@ -273,8 +273,8 @@
   .note { padding: var(--s-4); color: var(--ink-3); font-size: var(--fs-sm); }
   .stat { border: 0; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; }
   .stat:hover { text-decoration: underline; }
-  .tabs { display: flex; gap: 4px; margin: var(--s-3) var(--s-4) var(--s-1); padding: 3px; border-radius: 999px; background: var(--surface-2); justify-self: start; }
-  .tabs button { border: 0; border-radius: 999px; background: none; color: var(--ink-3); padding: 6px 14px; font: inherit; font-size: var(--fs-sm); cursor: pointer; }
+  .tabs { display: flex; gap: var(--s-1); margin: var(--s-3) var(--s-4) var(--s-1); padding: 3px; border-radius: var(--r-full); background: var(--surface-2); justify-self: start; }
+  .tabs button { border: 0; border-radius: var(--r-full); background: none; color: var(--ink-3); padding: 6px 14px; font: inherit; font-size: var(--fs-sm); cursor: pointer; }
   .tabs button.on { background: var(--surface); color: var(--ink); font-weight: 600; }
   .reply { animation: arrive .24s cubic-bezier(.16, 1, .3, 1) both; }
   @keyframes arrive { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }

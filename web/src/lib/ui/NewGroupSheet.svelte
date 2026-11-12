@@ -50,7 +50,7 @@
 {/if}
 
 <style>
-  .name { font: inherit; color: var(--ink); background: var(--surface-2); border: 0; border-radius: 12px; padding: 12px 14px; }
-  .go { flex: 1; min-height: 44px; border: 0; border-radius: 14px; background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
+  .name { font: inherit; color: var(--ink); background: var(--surface-2); border: 0; border-radius: var(--r-row); padding: var(--s-3) 14px; }
+  .go { flex: 1; min-height: 44px; border: 0; border-radius: var(--r-control); background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
   .go:disabled { background: var(--surface-2); color: var(--ink-3); cursor: default; }
 </style>

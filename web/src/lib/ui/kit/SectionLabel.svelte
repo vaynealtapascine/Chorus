@@ -7,7 +7,7 @@
   {#if link && href}<a {href}>{link}</a>{:else if link && onlink}<button onclick={onlink}>{link}</button>{/if}</h2>
 
 <style>
-  .section-label { display: flex; align-items: center; gap: 8px; margin: 0; padding: 16px 4px 6px; color: var(--accent); font-size: 13px; font-weight: 600; line-height: 18px; }
+  .section-label { display: flex; align-items: center; gap: var(--s-2); margin: 0; padding: var(--s-4) var(--s-1) 6px; color: var(--accent); font-size: var(--fs-sm); font-weight: 600; line-height: 18px; }
   span { flex: 1; }
   a, button { border: 0; background: none; padding: 0; color: var(--accent); font: inherit; font-weight: 500; cursor: pointer; text-decoration: none; }
 </style>

@@ -160,36 +160,36 @@
   main {
     --cream: #fbf3e5; --ink: #1f5e57; --sun: #f0bd1b;
     position: relative; z-index: 1; min-height: 100dvh; box-sizing: border-box; max-width: 460px; margin: 0 auto;
-    display: flex; flex-direction: column; align-items: center; justify-content: space-between; gap: 20px;
+    display: flex; flex-direction: column; align-items: center; justify-content: space-between; gap: var(--s-5);
     padding: 40px 38px 28px; color: var(--cream);
   }
-  .art { display: grid; justify-items: center; gap: 4px; margin: 0; font: inherit; width: min(272px, 100%); }
-  .line { font-weight: 700; font-size: 15px; letter-spacing: 1px; }
+  .art { display: grid; justify-items: center; gap: var(--s-1); margin: 0; font: inherit; width: min(272px, 100%); }
+  .line { font-weight: 700; font-size: var(--fs-md); letter-spacing: 1px; }
   .line.question { letter-spacing: 0; }
   .line b { color: var(--sun); font-weight: 700; }
-  .words { width: 100%; display: grid; gap: 8px; }
+  .words { width: 100%; display: grid; gap: var(--s-2); }
   .caps { margin: 0; font-size: 10px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; }
   .second { margin-top: 10px; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-  .chip { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 4px 10px; border-radius: 15px; border: 2px solid var(--cream); background: none; color: var(--cream); font: inherit; font-size: 15px; font-weight: 500; cursor: pointer; }
+  .chip { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: var(--s-1) 10px; border-radius: 15px; border: 2px solid var(--cream); background: none; color: var(--cream); font: inherit; font-size: var(--fs-md); font-weight: 500; cursor: pointer; }
   .chip.on, .chip.mine { background: var(--cream); color: var(--ink); }
   .chip.on :global(.icon) { color: #3da599; }
   .chip.add { font-style: italic; }
-  .grid { width: 100%; flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(3, 1fr); grid-auto-rows: 118px; gap: 8px; align-content: start; padding: 4px 0 24px; }
-  .card { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 8px; border: 3px solid transparent; border-radius: 16px; background: var(--cream); color: #1c1b19; font: inherit; cursor: pointer; min-width: 0; }
+  .grid { width: 100%; flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(3, 1fr); grid-auto-rows: 118px; gap: var(--s-2); align-content: start; padding: var(--s-1) 0 var(--s-6); }
+  .card { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--s-1); padding: var(--s-2); border: 3px solid transparent; border-radius: var(--r-md); background: var(--cream); color: #1c1b19; font: inherit; cursor: pointer; min-width: 0; }
   .card:disabled { cursor: default; opacity: 1; }
   .card.picked { border-color: var(--ink); }
   .card strong { font-size: 17px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sub { font-size: 9px; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase; color: #8a847a; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .card.dashed { background: none; border: 2px dashed var(--ink); color: var(--cream); gap: 8px; }
+  .card.dashed { background: none; border: 2px dashed var(--ink); color: var(--cream); gap: var(--s-2); }
   .disc { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: var(--cream); color: var(--ink); }
-  .card.dashed em { font-size: 16px; font-weight: 500; }
-  .error { margin: 0; padding: 8px 12px; border-radius: 12px; background: var(--cream); color: #9e2a1e; font-size: 13px; }
-  .buttons { width: 100%; display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
-  .back { margin-right: auto; display: flex; align-items: center; gap: 8px; padding: 9px 16px; border: 0; background: none; color: var(--cream); font: inherit; font-size: 14px; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase; cursor: pointer; }
-  .go { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 9px 16px; border: 0; border-radius: 19px; background: var(--cream); color: var(--ink); font: inherit; font-size: 14px; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase; cursor: pointer; }
-  .word { font: inherit; font-size: 16px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink-1, inherit); }
-  .sheet-buttons { padding: 0 16px 16px; display: grid; }
-  .use { min-height: 44px; border: 0; border-radius: 22px; background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
+  .card.dashed em { font-size: var(--fs-base); font-weight: 500; }
+  .error { margin: 0; padding: var(--s-2) var(--s-3); border-radius: var(--r-row); background: var(--cream); color: #9e2a1e; font-size: var(--fs-sm); }
+  .buttons { width: 100%; display: flex; align-items: center; justify-content: flex-end; gap: var(--s-3); }
+  .back { margin-right: auto; display: flex; align-items: center; gap: var(--s-2); padding: 9px var(--s-4); border: 0; background: none; color: var(--cream); font: inherit; font-size: 14px; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase; cursor: pointer; }
+  .go { display: flex; align-items: center; gap: var(--s-2); min-height: 38px; padding: 9px var(--s-4); border: 0; border-radius: 19px; background: var(--cream); color: var(--ink); font: inherit; font-size: 14px; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase; cursor: pointer; }
+  .word { font: inherit; font-size: var(--fs-base); padding: 10px var(--s-3); border-radius: var(--r-sm); border: 1px solid var(--line); background: var(--surface-2); color: var(--ink-1, inherit); }
+  .sheet-buttons { padding: 0 var(--s-4) var(--s-4); display: grid; }
+  .use { min-height: 44px; border: 0; border-radius: var(--r-lg); background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
   .use:disabled { opacity: 0.6; }
 </style>

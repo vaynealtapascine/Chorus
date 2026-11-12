@@ -57,14 +57,14 @@
 </section>
 
 <style>
-  .page { display: grid; gap: 12px; max-width: 720px; align-content: start; }
-  .preview { display: grid; gap: 6px; padding: 12px; border-radius: 16px; background: var(--surface); }
-  .bubble { display: grid; justify-self: start; padding: 8px 12px; border-radius: 16px; background: var(--surface-2); }
+  .page { display: grid; gap: var(--s-3); max-width: 720px; align-content: start; }
+  .preview { display: grid; gap: 6px; padding: var(--s-3); border-radius: var(--r-md); background: var(--surface); }
+  .bubble { display: grid; justify-self: start; padding: var(--s-2) var(--s-3); border-radius: var(--r-md); background: var(--surface-2); }
   .bubble.own { justify-self: end; background: var(--bubble-out); }
   .bubble strong { font-size: var(--fs-sm); }
   .bubble span { font-size: var(--fs-base); }
   .swatches { display: flex; flex-wrap: wrap; gap: 6px; }
-  .swatches button { display: grid; justify-items: center; gap: 4px; min-width: 64px; padding: 4px 2px; border: 0; border-radius: 10px; background: none; color: var(--ink-3); font: inherit; font-size: 11px; cursor: pointer; }
+  .swatches button { display: grid; justify-items: center; gap: var(--s-1); min-width: 64px; padding: var(--s-1) 2px; border: 0; border-radius: var(--r-sm); background: none; color: var(--ink-3); font: inherit; font-size: 11px; cursor: pointer; }
   .swatches button.on { color: var(--ink); font-weight: 700; }
   .dot { width: 40px; height: 40px; border-radius: 50%; border: 3px solid transparent; background-clip: content-box; padding: 0; box-shadow: 0 0 0 0 var(--ink); }
   .on .dot { box-shadow: 0 0 0 2px var(--ink); }

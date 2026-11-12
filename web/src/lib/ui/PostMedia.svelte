@@ -307,7 +307,7 @@
     width: 100%;
     aspect-ratio: 16 / 9;
     gap: 2px;
-    border-radius: 12px;
+    border-radius: var(--r-row);
     overflow: hidden;
     background: var(--line);
   }
@@ -384,7 +384,7 @@
     top: var(--s-2);
     right: var(--s-2);
     min-height: 28px;
-    padding: 4px 10px;
+    padding: var(--s-1) 10px;
     border: 0;
     border-radius: var(--r-full);
     background: rgb(0 0 0 / 0.62);
@@ -403,7 +403,7 @@
   }
 
   .file-list { display: grid; gap: var(--s-2); }
-  .file-item { display: grid; gap: 4px; }
+  .file-item { display: grid; gap: var(--s-1); }
   .file-spoiler {
     justify-self: start;
     min-height: 44px;
@@ -452,7 +452,7 @@
     justify-self: start;
     border: 0;
     background: none;
-    padding: 4px 0;
+    padding: var(--s-1) 0;
     color: var(--accent);
     font-size: var(--fs-xs);
     cursor: pointer;
@@ -501,7 +501,7 @@
   .viewer-count { margin-left: var(--s-2); color: var(--ink-3); font-variant-numeric: tabular-nums; }
   .viewer-actions { display: flex; align-items: center; gap: var(--s-2); flex: none; }
   .viewer-btn {
-    padding: 6px 12px;
+    padding: 6px var(--s-3);
     border-radius: var(--r-full);
     background: var(--surface-2);
     color: var(--ink);

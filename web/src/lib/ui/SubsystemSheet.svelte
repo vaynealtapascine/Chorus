@@ -65,10 +65,10 @@
 </Sheet>
 
 <style>
-  .existing { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 8px 14px; border: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+  .existing { display: flex; align-items: center; gap: var(--s-3); min-height: 56px; padding: var(--s-2) 14px; border: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
   .existing span { display: grid; }
-  .existing span span { color: var(--ink-3); font-size: 12px; }
-  .search { font: inherit; color: var(--ink); background: var(--surface-2); border: 0; border-radius: 12px; padding: 10px 14px; }
-  .stop { display: flex; align-items: center; gap: 12px; min-height: 48px; border: 0; background: none; color: var(--danger); font: inherit; cursor: pointer; padding: 0 4px; }
-  .go { flex: 1; min-height: 44px; border: 0; border-radius: 14px; background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
+  .existing span span { color: var(--ink-3); font-size: var(--fs-xs); }
+  .search { font: inherit; color: var(--ink); background: var(--surface-2); border: 0; border-radius: var(--r-row); padding: 10px 14px; }
+  .stop { display: flex; align-items: center; gap: var(--s-3); min-height: 48px; border: 0; background: none; color: var(--danger); font: inherit; cursor: pointer; padding: 0 var(--s-1); }
+  .go { flex: 1; min-height: 44px; border: 0; border-radius: var(--r-control); background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
 </style>

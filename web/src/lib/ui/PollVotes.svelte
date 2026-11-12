@@ -33,13 +33,13 @@
 {/if}
 
 <style>
-  .votes { display: grid; padding: 8px 0; }
-  h2 { margin: 0; padding: 8px 20px; color: var(--accent); font-size: 13px; font-weight: 600; }
-  .row { display: flex; align-items: center; gap: 14px; padding: 8px 20px; }
+  .votes { display: grid; padding: var(--s-2) 0; }
+  h2 { margin: 0; padding: var(--s-2) var(--s-5); color: var(--accent); font-size: var(--fs-sm); font-weight: 600; }
+  .row { display: flex; align-items: center; gap: 14px; padding: var(--s-2) var(--s-5); }
   .who { flex: 1; min-width: 0; display: grid; }
-  .who strong { font-size: 15px; font-weight: 600; }
-  .who span { color: var(--ink-3); font-size: 13px; }
-  .you { padding: 5px 12px; border-radius: var(--r-full); background: var(--accent-soft); color: var(--accent); font-size: 13px; font-weight: 500; }
-  .nudge { padding: 7px 14px; border: 1px solid var(--line); border-radius: var(--r-full); background: none; color: var(--accent); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
+  .who strong { font-size: var(--fs-md); font-weight: 600; }
+  .who span { color: var(--ink-3); font-size: var(--fs-sm); }
+  .you { padding: 5px var(--s-3); border-radius: var(--r-full); background: var(--accent-soft); color: var(--accent); font-size: var(--fs-sm); font-weight: 500; }
+  .nudge { padding: 7px 14px; border: 1px solid var(--line); border-radius: var(--r-full); background: none; color: var(--accent); font: inherit; font-size: var(--fs-sm); font-weight: 500; cursor: pointer; }
   .nudge:disabled { color: var(--ink-3); cursor: default; }
 </style>

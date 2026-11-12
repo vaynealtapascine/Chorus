@@ -60,10 +60,10 @@
 
 <style>
   .who { display: flex; align-items: center; gap: 14px; }
-  .who strong { font-size: 18px; font-weight: 600; }
+  .who strong { font-size: var(--fs-lg); font-weight: 600; }
   .titles { display: grid; min-width: 0; }
-  .picked { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
-  .picked span { padding: 3px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 500; }
+  .picked { display: flex; flex-wrap: wrap; gap: var(--s-1); margin-top: var(--s-1); }
+  .picked span { padding: 3px 10px; border-radius: var(--r-full); background: var(--accent-soft); color: var(--accent); font-size: var(--fs-xs); font-weight: 500; }
   .pad { padding: 0; }
-  .own { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; resize: vertical; }
+  .own { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-sm); padding: var(--s-3) 14px; resize: vertical; }
 </style>

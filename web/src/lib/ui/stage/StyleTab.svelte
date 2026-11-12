@@ -37,19 +37,19 @@
   onchange={(v) => (def.render.width = v as Width)} />
 
 <style>
-  .presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-  .tile { display: grid; gap: 6px; padding: 8px; border: 1.5px solid transparent; border-radius: 14px; background: var(--surface-2); color: var(--ink); font: inherit; cursor: pointer; }
+  .presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s-2); }
+  .tile { display: grid; gap: 6px; padding: var(--s-2); border: 1.5px solid transparent; border-radius: var(--r-control); background: var(--surface-2); color: var(--ink); font: inherit; cursor: pointer; }
   .tile.on { border-color: var(--accent); }
   .tile.on .name { color: var(--accent); }
-  .name { font-size: 12px; font-weight: 600; text-align: center; }
+  .name { font-size: var(--fs-xs); font-weight: 600; text-align: center; }
   .sketch { display: flex; flex-direction: column; justify-content: center; gap: 3px; height: 36px; padding: 6px; border-radius: 8px; background: var(--bg); }
   .sketch i { display: block; height: 3px; border-radius: 3px; background: color-mix(in srgb, var(--ink-3) 45%, transparent); }
   .sketch i.a, .sketch i.b, .sketch i.c { height: 7px; background: var(--surface-3); }
   .sketch i.b { background: color-mix(in srgb, var(--accent) 60%, transparent); }
   .sketch i.c { height: 20px; }
   .sketch i.end { align-self: flex-end; }
-  .colours { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-  .colour { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 10px; border-radius: 12px; background: var(--surface-2); font-size: 13px; color: var(--ink-2); cursor: pointer; }
+  .colours { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s-2); }
+  .colour { display: flex; align-items: center; gap: var(--s-2); min-height: 44px; padding: 0 10px; border-radius: var(--r-row); background: var(--surface-2); font-size: var(--fs-sm); color: var(--ink-2); cursor: pointer; }
   .colour input { width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%; background: none; cursor: pointer; flex: none; }
   .colour input::-webkit-color-swatch-wrapper { padding: 0; } .colour input::-webkit-color-swatch { border: 2px solid var(--surface); border-radius: 50%; }
 </style>

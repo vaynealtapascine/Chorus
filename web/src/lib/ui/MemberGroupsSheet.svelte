@@ -39,13 +39,13 @@
 {/if}
 
 <style>
-  .pick { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 8px 14px; border: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+  .pick { display: flex; align-items: center; gap: var(--s-3); width: 100%; min-height: 56px; padding: var(--s-2) 14px; border: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
   .pick:disabled { cursor: default; opacity: .6; }
   .text { flex: 1; min-width: 0; display: grid; }
-  .text strong { font-size: 15px; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .text span { color: var(--ink-3); font-size: 12px; }
+  .text strong { font-size: var(--fs-md); font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .text span { color: var(--ink-3); font-size: var(--fs-xs); }
   .check { width: 22px; height: 22px; display: grid; place-items: center; border: 2px solid var(--line); border-radius: 50%; color: var(--on-accent); flex: none; }
   .check.on { background: var(--accent); border-color: var(--accent); }
-  .dashed { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 52px; border: 1.5px dashed var(--line); border-radius: 16px; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
-  .go { flex: 1; min-height: 44px; border: 0; border-radius: 14px; background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
+  .dashed { display: flex; align-items: center; justify-content: center; gap: var(--s-2); min-height: 52px; border: 1.5px dashed var(--line); border-radius: var(--r-md); background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
+  .go { flex: 1; min-height: 44px; border: 0; border-radius: var(--r-control); background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
 </style>

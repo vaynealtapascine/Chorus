@@ -17,7 +17,7 @@
 {/if}
 
 <style>
-  .quote { display: grid; gap: 4px; padding: var(--s-3); border: 1px solid var(--line); border-radius: 12px; color: var(--ink); text-decoration: none; min-width: 0; }
+  .quote { display: grid; gap: var(--s-1); padding: var(--s-3); border: 1px solid var(--line); border-radius: var(--r-row); color: var(--ink); text-decoration: none; min-width: 0; }
   a.quote:hover { background: var(--surface); }
   .by { color: var(--ink-3); font-size: var(--fs-xs); }
   .by strong { color: var(--ink); }

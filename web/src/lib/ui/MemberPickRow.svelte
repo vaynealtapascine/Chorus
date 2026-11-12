@@ -18,13 +18,13 @@
 </button>
 
 <style>
-  .pick { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 52px; padding: 6px 14px; border: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+  .pick { display: flex; align-items: center; gap: var(--s-3); width: 100%; min-height: 52px; padding: 6px 14px; border: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
   .pick:disabled { cursor: default; }
   .pick:disabled .name { color: var(--ink-3); }
   .avatar { width: 36px; height: 36px; display: grid; place-items: center; flex: none; border-radius: 50%; overflow: hidden; background: var(--ring); color: var(--avatar-ink); font-weight: 700; }
   .text { flex: 1; min-width: 0; display: grid; }
-  .name { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .sub { color: var(--ink-3); font-size: 12px; }
+  .name { font-size: var(--fs-md); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sub { color: var(--ink-3); font-size: var(--fs-xs); }
   .check { width: 22px; height: 22px; display: grid; place-items: center; border: 2px solid var(--line); border-radius: 50%; color: var(--on-accent); flex: none; }
   .check.on { background: var(--accent); border-color: var(--accent); }
   .pick:disabled .check { opacity: .4; }

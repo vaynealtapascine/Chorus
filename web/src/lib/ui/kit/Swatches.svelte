@@ -22,7 +22,7 @@
 </div>
 
 <style>
-  .swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+  .swatches { display: flex; flex-wrap: wrap; gap: var(--s-2); }
   .swatch { position: relative; width: var(--size); height: var(--size); padding: 0; border-radius: 50%; border: 2px solid var(--surface); cursor: pointer; flex: none; box-sizing: border-box; }
   .swatch.on { border-color: var(--ink); }
   .own { background: conic-gradient(#f08c7f, #eeaa62, #86bfa5, #8fb8e8, #b99ce8, #f08c7f); overflow: hidden; }

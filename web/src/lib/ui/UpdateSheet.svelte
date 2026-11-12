@@ -18,10 +18,10 @@
 {/if}
 
 <style>
-  ul { list-style: none; margin: 0; padding: 12px 14px; display: grid; gap: 10px; border-radius: 14px; background: var(--surface-2); }
+  ul { list-style: none; margin: 0; padding: var(--s-3) 14px; display: grid; gap: 10px; border-radius: var(--r-control); background: var(--surface-2); }
   li { display: flex; gap: 10px; align-items: flex-start; }
   li :global(.icon) { color: var(--accent); margin-top: 2px; }
-  .later, .go { flex: 1; min-height: 48px; border: 0; border-radius: 14px; font: inherit; font-weight: 600; cursor: pointer; }
+  .later, .go { flex: 1; min-height: 48px; border: 0; border-radius: var(--r-control); font: inherit; font-weight: 600; cursor: pointer; }
   .later { background: var(--surface-2); color: var(--ink); }
   .go { background: var(--accent); color: var(--on-accent); }
 </style>

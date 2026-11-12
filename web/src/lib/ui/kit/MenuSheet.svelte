@@ -14,5 +14,5 @@
 </Sheet>
 
 <style>
-  .menu { display: grid; padding-top: 4px; }
+  .menu { display: grid; padding-top: var(--s-1); }
 </style>

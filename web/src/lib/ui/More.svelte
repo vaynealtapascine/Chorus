@@ -62,14 +62,14 @@
 
 <style>
   .more { display: grid; max-width: 720px; margin: auto; }
-  h1 { font-size: var(--fs-xl); margin: 0 0 8px; }
-  .label { margin: 0; padding: 16px 4px 6px; color: var(--accent); font-size: 13px; font-weight: 600; line-height: 18px; }
-  a { display: flex; gap: 16px; align-items: center; min-height: 62px; padding: 8px 4px; color: var(--ink); text-decoration: none; }
+  h1 { font-size: var(--fs-xl); margin: 0 0 var(--s-2); }
+  .label { margin: 0; padding: var(--s-4) var(--s-1) 6px; color: var(--accent); font-size: var(--fs-sm); font-weight: 600; line-height: 18px; }
+  a { display: flex; gap: var(--s-4); align-items: center; min-height: 62px; padding: var(--s-2) var(--s-1); color: var(--ink); text-decoration: none; }
   a:hover { background: var(--surface-2); }
   a > :global(.icon) { color: var(--ink-2); }
   .text { display: grid; flex: 1; min-width: 0; }
-  .text strong { font-size: 16px; font-weight: 400; }
-  .text span { font-size: 13px; color: var(--ink-3); }
-  .badge { min-width: 22px; padding: 1px 6px; border-radius: 11px; background: var(--accent); color: var(--on-accent); font-size: 12px; font-weight: 600; text-align: center; }
+  .text strong { font-size: var(--fs-base); font-weight: 400; }
+  .text span { font-size: var(--fs-sm); color: var(--ink-3); }
+  .badge { min-width: 22px; padding: 1px 6px; border-radius: 11px; background: var(--accent); color: var(--on-accent); font-size: var(--fs-xs); font-weight: 600; text-align: center; }
   .danger, .danger .text strong, .danger > :global(.icon) { color: var(--danger); }
 </style>

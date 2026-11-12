@@ -115,13 +115,13 @@
 <style>
   .poll { display: grid; gap: var(--s-2); margin-top: var(--s-2); max-width: 32rem; }
   .question { margin: 0; color: var(--ink); font-weight: 600; }
-  .voting-as { justify-self: start; display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px 4px 4px; border: 0; border-radius: var(--r-full); background: var(--surface-2); color: var(--ink); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
+  .voting-as { justify-self: start; display: inline-flex; align-items: center; gap: var(--s-2); padding: var(--s-1) var(--s-3) var(--s-1) var(--s-1); border: 0; border-radius: var(--r-full); background: var(--surface-2); color: var(--ink); font: inherit; font-size: var(--fs-sm); font-weight: 500; cursor: pointer; }
   .voting-as span { color: var(--accent); }
   .foot { margin: 0; color: var(--ink-3); font-size: var(--fs-xs); display: flex; gap: var(--s-2); align-items: center; justify-content: space-between; }
   ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-2); }
   li button {
     position: relative; overflow: hidden; width: 100%; min-height: 48px; display: flex; align-items: center; gap: 10px;
-    padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px;
+    padding: var(--s-3) 14px; border: 1px solid var(--line); border-radius: var(--r-row);
     background: var(--surface); color: var(--ink); font: inherit; font-weight: 500; text-align: left; cursor: pointer;
   }
   li button.plain { border-color: color-mix(in srgb, var(--accent) 60%, transparent); color: var(--accent); justify-content: center; text-align: center; }
@@ -133,5 +133,5 @@
   .text { flex: 1; }
   .plain .text { flex: none; }
   .count { color: var(--ink); font-size: 14px; font-variant-numeric: tabular-nums; }
-  .link { background: none; border: 0; padding: 6px 8px; color: var(--accent); cursor: pointer; font: inherit; font-weight: 500; }
+  .link { background: none; border: 0; padding: 6px var(--s-2); color: var(--accent); cursor: pointer; font: inherit; font-weight: 500; }
 </style>

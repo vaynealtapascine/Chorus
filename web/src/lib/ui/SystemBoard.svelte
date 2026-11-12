@@ -55,10 +55,10 @@
 
 <style>
   .board { width: 100%; max-width: 760px; margin: 0 auto; display: grid; gap: var(--s-2); align-content: start; min-width: 0; }
-  header { display: flex; align-items: center; gap: 8px; }
+  header { display: flex; align-items: center; gap: var(--s-2); }
   header div { flex: 1; min-width: 0; }
   h1 { margin: 0; font-size: 19px; line-height: 24px; font-weight: 600; }
-  p { margin: 0; color: var(--ink-3); font-size: 13px; }
+  p { margin: 0; color: var(--ink-3); font-size: var(--fs-sm); }
   .back, .new { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; color: var(--ink); text-decoration: none; }
   .back { transform: rotate(180deg); }
   .new { color: var(--accent); }

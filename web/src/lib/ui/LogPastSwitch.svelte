@@ -117,28 +117,28 @@
 </section>
 
 <style>
-  .page { display: grid; gap: 10px; max-width: 720px; padding-bottom: 32px; }
-  .bar { display: flex; align-items: center; gap: 4px; margin-left: -8px; }
+  .page { display: grid; gap: 10px; max-width: 720px; padding-bottom: var(--s-8); }
+  .bar { display: flex; align-items: center; gap: var(--s-1); margin-left: -8px; }
   .icon-btn { width: 44px; height: 44px; display: grid; place-items: center; color: var(--ink); border: 0; background: none; border-radius: 50%; cursor: pointer; }
   .icon-btn.accent { color: var(--accent); }
-  .titles { flex: 1; display: grid; padding-left: 4px; }
+  .titles { flex: 1; display: grid; padding-left: var(--s-1); }
   /* the desktop app bar already names the page */
   @media (min-width: 1024px) { .titles { visibility: hidden; } }
   .titles strong { font-size: 17px; font-weight: 600; }
-  .titles span { color: var(--ink-3); font-size: 12px; }
-  .row { display: flex; align-items: center; gap: 12px; padding: 10px 16px; min-height: 52px; }
+  .titles span { color: var(--ink-3); font-size: var(--fs-xs); }
+  .row { display: flex; align-items: center; gap: var(--s-3); padding: 10px var(--s-4); min-height: 52px; }
   .row :global(.icon) { color: var(--ink-2); }
-  .row span { flex: 1; font-size: 15px; }
+  .row span { flex: 1; font-size: var(--fs-md); }
   .row select, .row input { font: inherit; color: var(--accent); font-weight: 500; background: none; border: 0; text-align: right; color-scheme: inherit; }
-  .person { display: flex; align-items: center; gap: 12px; padding: 8px 4px 8px 12px; }
-  .person strong { flex: 1; font-size: 16px; font-weight: 600; }
-  .layer { font: inherit; font-size: 13px; font-weight: 500; color: var(--l-label, var(--ink)); background: var(--l-fill, transparent); border: 1px var(--l-dash, solid) var(--l-border, var(--line)); border-radius: 8px; padding: 6px 8px; }
-  .add { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border: 0; background: none; color: var(--accent); font: inherit; font-size: 15px; font-weight: 500; cursor: pointer; text-align: left; }
-  .picker { display: grid; gap: 8px; padding: 0 12px 12px; }
-  .picker input, textarea { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
-  textarea { background: var(--surface-2); border: 0; border-radius: 12px; padding: 14px; resize: vertical; }
+  .person { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-2) var(--s-1) var(--s-2) var(--s-3); }
+  .person strong { flex: 1; font-size: var(--fs-base); font-weight: 600; }
+  .layer { font: inherit; font-size: var(--fs-sm); font-weight: 500; color: var(--l-label, var(--ink)); background: var(--l-fill, transparent); border: 1px var(--l-dash, solid) var(--l-border, var(--line)); border-radius: 8px; padding: 6px var(--s-2); }
+  .add { display: flex; align-items: center; gap: var(--s-3); padding: 14px var(--s-4); border: 0; background: none; color: var(--accent); font: inherit; font-size: var(--fs-md); font-weight: 500; cursor: pointer; text-align: left; }
+  .picker { display: grid; gap: var(--s-2); padding: 0 var(--s-3) var(--s-3); }
+  .picker input, textarea { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 10px var(--s-3); }
+  textarea { background: var(--surface-2); border: 0; border-radius: var(--r-row); padding: 14px; resize: vertical; }
   .cands { display: grid; max-height: 280px; overflow: auto; }
-  .cands button { display: flex; align-items: center; gap: 12px; padding: 8px 4px; border: 0; background: none; color: var(--ink); font: inherit; cursor: pointer; text-align: left; border-radius: 10px; }
+  .cands button { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-2) var(--s-1); border: 0; background: none; color: var(--ink); font: inherit; cursor: pointer; text-align: left; border-radius: var(--r-sm); }
   .cands span { flex: 1; }
   .cands small { color: var(--ink-3); }
   .error { color: var(--danger); margin: 0; }

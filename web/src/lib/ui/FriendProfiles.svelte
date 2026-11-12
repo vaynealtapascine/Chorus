@@ -211,7 +211,7 @@
   .tabs button { border: 0; background: none; color: var(--ink-2); padding: var(--s-2) var(--s-3); cursor: pointer; font: inherit; }
   .tabs button.on { border-bottom: 2px solid var(--accent); color: var(--ink); font-weight: 600; }
   .posts { display: grid; gap: var(--s-3); }
-  .alerts { display: inline-flex; align-items: center; gap: 6px; flex: none; padding: 8px 14px; min-height: 40px; border-radius: var(--r-full); border: 1px solid var(--line);
+  .alerts { display: inline-flex; align-items: center; gap: 6px; flex: none; padding: var(--s-2) 14px; min-height: 40px; border-radius: var(--r-full); border: 1px solid var(--line);
     background: var(--surface); color: var(--ink); font: inherit; font-size: var(--fs-sm); cursor: pointer; }
   .alerts.on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
   .alerts:disabled { opacity: 0.6; cursor: default; }
@@ -220,18 +220,18 @@
   .fields div { display: grid; grid-template-columns: minmax(100px, 160px) 1fr; gap: var(--s-3); }
   dt { color: var(--ink-2); font-size: var(--fs-sm); } dd { margin: 0; overflow-wrap: anywhere; }
   .long { white-space: pre-wrap; }
-  .pills { display: flex; flex-wrap: wrap; gap: 4px; }
+  .pills { display: flex; flex-wrap: wrap; gap: var(--s-1); }
   .pill { font-size: var(--fs-sm); font-weight: 600; padding: 1px 10px; border-radius: var(--r-full); background: color-mix(in srgb, var(--pill) 28%, var(--surface)); border: 1px solid color-mix(in srgb, var(--pill) 55%, transparent); }
   .swatch { display: inline-block; width: 14px; height: 14px; border-radius: 4px; vertical-align: -2px; border: 1px solid var(--line); }
   .cards { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--s-3); }
-  .cards a { position: relative; isolation: isolate; display: flex; align-items: center; gap: var(--s-3); min-height: 76px; padding: var(--s-3) var(--s-4); background: var(--surface); border: 1px solid var(--line); border-radius: 14px; text-decoration: none; color: var(--ink); }
+  .cards a { position: relative; isolation: isolate; display: flex; align-items: center; gap: var(--s-3); min-height: 76px; padding: var(--s-3) var(--s-4); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-control); text-decoration: none; color: var(--ink); }
   .cards a :global(.banner) { border-radius: 0 13px 13px 0; z-index: -1; }
   .has-banner strong, .has-banner .muted { text-shadow: 0 0 6px var(--surface), 0 0 2px var(--surface); }
-  .name-line { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+  .name-line { display: flex; align-items: baseline; gap: var(--s-2); min-width: 0; }
   .handle { font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .pill.small { font-size: var(--fs-xs); line-height: 1.5; padding: 0 8px; white-space: nowrap; }
+  .pill.small { font-size: var(--fs-xs); line-height: 1.5; padding: 0 var(--s-2); white-space: nowrap; }
   .cards a:hover { border-color: var(--accent); }
-  .who { display: grid; gap: 4px; min-width: 0; }
+  .who { display: grid; gap: var(--s-1); min-width: 0; }
   .muted, .hint { color: var(--ink-3); margin: 0; }
   .hint { font-size: var(--fs-xs); }
   .error { color: var(--danger); margin: 0; }

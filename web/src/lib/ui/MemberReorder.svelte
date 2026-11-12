@@ -45,15 +45,15 @@
 </section>
 
 <style>
-  .page { display: grid; gap: 12px; align-content: start; }
-  header { display: flex; align-items: center; gap: 8px; }
-  .back { display: grid; place-items: center; width: 40px; height: 40px; font-size: 28px; color: var(--ink); text-decoration: none; }
+  .page { display: grid; gap: var(--s-3); align-content: start; }
+  header { display: flex; align-items: center; gap: var(--s-2); }
+  .back { display: grid; place-items: center; width: 40px; height: 40px; font-size: var(--fs-2xl); color: var(--ink); text-decoration: none; }
   h1 { flex: 1; margin: 0; font-size: 20px; }
-  .apply { min-height: 40px; border: 0; border-radius: 999px; padding: 0 18px; background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
+  .apply { min-height: 40px; border: 0; border-radius: var(--r-full); padding: 0 18px; background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
   .apply:disabled { background: var(--surface-2); color: var(--ink-3); cursor: default; }
-  .member { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; padding: 8px 8px 8px 0; }
+  .member { display: flex; align-items: center; gap: var(--s-3); flex: 1; min-width: 0; padding: var(--s-2) var(--s-2) var(--s-2) 0; }
   .avatar { width: 40px; height: 40px; display: grid; place-items: center; flex: none; border-radius: 50%; overflow: hidden; background: var(--ring); color: var(--avatar-ink); font-weight: 700; }
   .info { display: grid; min-width: 0; }
-  .info strong { font-size: 16px; font-weight: 600; }
-  .info span { color: var(--ink-3); font-size: 13px; }
+  .info strong { font-size: var(--fs-base); font-weight: 600; }
+  .info span { color: var(--ink-3); font-size: var(--fs-sm); }
 </style>

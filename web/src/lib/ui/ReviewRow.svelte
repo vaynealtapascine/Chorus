@@ -11,7 +11,7 @@
 {/if}
 
 <style>
-  .review-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: var(--surface); color: var(--ink); font-size: 14px; text-decoration: none; }
+  .review-row { display: flex; align-items: center; gap: 10px; padding: 10px var(--s-3); border-radius: var(--r-row); background: var(--surface); color: var(--ink); font-size: 14px; text-decoration: none; }
   .text { flex: 1; min-width: 0; }
   .disc { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 9px; background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); font-weight: 700; }
   .review { color: var(--accent); font-weight: 600; }

@@ -65,7 +65,7 @@ time { font-variant-numeric: tabular-nums; }
 @media (hover: hover) { button:not(:disabled):hover { filter: brightness(1.08); } }
 .page-heading { display: flex; align-items: center; gap: var(--s-3); }
 .page-heading h1 { font-size: var(--fs-xl); }
-.page-heading p { margin: 4px 0 0; color: var(--ink-3); font-size: var(--fs-sm); }
+.page-heading p { margin: var(--s-1) 0 0; color: var(--ink-3); font-size: var(--fs-sm); }
 .icon-button { display: inline-grid; place-items: center; width: 48px; height: 48px; border: 0; border-radius: 50%; background: transparent; color: var(--ink-2); cursor: pointer; }
 
 a { color: var(--accent); }
@@ -79,7 +79,7 @@ input[type='checkbox'][role='switch'] {
   width: 40px;
   height: 24px;
   margin: 0;
-  border-radius: 12px;
+  border-radius: var(--r-row);
   background: var(--surface-3, var(--line));
   cursor: pointer;
   transition: background var(--t-fast, 120ms) ease;

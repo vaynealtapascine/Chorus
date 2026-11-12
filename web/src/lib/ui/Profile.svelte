@@ -101,7 +101,7 @@
   .profile { max-width: 760px; margin: 0 auto; display: grid; gap: var(--s-4); }
   p { margin: 0; }
   .bio { color: var(--ink-2); }
-  .action { background: none; font: inherit; cursor: pointer; padding: 7px 16px; border: 1px solid var(--line); border-radius: var(--r-full); color: var(--ink); font-weight: 600; text-decoration: none; }
+  .action { background: none; font: inherit; cursor: pointer; padding: 7px var(--s-4); border: 1px solid var(--line); border-radius: var(--r-full); color: var(--ink); font-weight: 600; text-decoration: none; }
   .action:hover { background: var(--surface-2); }
   .fields, .stats { display: flex; flex-wrap: wrap; gap: var(--s-2) var(--s-4); color: var(--ink-2); }
   .fields div { display: flex; gap: var(--s-1); }

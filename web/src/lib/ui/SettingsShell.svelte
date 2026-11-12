@@ -86,18 +86,18 @@
 </div>
 
 <style>
-  .settings { display: grid; gap: 16px; }
-  .settings.wide { grid-template-columns: 240px minmax(0, 1fr); gap: 32px; align-items: start; }
+  .settings { display: grid; gap: var(--s-4); }
+  .settings.wide { grid-template-columns: 240px minmax(0, 1fr); gap: var(--s-8); align-items: start; }
   .list { display: grid; gap: 2px; align-content: start; max-width: 560px; }
   .wide .list { position: sticky; top: 24px; }
-  h1 { margin: 0 0 8px; font-size: 22px; }
-  h2 { margin: 14px 4px 4px; color: var(--ink-3); font-size: 12px; font-weight: 500; }
-  .list a { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 8px 12px; border-radius: 12px; color: var(--ink-2); text-decoration: none; font-size: 15px; }
+  h1 { margin: 0 0 var(--s-2); font-size: var(--fs-xl); }
+  h2 { margin: 14px var(--s-1) var(--s-1); color: var(--ink-3); font-size: var(--fs-xs); font-weight: 500; }
+  .list a { display: flex; align-items: center; gap: var(--s-3); min-height: 44px; padding: var(--s-2) var(--s-3); border-radius: var(--r-row); color: var(--ink-2); text-decoration: none; font-size: var(--fs-md); }
   .list a span { flex: 1; }
   .list a.on { background: var(--surface-2); color: var(--ink); }
   .list a.on :global(.icon:first-child) { color: var(--accent); }
   .list a:hover { background: var(--surface); }
   .hub { display: grid; gap: 2px; max-width: 560px; }
   .body { min-width: 0; }
-  .back { display: inline-flex; align-items: center; gap: 4px; margin-bottom: 8px; color: var(--accent); text-decoration: none; font-size: 14px; }
+  .back { display: inline-flex; align-items: center; gap: var(--s-1); margin-bottom: var(--s-2); color: var(--accent); text-decoration: none; font-size: 14px; }
 </style>

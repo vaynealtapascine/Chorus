@@ -8,6 +8,6 @@
 <div class="form-card" role={label ? 'group' : undefined} aria-label={label}>{@render children()}</div>
 
 <style>
-  .form-card { display: grid; border-radius: 16px; background: var(--surface-2); overflow: hidden; }
+  .form-card { display: grid; border-radius: var(--r-md); background: var(--surface-2); overflow: hidden; }
   .form-card > :global(* + *) { border-top: 1px solid var(--line); }
 </style>

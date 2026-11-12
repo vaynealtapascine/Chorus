@@ -276,36 +276,36 @@
 
 <style>
   .quiet { margin: 0; color: var(--ink-3); font-size: 14px; }
-  .sub { color: var(--ink-3); font-size: 13px; }
-  .chips { display: flex; gap: 8px; }
+  .sub { color: var(--ink-3); font-size: var(--fs-sm); }
+  .chips { display: flex; gap: var(--s-2); }
 
   .canvas { width: min(100%, var(--w)); margin: 0 auto; box-sizing: border-box; min-height: 100%; padding: var(--s-6) var(--s-4); background: var(--bg); color: var(--ink); }
-  .card { display: grid; gap: 8px; }
-  .card.framed { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
-  .main { display: grid; gap: 8px; padding: 16px; }
-  .card:not(.framed) .main { padding: 0 0 8px; }
+  .card { display: grid; gap: var(--s-2); }
+  .card.framed { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; }
+  .main { display: grid; gap: var(--s-2); padding: var(--s-4); }
+  .card:not(.framed) .main { padding: 0 0 var(--s-2); }
   .head { display: flex; align-items: center; gap: 10px; min-width: 0; }
-  .head strong { font-size: 16px; white-space: nowrap; }
-  .meta { flex: 1; min-width: 0; color: var(--ink-3); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .avatar { flex: none; width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; overflow: hidden; background: var(--surface-2); box-shadow: 0 0 0 2px var(--ring); color: var(--name); font-size: 12px; }
-  .avatar.big { width: 44px; height: 44px; font-size: 18px; }
+  .head strong { font-size: var(--fs-base); white-space: nowrap; }
+  .meta { flex: 1; min-width: 0; color: var(--ink-3); font-size: var(--fs-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .avatar { flex: none; width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; overflow: hidden; background: var(--surface-2); box-shadow: 0 0 0 2px var(--ring); color: var(--name); font-size: var(--fs-xs); }
+  .avatar.big { width: 44px; height: 44px; font-size: var(--fs-lg); }
   .blur .avatar { filter: blur(5px); }
-  h2 { margin: 0; font-size: 18px; line-height: 24px; }
-  .post-text { font-size: 16px; line-height: 23px; }
-  .counts { margin: 0; color: var(--ink-2); font-size: 13px; }
+  h2 { margin: 0; font-size: var(--fs-lg); line-height: 24px; }
+  .post-text { font-size: var(--fs-base); line-height: 23px; }
+  .counts { margin: 0; color: var(--ink-2); font-size: var(--fs-sm); }
   .cw, .cwline { color: var(--accent); font: inherit; font-size: 14px; text-align: left; }
   .cw { padding: 0; border: 0; background: none; cursor: pointer; }
-  .cwline { color: var(--ink-3); font-size: 13px; }
-  .replies { display: grid; gap: 10px; padding: 10px 16px; margin-top: 8px; background: var(--surface-2); }
+  .cwline { color: var(--ink-3); font-size: var(--fs-sm); }
+  .replies { display: grid; gap: 10px; padding: 10px var(--s-4); margin-top: var(--s-2); background: var(--surface-2); }
   .card:not(.framed) .replies { background: var(--bg); padding-inline: 0; }
-  .reply { display: flex; gap: 8px; align-items: flex-start; }
+  .reply { display: flex; gap: var(--s-2); align-items: flex-start; }
   .reply.picking { cursor: pointer; }
   .reply.dim { opacity: 0.45; }
   .body { min-width: 0; display: grid; gap: 2px; font-size: 14px; line-height: 20px; }
-  .who { display: flex; gap: 8px; align-items: baseline; }
-  .who strong { font-size: 13px; }
+  .who { display: flex; gap: var(--s-2); align-items: baseline; }
+  .who strong { font-size: var(--fs-sm); }
   time { color: var(--ink-3); font-size: 11px; }
-  .context { color: var(--ink-3); font-size: 12px; font-style: italic; border-left: 3px solid var(--line); padding: 2px 8px; }
-  .cropped { margin: 0 0 0 16px; color: var(--ink-3); font-size: 12px; font-style: italic; }
+  .context { color: var(--ink-3); font-size: var(--fs-xs); font-style: italic; border-left: 3px solid var(--line); padding: 2px var(--s-2); }
+  .cropped { margin: 0 0 0 var(--s-4); color: var(--ink-3); font-size: var(--fs-xs); font-style: italic; }
   .empty { color: var(--ink-3); text-align: center; }
 </style>

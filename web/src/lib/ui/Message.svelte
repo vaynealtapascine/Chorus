@@ -488,15 +488,15 @@
 {/snippet}
 
 <style>
-  .also { margin: 0 4px; color: var(--ink-3); font-size: 13px; line-height: 18px; }
+  .also { margin: 0 var(--s-1); color: var(--ink-3); font-size: var(--fs-sm); line-height: 18px; }
   /* Bubbles (Figma F5.21): others on the left with their face beside the last of a run, the one
      speaking here on the right; names open a run, time and a sent tick close each bubble. */
-  .msg-row { position: relative; display: flex; align-items: flex-end; gap: 8px; padding: 2px 64px 2px 0; min-width: 0; touch-action: pan-y pinch-zoom; }
+  .msg-row { position: relative; display: flex; align-items: flex-end; gap: var(--s-2); padding: 2px 64px 2px 0; min-width: 0; touch-action: pan-y pinch-zoom; }
   .msg-row:not(.cont) { margin-top: 6px; }
   .msg-row.fresh { animation: chorus-rise-in var(--t-base) var(--ease); }
   .msg-row.out { justify-content: flex-end; padding: 2px 0 2px 72px; }
   .slot { flex: none; width: 32px; height: 32px; }
-  .slot .avatar { width: 32px; height: 32px; font-size: 13px; font-weight: 700; }
+  .slot .avatar { width: 32px; height: 32px; font-size: var(--fs-sm); font-weight: 700; }
   .msg {
     position: relative;
     display: grid;
@@ -506,7 +506,7 @@
     background: var(--surface-2);
     min-width: 0;
     max-width: min(100%, 560px);
-    font-size: 15px;
+    font-size: var(--fs-md);
     line-height: 20px;
     transition: background var(--t-fast) var(--ease);
   }
@@ -519,30 +519,30 @@
   .select-toggle { background: none; border: 0; color: var(--accent); cursor: pointer; padding: 0; }
   .link { background: none; border: 0; color: var(--accent); cursor: pointer; font-style: normal; margin-left: var(--s-2); }
   .head { display: flex; align-items: center; gap: 6px; min-width: 0; padding-right: 22px; }
-  .who { font-weight: 600; font-size: 13px; line-height: 17px; min-width: 0; overflow-wrap: anywhere; }
+  .who { font-weight: 600; font-size: var(--fs-sm); line-height: 17px; min-width: 0; overflow-wrap: anywhere; }
   .amp { color: var(--ink-3); font-weight: 400; }
   .msg.aside-msg { outline: 1.5px dashed var(--accent); outline-offset: -1.5px; }
   .aside-tag { color: var(--accent); }
-  .layer { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
+  .layer { font-size: var(--fs-xs); color: var(--ink-3); white-space: nowrap; }
   .tag { display: inline-flex; align-items: center; font-size: 11px; color: var(--ink-3); border: 1px solid var(--line); border-radius: var(--r-full); padding: 0 6px; }
   .pin-tag { border: 0; padding: 0; color: var(--warn); }
-  .reply-quote { display: grid; padding: 4px 10px 4px 9px; border: 0; border-left: 3px solid var(--q); border-radius: 6px; background: color-mix(in srgb, var(--q) 12%, transparent);
-    font: inherit; font-size: 13px; line-height: 17px; color: inherit; text-align: left; min-width: 0; width: 100%; transition: background var(--t-fast) var(--ease); }
+  .reply-quote { display: grid; padding: var(--s-1) 10px var(--s-1) 9px; border: 0; border-left: 3px solid var(--q); border-radius: 6px; background: color-mix(in srgb, var(--q) 12%, transparent);
+    font: inherit; font-size: var(--fs-sm); line-height: 17px; color: inherit; text-align: left; min-width: 0; width: 100%; transition: background var(--t-fast) var(--ease); }
   .reply-quote:not(:disabled) { cursor: pointer; }
   .reply-quote:not(:disabled):hover { background: color-mix(in srgb, var(--q) 22%, transparent); }
   .q-name { color: var(--q); font-weight: 600; }
   .snip { color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .elsewhere { font-weight: 400; color: var(--ink-3); }
-  .body { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+  .body { display: grid; gap: var(--s-1); min-width: 0; overflow-wrap: anywhere; }
   .text { white-space: pre-wrap; }
   blockquote { margin: 2px 0; border-left: 3px solid var(--line); padding-left: var(--s-3); color: var(--ink-2); white-space: pre-wrap; }
   blockquote span { display: block; font-size: var(--fs-xs); color: var(--ink-3); }
-  .forward { border-left: 3px solid var(--accent); border-radius: 6px; padding: 4px 10px; margin: 2px 0; display: grid; gap: 2px; background: color-mix(in srgb, var(--accent) 10%, transparent); }
-  .fwd { font-size: 12px; color: var(--accent); font-weight: 600; }
+  .forward { border-left: 3px solid var(--accent); border-radius: 6px; padding: var(--s-1) 10px; margin: 2px 0; display: grid; gap: 2px; background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .fwd { font-size: var(--fs-xs); color: var(--accent); font-weight: 600; }
   /* a quote or forward whose original is here: tap it to go there */
   .jumps { cursor: pointer; }
   .q-src { display: block; background: none; border: 0; padding: 0; font: inherit; font-size: var(--fs-xs); color: var(--ink-3); text-align: left; cursor: pointer; }
-  .q-src.fwd { font-size: 12px; color: var(--accent); font-weight: 600; }
+  .q-src.fwd { font-size: var(--fs-xs); color: var(--accent); font-weight: 600; }
   .q-src:hover { text-decoration: underline; }
   .segment { display: grid; gap: 2px; padding: 2px 0 2px 10px; border-left: 2px solid var(--q, var(--line)); margin-top: 2px; }
   .segment-head { display: flex; align-items: center; gap: var(--s-2); font-size: var(--fs-xs); }
@@ -557,17 +557,17 @@
     background: var(--ring, var(--surface-2)); color: var(--avatar-ink, var(--ink)); }
   .avatar.small { width: 20px; height: 20px; font-size: 11px; box-shadow: 0 0 0 2px var(--surface-2); }
   .avatars .avatar + .avatar { margin-left: -6px; }
-  .attachments { display: grid; gap: 4px; margin-top: 2px; }
-  .reacts { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
-  .react { display: inline-flex; align-items: center; gap: 4px; font: inherit; font-size: 13px; line-height: 17px; font-weight: 600; padding: 3px 8px; border: 0; border-radius: 12px; cursor: pointer;
+  .attachments { display: grid; gap: var(--s-1); margin-top: 2px; }
+  .reacts { display: flex; flex-wrap: wrap; gap: var(--s-1); margin-top: 2px; }
+  .react { display: inline-flex; align-items: center; gap: var(--s-1); font: inherit; font-size: var(--fs-sm); line-height: 17px; font-weight: 600; padding: 3px var(--s-2); border: 0; border-radius: var(--r-row); cursor: pointer;
     background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink-2); transition: background var(--t-fast) var(--ease); }
   .react.mine { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
-  .react span { font-size: 13px; }
-  .thread-preview { display: flex; align-items: center; gap: var(--s-2); width: fit-content; margin-top: 2px; padding: 4px 10px 4px 6px; font: inherit; font-size: 12px; font-weight: 600;
+  .react span { font-size: var(--fs-sm); }
+  .thread-preview { display: flex; align-items: center; gap: var(--s-2); width: fit-content; margin-top: 2px; padding: var(--s-1) 10px var(--s-1) 6px; font: inherit; font-size: var(--fs-xs); font-weight: 600;
     color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); border: 0; border-radius: var(--r-full); cursor: pointer; }
   .thread-avatars { display: flex; }
   .thread-avatar + .thread-avatar { margin-left: -5px; }
-  .meta { display: flex; align-items: center; justify-content: flex-end; gap: 4px; margin-top: -2px; font-size: 11px; line-height: 14px; color: var(--ink-3); }
+  .meta { display: flex; align-items: center; justify-content: flex-end; gap: var(--s-1); margin-top: -2px; font-size: 11px; line-height: 14px; color: var(--ink-3); }
   /* beside the bubble (owner, 2026-11-02): "edited" stays in sight; the time waits for a hover or
      focus with a mouse, so nothing moves, and lives in the actions a tap opens elsewhere */
   .aside { position: relative; flex: none; display: inline-flex; padding-bottom: 5px; font-size: 11px; line-height: 14px; color: var(--ink-3); }
@@ -593,8 +593,8 @@
   button.edited { background: none; border: 0; padding: 0; font: inherit; font-size: 11px; color: var(--ink-3); cursor: pointer; text-decoration: underline dotted; }
   .history { margin: var(--s-1) 0; padding: var(--s-2) var(--s-3); list-style: none; border-left: 2px solid var(--line); display: grid; gap: var(--s-1); color: var(--ink-2); font-size: var(--fs-sm); }
   .history time { font-size: 11px; color: var(--ink-3); }
-  .palette { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 4px; }
-  .palette button { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm); cursor: pointer; font-size: 18px; width: 34px; height: 34px; }
+  .palette { display: flex; flex-wrap: wrap; gap: 2px; margin-top: var(--s-1); }
+  .palette button { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm); cursor: pointer; font-size: var(--fs-lg); width: 34px; height: 34px; }
   .action-trigger { position: absolute; right: 2px; top: 2px; width: 28px; height: 28px; border: 0; border-radius: 50%; background: transparent; color: var(--ink-3); display: grid; place-items: center; cursor: pointer; }
   .action-trigger:hover { background: color-mix(in srgb, var(--ink) 10%, transparent); color: var(--ink); }
   /* with a mouse, the ⋯ waits for the pointer or keyboard focus, like Telegram's hover menu */
@@ -602,16 +602,16 @@
     .action-trigger { opacity: 0; transition: opacity var(--t-fast) var(--ease); }
     .msg:hover .action-trigger, .msg:focus-within .action-trigger, .action-trigger:focus-visible { opacity: 1; }
   }
-  .actions { position: fixed; inset: auto; margin: 0; width: 280px; max-width: calc(100vw - 24px); max-height: min(70dvh, 560px); overflow-y: auto; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow-pop); padding: 6px; }
+  .actions { position: fixed; inset: auto; margin: 0; width: 280px; max-width: calc(100vw - 24px); max-height: min(70dvh, 560px); overflow-y: auto; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); box-shadow: var(--shadow-pop); padding: 6px; }
   .actions:popover-open { display: grid; }
-  .when { margin: 0 0 4px; padding: 6px 12px 8px; border-bottom: 1px solid var(--line); font-size: var(--fs-sm); color: var(--ink-3); }
-  .actions button { display: flex; gap: 14px; align-items: center; background: none; border: 0; cursor: pointer; min-height: 44px; padding: 10px 12px; border-radius: 10px; color: var(--ink); text-align: left; font-size: var(--fs-md); }
+  .when { margin: 0 0 var(--s-1); padding: 6px var(--s-3) var(--s-2); border-bottom: 1px solid var(--line); font-size: var(--fs-sm); color: var(--ink-3); }
+  .actions button { display: flex; gap: 14px; align-items: center; background: none; border: 0; cursor: pointer; min-height: 44px; padding: 10px var(--s-3); border-radius: var(--r-sm); color: var(--ink); text-align: left; font-size: var(--fs-md); }
   .actions button :global(.icon) { color: var(--ink-3); }
   .actions button:hover { background: var(--surface-2); }
   .actions button.delete-action, .actions button.delete-action :global(.icon) { color: var(--danger); }
   .held { margin: 0; font-size: var(--fs-sm); color: var(--ink-3); }
   @media (max-width: 640px) {
-    .msg-row { padding-right: 24px; }
+    .msg-row { padding-right: var(--s-6); }
     .msg-row.out { padding-left: 40px; }
   }
 </style>

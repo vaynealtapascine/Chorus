@@ -96,16 +96,16 @@
 </Sheet>
 
 <style>
-  .field { display: grid; gap: 4px; padding: 10px 14px; color: var(--ink-3); font-size: 12px; }
-  .field input, .field textarea { font: inherit; font-size: 15px; color: var(--ink); background: none; border: 0; padding: 4px 0; min-width: 0; resize: vertical; }
+  .field { display: grid; gap: var(--s-1); padding: 10px 14px; color: var(--ink-3); font-size: var(--fs-xs); }
+  .field input, .field textarea { font: inherit; font-size: var(--fs-md); color: var(--ink); background: none; border: 0; padding: var(--s-1) 0; min-width: 0; resize: vertical; }
   .field input:focus, .field textarea:focus { outline: none; box-shadow: 0 1px 0 var(--accent); }
   .choices { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-  .choice { font: inherit; font-size: 13px; padding: 3px 10px; border-radius: 999px; cursor: pointer; color: var(--ink-2); background: none; border: 1px dashed var(--line); }
+  .choice { font: inherit; font-size: var(--fs-sm); padding: 3px 10px; border-radius: var(--r-full); cursor: pointer; color: var(--ink-2); background: none; border: 1px dashed var(--line); }
   .choice.on { color: var(--ink); font-weight: 600; background: color-mix(in srgb, var(--pill) 28%, var(--surface)); border: 1px solid color-mix(in srgb, var(--pill) 55%, transparent); }
-  .field .add { width: 7em; font-size: 13px; padding: 3px 10px; border-radius: 999px; background: var(--surface); }
-  .colour { display: inline-flex; align-items: center; gap: 12px; }
+  .field .add { width: 7em; font-size: var(--fs-sm); padding: 3px 10px; border-radius: var(--r-full); background: var(--surface); }
+  .colour { display: inline-flex; align-items: center; gap: var(--s-3); }
   .colour input { width: 48px; height: 32px; padding: 2px; }
   .link { border: 0; background: none; color: var(--accent); font: inherit; cursor: pointer; }
-  .error { margin: 0; color: var(--danger); font-size: 13px; }
-  .go { flex: 1; min-height: 44px; border: 0; border-radius: 14px; background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
+  .error { margin: 0; color: var(--danger); font-size: var(--fs-sm); }
+  .go { flex: 1; min-height: 44px; border: 0; border-radius: var(--r-control); background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
 </style>

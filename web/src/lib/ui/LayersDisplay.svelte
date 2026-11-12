@@ -175,48 +175,48 @@
 </div>
 
 <style>
-  .page { display: grid; gap: 6px; max-width: 720px; padding-bottom: 32px; }
-  .bar { display: flex; align-items: center; gap: 4px; margin-left: -8px; }
+  .page { display: grid; gap: 6px; max-width: 720px; padding-bottom: var(--s-8); }
+  .bar { display: flex; align-items: center; gap: var(--s-1); margin-left: -8px; }
   .back { width: 44px; height: 44px; display: grid; place-items: center; color: var(--ink); border-radius: 50%; }
-  .titles { flex: 1; display: grid; padding-left: 4px; }
+  .titles { flex: 1; display: grid; padding-left: var(--s-1); }
   /* the desktop app bar already names the page */
   @media (min-width: 1024px) { .titles { visibility: hidden; } }
   .titles strong { font-size: 17px; font-weight: 600; }
-  .titles span { color: var(--ink-3); font-size: 12px; }
-  .presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-  .presets button { display: grid; justify-items: center; align-content: start; gap: 6px; padding: 12px 8px; border: 1.5px solid transparent; border-radius: 14px; background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; text-align: center; }
+  .titles span { color: var(--ink-3); font-size: var(--fs-xs); }
+  .presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s-2); }
+  .presets button { display: grid; justify-items: center; align-content: start; gap: 6px; padding: var(--s-3) var(--s-2); border: 1.5px solid transparent; border-radius: var(--r-control); background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; text-align: center; }
   .presets button.on { background: var(--accent-soft); border-color: var(--accent); }
   .presets button.on strong { color: var(--accent); }
   .presets strong { font-size: 14px; font-weight: 600; }
-  .presets button > span:last-child { color: var(--ink-3); font-size: 12px; line-height: 16px; }
+  .presets button > span:last-child { color: var(--ink-3); font-size: var(--fs-xs); line-height: 16px; }
   .glyph { position: relative; width: 56px; height: 40px; display: grid; place-items: center; }
   .glyph > span { grid-area: 1 / 1; }
   .ring { border: 1.2px dashed color-mix(in oklab, var(--ink-3) 45%, transparent); }
   .core { border: 1.2px solid var(--accent); background: color-mix(in oklab, var(--accent) 25%, transparent); border-radius: 6px; }
-  .panel { background: var(--surface); border-radius: 16px; display: grid; overflow: hidden; }
-  .panel.pad { padding: 12px; gap: 8px; }
-  .layer-row { display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-bottom: 1px solid var(--line); }
+  .panel { background: var(--surface); border-radius: var(--r-md); display: grid; overflow: hidden; }
+  .panel.pad { padding: var(--s-3); gap: var(--s-2); }
+  .layer-row { display: flex; align-items: center; gap: var(--s-2); padding: 6px var(--s-1); border-bottom: 1px solid var(--line); }
   .layer-row.dragging { opacity: 0.5; }
   .grip { width: 36px; height: 36px; flex: none; display: grid; place-items: center; color: var(--ink-3); cursor: grab; }
   .swatch { width: 28px; height: 20px; flex: none; border-radius: 6px; border: 1.5px var(--l-dash) var(--l-border); background: var(--l-fill); }
-  .text { flex: 1; min-width: 0; display: grid; text-align: left; border: 0; background: none; color: var(--ink); font: inherit; padding: 0 0 0 4px; cursor: pointer; }
+  .text { flex: 1; min-width: 0; display: grid; text-align: left; border: 0; background: none; color: var(--ink); font: inherit; padding: 0 0 0 var(--s-1); cursor: pointer; }
   .text.static { cursor: default; }
-  .text strong { font-size: 15px; font-weight: 500; }
-  .text span { color: var(--ink-3); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .text strong { font-size: var(--fs-md); font-weight: 500; }
+  .text span { color: var(--ink-3); font-size: var(--fs-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .keys { display: flex; }
-  .mini { width: 40px !important; height: 44px !important; font-size: 18px !important; }
+  .mini { width: 40px !important; height: 44px !important; font-size: var(--fs-lg) !important; }
   .mini { width: 28px; height: 36px; border: 0; background: none; color: var(--accent); font: inherit; cursor: pointer; }
   .mini:disabled { color: var(--ink-3); }
   .icon-btn { width: 44px; height: 44px; flex: none; display: grid; place-items: center; border: 0; background: none; color: var(--ink-2); border-radius: 50%; cursor: pointer; }
-  .add-layer { display: flex; align-items: center; gap: 12px; padding: 12px 12px 12px 14px; border: 0; background: none; color: var(--accent); font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; text-align: left; }
-  .field { display: grid; gap: 4px; font-size: 13px; color: var(--ink-2); }
-  .field input, .add input { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  .add-layer { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-3) var(--s-3) var(--s-3) 14px; border: 0; background: none; color: var(--accent); font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; text-align: left; }
+  .field { display: grid; gap: var(--s-1); font-size: var(--fs-sm); color: var(--ink-2); }
+  .field input, .add input { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: var(--s-2) 10px; }
   .pad { padding: 0; }
   .colour { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
   .remove { flex: 0 0 auto; color: var(--danger); }
   .state-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-  .state { display: inline-flex; align-items: center; gap: 2px; padding: 4px 4px 4px 12px; border-radius: 999px; background: var(--surface-2); font-size: 13px; }
+  .state { display: inline-flex; align-items: center; gap: 2px; padding: var(--s-1) var(--s-1) var(--s-1) var(--s-3); border-radius: var(--r-full); background: var(--surface-2); font-size: var(--fs-sm); }
   .state button { width: 28px; height: 28px; display: grid; place-items: center; border: 0; background: none; color: var(--ink-3); border-radius: 50%; cursor: pointer; }
-  .add { display: flex; gap: 8px; }
+  .add { display: flex; gap: var(--s-2); }
   .add input { flex: 1; min-width: 0; }
 </style>

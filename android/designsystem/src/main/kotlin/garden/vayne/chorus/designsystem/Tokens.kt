@@ -84,6 +84,8 @@ object Tokens {
         bubbleOut = Color(0xFF213B3A),
     )
     val radiusSm = 10.dp
+    val radiusRow = 12.dp
+    val radiusControl = 14.dp
     val radiusMd = 16.dp
     val radiusLg = 22.dp
     val radiusFull = 999.dp

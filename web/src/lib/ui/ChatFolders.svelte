@@ -145,22 +145,22 @@
 
 <style>
   .name { flex: 1; display: grid; min-width: 0; text-align: left; }
-  .name strong { color: var(--ink); font-weight: 600; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .name small { color: var(--ink-3); font-size: 13px; }
+  .name strong { color: var(--ink); font-weight: 600; font-size: var(--fs-md); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .name small { color: var(--ink-3); font-size: var(--fs-sm); }
   .name.off { opacity: .55; }
-  .open { display: flex; align-items: center; gap: 8px; border: 0; background: none; padding: 0; font: inherit; color: var(--ink-3); cursor: pointer; }
-  .name-row { display: flex; align-items: center; gap: 12px; min-height: 46px; padding: 0 14px; font-size: 15px; }
+  .open { display: flex; align-items: center; gap: var(--s-2); border: 0; background: none; padding: 0; font: inherit; color: var(--ink-3); cursor: pointer; }
+  .name-row { display: flex; align-items: center; gap: var(--s-3); min-height: 46px; padding: 0 14px; font-size: var(--fs-md); }
   .name-row input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--ink); font: inherit; text-align: right; }
-  .find { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 12px; border-radius: 20px; background: var(--surface-2); color: var(--ink-3); }
-  .find input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--ink); font: inherit; font-size: 15px; }
-  .pick { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 46px; padding: 8px 14px; border: 0; background: none; color: var(--ink); font: inherit; font-size: 15px; text-align: left; cursor: pointer; }
+  .find { display: flex; align-items: center; gap: var(--s-2); min-height: 40px; padding: 0 var(--s-3); border-radius: 20px; background: var(--surface-2); color: var(--ink-3); }
+  .find input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--ink); font: inherit; font-size: var(--fs-md); }
+  .pick { display: flex; align-items: center; gap: var(--s-2); width: 100%; min-height: 46px; padding: var(--s-2) 14px; border: 0; background: none; color: var(--ink); font: inherit; font-size: var(--fs-md); text-align: left; cursor: pointer; }
   .pick span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pick :global(.icon) { color: var(--accent); }
-  .add { display: flex; align-items: center; gap: 8px; border: 0; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; padding: 12px 4px; }
-  .suggest { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 6px 14px; color: var(--ink-2); }
-  .pill { min-height: 34px; padding: 0 16px; border: 0; border-radius: 17px; background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
-  .danger-link { justify-self: start; border: 0; background: none; color: var(--danger); font: inherit; cursor: pointer; padding: 12px 4px; }
-  .neutral, .primary { min-height: 44px; padding: 10px 18px; border: 0; border-radius: 14px; font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
+  .add { display: flex; align-items: center; gap: var(--s-2); border: 0; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; padding: var(--s-3) var(--s-1); }
+  .suggest { display: flex; align-items: center; gap: var(--s-3); min-height: 56px; padding: 6px 14px; color: var(--ink-2); }
+  .pill { min-height: 34px; padding: 0 var(--s-4); border: 0; border-radius: 17px; background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
+  .danger-link { justify-self: start; border: 0; background: none; color: var(--danger); font: inherit; cursor: pointer; padding: var(--s-3) var(--s-1); }
+  .neutral, .primary { min-height: 44px; padding: 10px 18px; border: 0; border-radius: var(--r-control); font: inherit; font-size: var(--fs-md); font-weight: 600; cursor: pointer; }
   .neutral { background: var(--surface-2); color: var(--ink); }
   .primary { flex: 1; background: var(--accent); color: var(--on-accent); }
   .primary:disabled { background: var(--surface-2); color: var(--ink-3); cursor: default; }

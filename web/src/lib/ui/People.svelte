@@ -325,31 +325,31 @@
 {/if}
 
 <style>
-  .search { padding: 8px 16px; background: var(--surface); }
-  .search input { width: 100%; box-sizing: border-box; border: 0; border-radius: 12px; background: color-mix(in srgb, var(--ink) 5%, transparent); color: var(--ink); font: inherit; padding: 10px 12px; }
+  .search { padding: var(--s-2) var(--s-4); background: var(--surface); }
+  .search input { width: 100%; box-sizing: border-box; border: 0; border-radius: var(--r-row); background: color-mix(in srgb, var(--ink) 5%, transparent); color: var(--ink); font: inherit; padding: 10px var(--s-3); }
   .chev { color: var(--ink-3); align-self: center; display: grid; }
-  .split { cursor: default; padding: 0 8px 0 0; }
-  .split .main { flex: 1; min-width: 0; display: flex; align-items: flex-start; gap: 14px; padding: 12px 0 12px 16px; color: inherit; text-decoration: none; }
+  .split { cursor: default; padding: 0 var(--s-2) 0 0; }
+  .split .main { flex: 1; min-width: 0; display: flex; align-items: flex-start; gap: 14px; padding: var(--s-3) 0 var(--s-3) var(--s-4); color: inherit; text-decoration: none; }
   .split.dim .main :global(.fr-face) { opacity: .55; }
   .split > .fr-icon { margin-top: 10px; }
   /* Follow back goes under the text, so the name keeps its width on a phone */
   .split:has(> .back) { flex-wrap: wrap; }
   .split:has(> .back) .main { flex-basis: calc(100% - 60px); }
-  .split > .back { order: 3; margin: -4px 0 12px 74px; }
+  .split > .back { order: 3; margin: -4px 0 var(--s-3) 74px; }
   .follower { display: flex; flex-wrap: wrap; }
   .follower > .fr-row { flex: 1 1 100%; min-width: 0; }
-  .follower > .back { margin: -4px 0 12px 70px; }
+  .follower > .back { margin: -4px 0 var(--s-3) 70px; }
   .request { cursor: default; }
   .request:hover { background: none; }
   .bucket { align-items: center; text-decoration: none; }
-  .bucket-name { font-size: 16px; font-weight: 600; }
-  .tile { width: 44px; height: 44px; border-radius: 12px; }
-  .preset { background: var(--surface-2); color: var(--ink); font-weight: 500; padding: 4px 10px; border-radius: 12px; }
-  .follow { display: grid; gap: 12px; }
+  .bucket-name { font-size: var(--fs-base); font-weight: 600; }
+  .tile { width: 44px; height: 44px; border-radius: var(--r-row); }
+  .preset { background: var(--surface-2); color: var(--ink); font-weight: 500; padding: var(--s-1) 10px; border-radius: var(--r-row); }
+  .follow { display: grid; gap: var(--s-3); }
   .options { display: grid; gap: 2px; }
-  .options button { display: flex; align-items: center; gap: 14px; padding: 10px 12px; border: 0; border-radius: 12px; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+  .options button { display: flex; align-items: center; gap: 14px; padding: 10px var(--s-3); border: 0; border-radius: var(--r-row); background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
   .options button.on { background: var(--accent-soft); }
   .options .text { flex: 1; display: grid; }
-  .options .text span { color: var(--ink-3); font-size: 13px; }
+  .options .text span { color: var(--ink-3); font-size: var(--fs-sm); }
   .options button :global(.icon) { color: var(--accent); }
 </style>
