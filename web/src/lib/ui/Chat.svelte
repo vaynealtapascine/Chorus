@@ -1426,7 +1426,7 @@
           onreplyprivately={(space?.kind === 'internal' ? m.authors[0] !== speaker : m.account_id !== sync.accountId) ? () => void replyPrivately(m) : undefined}
           onquote={(q) => { quoting = q; forwarding = null; quoteSourceSpaceId = current?.space_id ?? ''; quoteSourceChannelId = current?.id ?? ''; quoteSensitive = !!privacyRoot?.member_ids?.length || !!m.visibility && m.visibility.mode !== 'all'; replyTo = m; editing = null; editingParts = null; box?.focus(); }}
           onedit={() => startEdit(m)}
-          ondelete={() => sync.create('message.delete', scope, m.id, {})}
+          ondelete={() => sync.create('message.delete', scope, m.id, {}, { memberId: speaker ?? undefined })}
           onrestore={() => sync.create('message.restore', scope, m.id, {})}
           onpin={() => sync.create(m.pinned ? 'message.unpin' : 'message.pin', scope, m.id, {}, { memberId: speaker ?? undefined })}
           onforward={(range) => startForward([m], range)}

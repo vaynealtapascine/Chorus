@@ -436,6 +436,10 @@ export interface TrashItem {
   kind: TrashKind;
   label: string;
   detail: string;
+  /** the row's line: "Message in #vent", "Post “Rough night”" (Android Trash) */
+  title: string;
+  /** the member the delete named, when it did (projection v6 `deleted_by_member_id`) */
+  deletedBy?: string;
   deletedAt: number;
   scope: string;
   channelId?: string;
@@ -445,6 +449,7 @@ export interface TrashItem {
 export function trashItems(p: Projection, accountId: string): TrashItem[] {
   const channelRows = (p.rows.channel ?? {}) as Rows;
   const names = new Map(Object.entries(channelRows).map(([id, row]) => [id, str(row.fields.name) ?? 'channel']));
+  const memberRows = (p.rows.member ?? {}) as Rows;
   const out: TrashItem[] = [];
   for (const [table, kind] of [
     ['message', 'message'], ['post', 'post'], ['member', 'member'], ['member_group', 'group'], ['channel', 'channel'],
@@ -460,7 +465,14 @@ export function trashItems(p: Projection, accountId: string): TrashItem[] {
         table === 'member_group' ? 'Group' : kind[0].toUpperCase() + kind.slice(1);
       const detail = table === 'message' ? `#${names.get(str(f.channel_id) ?? '') ?? 'channel'} · ${str(f.text) ?? '(empty message)'}` :
         str(f.name) ?? str(f.title) ?? str(f.text) ?? '(untitled)';
-      out.push({ id, kind, label, detail, deletedAt: f.deleted_at as number, scope,
+      const channelName = `#${names.get(str(f.channel_id) ?? '') ?? 'channel'}`;
+      const quoted = (text: string | undefined) => { const line = text?.split(String.fromCharCode(10)).find((l) => l.trim())?.trim(); return line ? ` “${line.length > 40 ? `${line.slice(0, 39).trimEnd()}…` : line}”` : ''; };
+      const title = (table === 'message' ? `Message in ${channelName}` : table === 'post' ? label + quoted(str(f.title) ?? str(f.text)) :
+        table === 'member' ? `Member ${str(f.display_name) ?? str(f.name) ?? ''}` : table === 'member_group' ? `Group ${str(f.name) ?? ''}` :
+        `Channel ${channelName}`).trim();
+      const by = str(f.deleted_by_member_id);
+      const deletedBy = by ? str(memberRows[by]?.fields.display_name) ?? str(memberRows[by]?.fields.name) : undefined;
+      out.push({ id, kind, label, detail, title, deletedBy: deletedBy || undefined, deletedAt: f.deleted_at as number, scope,
         channelId: table === 'message' ? str(f.channel_id) : undefined });
     }
   }
