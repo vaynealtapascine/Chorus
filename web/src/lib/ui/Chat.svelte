@@ -36,6 +36,7 @@
   import SpaceRoles from './SpaceRoles.svelte';
   import ChannelEditor from './ChannelEditor.svelte';
   import NewChat from './NewChat.svelte';
+  import { afterSend, everyone, offered as asideOffered, on as asideOn, placeholder as asidePlaceholder } from '../chat-aside';
   import { startFrom } from '../new-chat';
   import SpacePanel from './SpacePanel.svelte';
   import { profileHref } from '../profile-link';
@@ -533,6 +534,9 @@
   });
   onDestroy(stopTyping);
 
+  // the audience bar over a shared space's composer (F5.4, F5.16): everyone here, or an aside only our system sees
+  const hasAside = $derived(asideOffered(space?.kind, !!self) && !!current && !lockedOut && current.kind !== 'thread');
+  const aside = $derived(hasAside && visibilityMode === 'system_only');
   const canSend = $derived(!!current && (!!preview?.rich.text.trim() || pending.length > 0) &&
     messageAuthors.length > 0 && messageAuthors.every((id) => canWriteAs(projection, id, sync.accountId)) &&
     (visibilityMode !== 'members' || visibleTo.length > 0));
@@ -619,7 +623,7 @@
     pollOn = false;
     pollOptions = ['', ''];
     pollMultiple = false;
-    visibilityMode = 'all';
+    visibilityMode = afterSend(visibilityMode) as typeof visibilityMode;
     visibleTo = [];
     pending = [];
     if (sync.status === 'live') void flushUploads(sync.device);
@@ -1403,6 +1407,7 @@
           onthread={() => openThread(m)}
           reacts={reacts.get(m.id)}
           {speaker}
+          {systemName}
           {emojiById}
           {cwAutoExpand}
           heldUntil={held[m.id]?.until}
@@ -1489,13 +1494,14 @@
           <label><input type="checkbox" bind:checked={pollMultiple} /> Allow more than one choice</label>
           {#if pollError}<p class="error" role="alert">{pollError}</p>{/if}
         </details>
+        {#if space?.kind === 'internal'}
         <label>Visibility
           <select aria-label="Message visibility" bind:value={visibilityMode}>
             <option value="all">Everyone in this space</option>
-            {#if space?.kind === 'internal'}<option value="members">Chosen members</option>{/if}
-            {#if space?.kind !== 'internal'}<option value="system_only">Only my system</option>{/if}
+            <option value="members">Chosen members</option>
           </select>
         </label>
+        {/if}
         {#if visibilityMode === 'members'}
           <div class="visibility-members" aria-label="Members who can view this message">
             {#each members(projection).filter((m) => !m.deleted && !m.archived) as person (person.id)}
@@ -1533,6 +1539,13 @@
         {/each}
       </div>
     {/if}
+    {#if hasAside && !editing}
+      <div class="audience" class:on={aside}>
+        <Icon name={aside ? 'lock' : 'globe'} size={18} />
+        <span class="says">{aside ? asideOn(systemName) : everyone(directory.get(space?.id ?? '')?.accounts)}</span>
+        <button class="aside-pill" aria-pressed={aside} onclick={() => (visibilityMode = aside ? 'all' : 'system_only')}><Icon name="lock" size={14} />Aside</button>
+      </div>
+    {/if}
     {#if !lockedOut}
     <div class="composer">
       <input class="file-input" type="file" multiple bind:this={fileInput} onchange={(e) => { addFiles(e.currentTarget.files ?? []); e.currentTarget.value = ''; }} aria-label="Choose attachments" />
@@ -1552,7 +1565,7 @@
           </div>
         {/if}
       </div>{/if}
-      <div class="pill">
+      <div class="pill" class:aside>
         {#if !editing}<div class="chip-wrap">
           <button class="in-pill" onclick={() => (emojiPicker = !emojiPicker)} title="Emoji" aria-label="Emoji" aria-expanded={emojiPicker}><Icon name="smile" size={22} /></button>
           {#if emojiPicker}
@@ -1592,7 +1605,7 @@
               oncompositionend={() => { composing = false; trackCursor(); }}
               onpaste={pasteFiles}
               rows="1"
-              placeholder={editing ? 'Edit message' : !current ? '' : 'Message'}
+              placeholder={editing ? 'Edit message' : !current ? '' : aside ? asidePlaceholder(systemName) : 'Message'}
               aria-label="Message"
             ></textarea>
           {/if}
@@ -1612,12 +1625,12 @@
           {/if}
         </div>
         {#if !editing}
-          <button class="in-pill" class:on={optionsOpen || !!cw.trim() || pollOn || visibilityMode !== 'all'} onclick={() => (optionsOpen = !optionsOpen)}
+          <button class="in-pill" class:on={optionsOpen || !!cw.trim() || pollOn || visibilityMode === 'members'} onclick={() => (optionsOpen = !optionsOpen)}
             aria-label="Message options" aria-expanded={optionsOpen} title="Content warning, poll, who can see it"><Icon name="sliders" size={20} /></button>
           <button class="in-pill" onclick={() => fileInput?.click()} title="Attach files" aria-label="Attach files"><Icon name="attach" size={22} /></button>
         {/if}
       </div>
-      <button class="send" class:ready={editing ? true : canSend} onclick={() => void send()} aria-label={editing ? 'Save' : 'Send'} title={editing ? 'Save' : 'Send'}
+      <button class="send" class:ready={editing ? true : canSend} onclick={() => void send()} aria-label={editing ? 'Save' : aside ? 'Send as aside' : 'Send'} title={editing ? 'Save' : aside ? 'Send as aside' : 'Send'}
         disabled={editing ? (editingParts ? !editingParts.some((part) => part.trim()) : !draft.trim()) : !canSend}><Icon name={editing ? 'read' : 'send'} size={20} /></button>
     </div>
     {/if}
@@ -1987,6 +2000,13 @@
   .send-as { display: grid; place-items: center; padding: 2px; border: 1.5px solid var(--accent); border-radius: 50%; background: none; cursor: pointer; }
   .send-as .avatar { width: 32px; height: 32px; box-shadow: none; font-size: 13px; font-weight: 700; overflow: hidden; }
   .pill { flex: 1; min-width: 0; display: flex; align-items: flex-end; gap: 6px; padding: 5px 6px; border-radius: 20px; background: var(--surface-2); }
+  .pill.aside { outline: 1.5px dashed var(--accent); outline-offset: -1.5px; }
+  .audience { display: flex; align-items: center; gap: 10px; padding: 6px 8px 6px 14px; border-top: 1px solid var(--line); background: var(--surface); color: var(--ink-3); font-size: 13px; }
+  .audience.on { background: var(--accent-soft); color: var(--accent); }
+  .audience .says { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .aside-pill { flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 12px; border: 1px solid var(--line); border-radius: var(--r-full); background: var(--surface-2);
+    color: var(--ink-2); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .aside-pill[aria-pressed='true'] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
   .pill:focus-within { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent) 60%, transparent); }
   .in-pill { flex: none; width: 32px; height: 32px; display: grid; place-items: center; border: 0; border-radius: 50%; background: none; color: var(--ink-3); cursor: pointer; }
   .in-pill:hover { color: var(--ink); background: color-mix(in srgb, var(--ink) 8%, transparent); }

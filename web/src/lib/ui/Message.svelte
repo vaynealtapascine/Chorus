@@ -28,6 +28,7 @@
   import LinkEmbeds from './LinkEmbeds.svelte';
   import ManyMembersSheet from './ManyMembersSheet.svelte';
   import type { MemberChange } from '../many-members';
+  import { tag as asideTag } from '../chat-aside';
 
   export type Quote = TextRange;
   export type Forwarded = SnapshotItem;
@@ -75,7 +76,10 @@
     embedLookup,
     profileOf,
     fresh = false,
+    systemName,
   }: {
+    /** Names whose system an aside stays with (F5.4). */
+    systemName?: string;
     m: MessageRow;
     /** Arrived while the chat was open: it slides in instead of appearing. */
     fresh?: boolean;
@@ -268,7 +272,7 @@
       {:else}<span class="avatar" style="--ring: {color(a).ring}; --avatar-ink: {color(a).avatar_ink}" title={nameOf(a)}><AvatarImage hash={people.get(a)?.avatar_blob} glyph={people.get(a)?.sigils[0] ?? nameOf(a)[0]} name={nameOf(a)} /></span>{/if}{/if}</span>
   {/if}
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-  <div class="msg" class:cont class:self={out} class:pinned={m.pinned} class:selected data-message-id={m.id} onclick={tapBubble}
+  <div class="msg" class:cont class:self={out} class:pinned={m.pinned} class:selected class:aside-msg={m.visibility?.mode === 'system_only'} data-message-id={m.id} onclick={tapBubble}
     oncontextmenu={rightClick} use:longPress={{ enabled: !readOnly && !heldUntil, skip: canMany ? `${OWN_MENU}, .react, .palette button` : OWN_MENU, onpress: ({ x, y }) => openActionsAt(x, y) }}>
     {#if !cont || selecting}
       <div class="head">
@@ -284,6 +288,7 @@
           {#each m.authors as a, i (a)}{@const href = profileOf?.(a)}{#if i}<span class="amp">{' & '}</span>{/if}{@const handle = handleOf?.(a) ?? people.get(a)?.handle}{#if href}<a class="name" {href} title={handle ? `@${handle}` : undefined} style="color: {color(a).name}">{nameOf(a)}</a>{:else}<span title={handle ? `@${handle}` : undefined} style="color: {color(a).name}">{nameOf(a)}</span>{/if}{/each}
         </span>
         {#if tag}<span class="layer">{tag}</span>{/if}
+        {#if m.visibility?.mode === 'system_only'}<span class="layer aside-tag">{asideTag(mine, systemName)}</span>{/if}
         {#if m.sent_offline}<span class="tag" title="Composed offline, synced later">sent offline</span>{/if}
         {#if m.pinned}<span class="tag pin-tag" title="Pinned"><Icon name="pin" size={12} /></span>{/if}
       </div>
@@ -501,6 +506,8 @@
   .head { display: flex; align-items: center; gap: 6px; min-width: 0; padding-right: 22px; }
   .who { font-weight: 600; font-size: 13px; line-height: 17px; min-width: 0; overflow-wrap: anywhere; }
   .amp { color: var(--ink-3); font-weight: 400; }
+  .msg.aside-msg { outline: 1.5px dashed var(--accent); outline-offset: -1.5px; }
+  .aside-tag { color: var(--accent); }
   .layer { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
   .tag { display: inline-flex; align-items: center; font-size: 11px; color: var(--ink-3); border: 1px solid var(--line); border-radius: var(--r-full); padding: 0 6px; }
   .pin-tag { border: 0; padding: 0; color: var(--warn); }
