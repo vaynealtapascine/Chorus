@@ -19,6 +19,8 @@
   import AvatarImage from './AvatarImage.svelte';
   import Icon from './Icon.svelte';
   import PostCard from './PostCard.svelte';
+  import MenuSheet from './kit/MenuSheet.svelte';
+  import MenuRow from './kit/MenuRow.svelte';
   import PollVotes from './PollVotes.svelte';
   import { pollOf } from '../polls';
   import PostComposer from './PostComposer.svelte';
@@ -43,6 +45,8 @@
   // own posts read their reactions from the replica, which has only ours: friends' come with the server read
   const merged = $derived(mergedReactions(detail, (pid) => reacts.get(pid)));
   let error = $state('');
+  let menu = $state(false);
+  let historyOpen = $state(false);
   let loading = $state(false);
   async function load() {
     loading = true;
@@ -149,11 +153,18 @@
   </article>
 {/snippet}
 
+{#if menu}
+  <MenuSheet title="Post" onclose={() => (menu = false)}>
+    <MenuRow label={loading ? 'Loading…' : 'Refresh'} icon="history" disabled={loading} onclick={() => { menu = false; void load(); }} />
+    <MenuRow label="History" icon="clock" onclick={() => { menu = false; historyOpen = true; }} />
+  </MenuSheet>
+{/if}
+
 <section class="thread-page" aria-label="Post thread">
   <header>
     <button class="back" onclick={back} aria-label="Back"><Icon name="chevron" size={20} /></button>
     <h1>{own?.kind === 'entry' ? 'Journal entry' : ancestors.length ? 'Thread' : 'Post'}</h1>
-    <button class="refresh" onclick={load} disabled={loading}>{loading ? 'Loading…' : 'Refresh'}</button>
+    <button class="more" aria-haspopup="menu" aria-label="More options" onclick={() => (menu = true)}><Icon name="more-vert" size={20} /></button>
   </header>
 
   {#if ancestors.length}
@@ -181,8 +192,8 @@
     <div class="focus remote" class:joined={ancestors.length > 0}>
       {@render row({ id: detail.id, occurred_at: detail.occurred_at, remote: detail, replyCount: replies.length }, false, false)}
     </div>
-    <PostHistory id={detail.id} />
   {/if}
+  {#if historyOpen}<PostHistory {id} open />{/if}
 
   {#if focused}
     {#if !own}<p class="detail">{when(focused.occurred_at)}{#if replies.length}{' · '}<strong>{replies.length}</strong> {replies.length === 1 ? 'reply' : 'replies'}{/if}{#if quotes.length}{' · '}<button class="stat" onclick={() => (showQuotes = true)}><strong>{quotes.length}</strong> {quotes.length === 1 ? 'quote' : 'quotes'}</button>{/if}</p>{/if}
@@ -225,8 +236,8 @@
   h1 { margin: 0; flex: 1; font-size: var(--fs-lg, 1.25rem); }
   .back { display: grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: 50%; background: none; color: var(--ink); cursor: pointer; transform: rotate(180deg); }
   .back:hover { background: var(--surface-2); }
-  .refresh { border: 0; background: none; color: var(--accent); font: inherit; font-size: var(--fs-sm); cursor: pointer; }
-  .refresh:disabled { color: var(--ink-3); cursor: default; }
+  .more { display: grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: 50%; background: none; color: var(--ink-2); cursor: pointer; }
+  .more:hover { background: var(--surface-2); }
   p { margin: 0; }
 
   .row { position: relative; display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: var(--s-3); padding: var(--s-3) var(--s-4); cursor: pointer;

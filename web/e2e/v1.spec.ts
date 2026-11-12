@@ -254,7 +254,7 @@ test('a post with a reply and a reaction across accounts', async () => {
   const shared = friend.page.locator('article.post', { hasText: text });
   await expect(async () => {
     await go(friend.page, 'journal');
-    await friend.page.getByRole('navigation', { name: 'Journal sections' }).getByRole('button', { name: 'Friends' }).click();
+    await friend.page.getByRole('tablist', { name: 'Journal sections' }).getByRole('tab', { name: 'Friends' }).click();
     await expect(shared).toBeVisible({ timeout: 3_000 });
   }).toPass({ timeout: 30_000 });
   const removeHeart = shared.getByRole('button', { name: /^Remove heart as / });
@@ -277,7 +277,8 @@ test('a post with a reply and a reaction across accounts', async () => {
   const thread = stars.page.getByRole('region', { name: 'Post thread' });
   await expect(thread.getByText(/Replying to/)).toBeVisible();
   await expect(async () => {
-    await thread.getByRole('button', { name: 'Refresh' }).click();
+    await thread.getByRole('button', { name: 'More options' }).click();
+    await stars.page.getByRole('menuitem', { name: 'Refresh' }).click();
     await expect(thread.locator('article.row', { hasText: reply })).toBeVisible({ timeout: 2_000 });
     await expect(thread.getByText('1 like')).toBeVisible({ timeout: 2_000 });
   }).toPass({ timeout: 30_000 });

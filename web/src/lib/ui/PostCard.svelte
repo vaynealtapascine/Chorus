@@ -21,7 +21,7 @@
   import { opensPost, type QuoteView } from '../post-threads';
   import { bookmarkPayload, repostBy, repostPayload, shareText, type SocialIndex } from '../journal-social';
   import { linkTo } from '../share-links';
-  import { entryMeta, fullTimestamp, shortAgo } from '../journal-presentation';
+  import { entryMeta, fullTimestamp, readTime, shortAgo } from '../journal-presentation';
   import { journalCompose } from '../journal-compose.svelte';
   import { router } from '../router.svelte';
   import { memberHandles, shownHandle } from '../handles';
@@ -182,6 +182,7 @@
         <span class="authors">{#each post.authors as id, i (id)}{#if i} &amp; {/if}<a href="#/profile/{id}">{name(id)}</a>{/each}</span>
         {#if handle}<span class="handle">@{handle}</span>{/if}
         <span class="when">· <a href={threadHref} title={fullTimestamp(post.occurred_at)}><time datetime={new Date(post.occurred_at).toISOString()}>{shortAgo(post.occurred_at)}</time></a>{#if post.edited} · edited{/if}</span>
+        {#if full}<span class="aud-pill">{audienceLabel}</span>{/if}
         {#if post.visibility.mode !== 'server' && post.visibility.mode !== 'buckets'}<span class="lock" title={audienceLabel} role="img" aria-label={audienceLabel}><Icon name="lock" size={14} /></span>
         {:else if post.visibility.mode === 'buckets'}{@const b = projection ? buckets(projection).find((x) => post.visibility.bucket_ids?.includes(x.id)) : undefined}<span class="audience"><BucketGlyph icon={b?.icon} color={b?.color} size={14} />{audienceLabel}</span>{/if}
     </div>
@@ -195,14 +196,15 @@
           {#if compactEntry && post.kind === 'entry' && !bodyExpanded}<a class="expand" href={threadHref}>Show more</a>
           {:else}<button class="expand" aria-expanded={bodyExpanded} onclick={() => (bodyExpanded = !bodyExpanded)}>{bodyExpanded ? 'Show less' : 'Show more'}</button>{/if}
         {/if}
-        {#if post.kind === 'entry'}<p class="meta-line">{entryMeta(post.text, post.tags)}</p>{/if}
+        {#if post.kind === 'entry' && full}<p class="chips"><span class="chip">{audienceLabel}</span><span class="chip">{readTime(post.text)}</span></p>
+        {:else if post.kind === 'entry'}<p class="meta-line">{entryMeta(post.text, post.tags)}</p>{/if}
         {#if post.mood}<p class="mood">{post.mood}</p>{/if}
         {#if post.kind !== 'entry' && post.tags.length}<p class="tags">{#each post.tags as tag (tag)}<span>#{tag}</span>{/each}</p>{/if}
         {#if post.attachments?.length}<PostMedia attachments={post.attachments} who={names} occurredAt={post.occurred_at} />{/if}
         {#if poll && projection}<PollCard {projection} parentId={post.id} {poll} member={speaker} internal={post.visibility.mode === 'private'} onclose={own ? () => closePost(post.id) : undefined} />{/if}
         {#if quote}<QuoteEmbed {quote} />{/if}
         {#if full}
-          <p class="detail-time">{detailTime} · {audienceLabel}</p>
+          <p class="detail-time">{detailTime}</p>
           {#if replyCount || reposts || quoteCount || hearts.length}
             <p class="stats">
               {#if replyCount}<span><strong>{replyCount}</strong> {replyCount === 1 ? 'reply' : 'replies'}</span>{/if}
@@ -283,7 +285,11 @@
   .stats strong { color: var(--ink); font-weight: 700; }
   .stat { border: 0; background: none; padding: 0; color: inherit; font: inherit; cursor: pointer; }
   .stat:hover { text-decoration: underline; }
-  .actions.large { margin: 0; padding: 4px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .full .lock { display: none; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip, .aud-pill { padding: 3px 10px; border-radius: var(--r-full); background: var(--surface-2); color: var(--ink-2); font-size: 12px; font-weight: 500; white-space: nowrap; }
+  .aud-pill { margin-left: auto; }
+  .actions.large { position: sticky; bottom: 0; z-index: 2; background: var(--bg); margin: 0; padding: 4px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
   .actions.large .act { min-height: 44px; }
   .avatar { display: inline-grid; width: 40px; height: 40px; border-radius: 50%; overflow: hidden; background: var(--avatar-bg); color: var(--avatar-ink); place-items: center; font-weight: 700; text-decoration: none; }
   .main { display: grid; gap: 4px; min-width: 0; align-content: start; }

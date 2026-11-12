@@ -17,6 +17,9 @@
 
   import Icon from './Icon.svelte';
   import EmptyState from './kit/EmptyState.svelte';
+  import UnderlineTabs from './kit/UnderlineTabs.svelte';
+  import MenuSheet from './kit/MenuSheet.svelte';
+  import MenuRow from './kit/MenuRow.svelte';
   let { projection, dark }: { projection: Projection; dark: boolean } = $props();
   const self = $derived(selfMember(projection));
   const people = $derived(new Map(members(projection).map((m) => [m.id, m] as [string, MemberRow])));
@@ -46,8 +49,11 @@
   let actingAs = $state('');
   const speaker = $derived(actingAs || frontSpeaker || active[0]?.id || null);
   // Android's tabs (Our system, Friends, Journals), then what Android keeps in its menu
-  const SECTIONS = [['timeline', 'Our system'], ['friends', 'Friends'], ['entries', 'Journals'], ['saved', 'Saved'], ['lists', 'Lists'], ['feeds', 'Feeds']] as const;
-  let section = $state<(typeof SECTIONS)[number][0]>('timeline');
+  const TABS = [['timeline', 'Our system'], ['friends', 'Friends'], ['entries', 'Journals']] as const;
+  type TabId = (typeof TABS)[number][0];
+  const SUB: Record<string, string> = { saved: 'Saved', lists: 'Lists', feeds: 'Feeds' };
+  let section = $state<TabId | 'saved' | 'lists' | 'feeds'>('timeline');
+  let menu = $state(false);
   const shownTimeline = $derived(section === 'entries' ? timeline.filter((item) => item.kind === 'post' && item.post.kind === 'entry') : timeline);
   const savedPostsList = $derived(savedList(entries, saved));
   // a card's Quote opens the composer, which lives on the timeline
@@ -77,9 +83,12 @@
 </script>
 
 <div class="journal-layout"><section class="journal">
-  <header><h1 class="display">Journal</h1>{#if self}<a href="#/profile/{self.id}">My profile</a>{:else}<label>React as <select bind:value={actingAs} aria-label="React as member"><option value="">Current front</option>{#each active as person (person.id)}<option value={person.id}>{person.display_name ?? person.name}</option>{/each}</select></label>{/if}</header>
-  <a href="#/search/saved">Search saved posts</a>
-  <nav aria-label="Journal sections">{#each SECTIONS as [id, label] (id)}<button class:on={section === id} aria-current={section === id ? 'page' : undefined} onclick={() => (section = id)}>{label}</button>{/each}{#if !self}<a class="tab-link" href="#/journal/board">Board</a>{/if}</nav>
+  <header><h1 class="display">Journal</h1>
+    <div class="head-tools">{#if self}<a class="me" href="#/profile/{self.id}">My profile</a>{:else}<label>React as <select bind:value={actingAs} aria-label="React as member"><option value="">Current front</option>{#each active as person (person.id)}<option value={person.id}>{person.display_name ?? person.name}</option>{/each}</select></label>{/if}
+      <button class="icon-btn" aria-label="Feeds" title="Feeds" onclick={() => (section = 'feeds')}><Icon name="hash" size={22} /></button>
+      <button class="icon-btn" aria-label="More" aria-haspopup="menu" title="More" onclick={() => (menu = true)}><Icon name="more-vert" size={22} /></button></div></header>
+  {#if SUB[section]}<div class="sub"><button class="icon-btn back" aria-label="Back" onclick={() => (section = 'timeline')}><Icon name="chevron" size={20} /></button><h2>{SUB[section]}</h2></div>
+  {:else}<UnderlineTabs label="Journal sections" value={section as TabId} tabs={TABS.map(([id, label]) => ({ id, label }))} onchange={(id) => (section = id)} />{/if}
   {#if section === 'lists'}<JournalLists {projection} {dark} />{:else if section === 'feeds'}<JournalFeeds {projection} {dark} />
   {:else if section === 'friends'}<JournalFriends {projection} {speaker} speakerName={speaker ? name(speaker) : ''} {dark} />
   {:else if section === 'saved'}
@@ -113,6 +122,14 @@
   </div>
   {/if}
 </section>
+{#if menu}
+  <MenuSheet title="Journal" onclose={() => (menu = false)}>
+    <MenuRow label="Saved" icon="bookmark" onclick={() => { menu = false; section = 'saved'; }} />
+    <MenuRow label="Search saved posts" icon="search" href="#/search/saved" onclick={() => (menu = false)} />
+    <MenuRow label="Lists" icon="members" onclick={() => { menu = false; section = 'lists'; }} />
+    {#if !self}<MenuRow label="System board" icon="layers" href="#/journal/board" onclick={() => (menu = false)} />{/if}
+  </MenuSheet>
+{/if}
 <aside class="journal-context" aria-label="Journal shortcuts">
   <a class="context-search" href="#/search/posts"><Icon name="search" size={18} />Search Journal</a>
   <section><h2>Your journal</h2><button onclick={() => (section = 'timeline')}><Icon name="journal" size={18} />{self ? 'My timeline' : 'System timeline'}</button><button onclick={() => (section = 'friends')}><Icon name="friends" size={18} />Friends’ posts</button><button onclick={() => (section = 'saved')}><Icon name="bookmark" size={18} />Saved posts</button><button onclick={() => (section = 'feeds')}><Icon name="layers" size={18} />Your feeds</button><button onclick={() => (section = 'lists')}><Icon name="members" size={18} />Member lists</button></section>
@@ -135,10 +152,13 @@
   h1, p { margin: 0; }
   /* switching sections fades the new one in */
   .timeline { animation: chorus-fade-in var(--t-fast) var(--ease); }
-  nav { display: flex; gap: var(--s-2); border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
-  nav button { flex: none; border: 0; background: none; padding: var(--s-2) var(--s-3); cursor: pointer; color: var(--ink-3); white-space: nowrap; }
-  .tab-link { flex: none; padding: var(--s-2) var(--s-3); color: var(--ink-3); text-decoration: none; white-space: nowrap; }
-  nav button.on { border-bottom: 2px solid var(--accent); font-weight: 600; color: var(--ink); }
+  .head-tools { display: flex; align-items: center; gap: 4px; }
+  .me { color: var(--accent); text-decoration: none; margin-right: 8px; }
+  .icon-btn { display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 50%; background: none; color: var(--ink-2); cursor: pointer; }
+  .icon-btn:hover { background: var(--surface-2); }
+  .icon-btn.back { transform: rotate(180deg); }
+  .sub { display: flex; align-items: center; gap: 4px; }
+  .sub h2 { margin: 0; font-size: 19px; font-weight: 600; }
   header label { color: var(--ink-3); font-size: var(--fs-sm); }
   select { border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--ink); padding: var(--s-2); }
   .timeline { display: grid; gap: 0; border-top: 1px solid var(--line); }

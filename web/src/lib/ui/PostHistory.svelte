@@ -4,7 +4,7 @@
   import { sync } from '../sync/client';
   import type { Entity } from '../core';
   import RichText from './RichText.svelte';
-  let { id }: { id: string } = $props();
+  let { id, open = false }: { id: string; open?: boolean } = $props();
   let items = $state<{ rev: number; title?: string; text: string; entities: Entity[]; cw?: string; at: number }[]>([]);
   let loading = $state(false);
   let error = $state('');
@@ -17,8 +17,9 @@
     } catch (e) { error = e instanceof Error ? e.message : String(e); }
     finally { loading = false; }
   }
+  $effect(() => { if (open) void load(); });
 </script>
-<details ontoggle={(e) => { if (e.currentTarget.open) void load(); else items = []; }}>
+<details {open} ontoggle={(e) => { if (e.currentTarget.open) void load(); else items = []; }}>
   <summary>Edit history</summary>
   {#if loading}<p role="status">Loading history…</p>{/if}
   {#if error}<p role="alert">{error}</p><button onclick={load}>Retry</button>{/if}

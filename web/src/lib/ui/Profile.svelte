@@ -12,7 +12,10 @@
   import { router } from '../router.svelte';
   import ProfileRelationships from './ProfileRelationships.svelte';
   import ProfileHeader from './ProfileHeader.svelte';
+  import UnderlineTabs from './kit/UnderlineTabs.svelte';
+  import { openMemberDm } from '../member-dm';
   import { memberHandles } from '../handles';
+  import { bodyAuthors } from '../front-view';
 
   let { projection, id, dark }: { projection: Projection; id: string; dark: boolean } = $props();
   const people = $derived(new Map(members(projection).map((m) => [m.id, m] as [string, MemberRow])));
@@ -20,6 +23,12 @@
   const handle = $derived(memberHandles(projection, sync.accountId).get(id)?.shown);
   const own = $derived(canWriteAs(projection, id, sync.accountId));
   const writeAs = $derived(own ? id : members(projection).find((m) => canWriteAs(projection, m.id, sync.accountId))?.id ?? null);
+  // Message: our chat with this member, written from whoever fronts (else another of ours)
+  const dmFrom = $derived.by(() => {
+    if (!own) return null;
+    const writers = members(projection).filter((m) => m.id !== id && canWriteAs(projection, m.id, sync.accountId));
+    return writers.find((m) => bodyAuthors(projection, sync.accountId).includes(m.id))?.id ?? writers[0]?.id ?? null;
+  });
   const all = $derived(posts(projection));
   const social = $derived(socialIndex(all));
   const saved = $derived(savedPosts(projection.rows.pref ?? {}, sync.accountId));
@@ -69,7 +78,7 @@
   {#if member}
     <ProfileHeader banner={member.banner_blob} avatar={member.avatar_blob} glyph={member.sigils[0] ?? member.name[0]} name={member.display_name ?? member.name}
       {handle} color={member.color} subtitle={[member.pronouns, member.sigils.join(' ')].filter(Boolean).join(' · ')} {dark}>
-      {#snippet actions()}{#if own}<a class="action" href="#/members/{id}">Edit profile</a>{/if}{/snippet}
+      {#snippet actions()}{#if own}{#if dmFrom}<button class="action" onclick={() => openMemberDm(projection, dmFrom, id)}>Message</button>{/if}<a class="action" href="#/members/{id}">Edit profile</a>{/if}{/snippet}
       {#if member.description}<p class="bio">{member.description}</p>{/if}
       {#if custom.length}<dl class="fields">{#each custom as field (field.name)}<div><dt>{field.name}</dt><dd>{shownValue(field.value)}</dd></div>{/each}</dl>{/if}
     </ProfileHeader>
@@ -82,7 +91,7 @@
     {#if writeAs}
       <PostComposer {projection} initialAuthors={[writeAs]} />
     {/if}
-    <nav aria-label="Profile sections"><button class:on={tab === 'posts'} onclick={() => (tab = 'posts')}>Posts</button><button class:on={tab === 'replies'} onclick={() => (tab = 'replies')}>Replies</button><button class:on={tab === 'highlights'} onclick={() => (tab = 'highlights')}>Highlights</button><button class:on={tab === 'relationships'} onclick={() => (tab = 'relationships')}>Relationships</button></nav>
+    <UnderlineTabs label="Profile sections" bind:value={tab} tabs={[{ id: 'posts', label: 'Posts' }, { id: 'replies', label: 'Replies' }, { id: 'highlights', label: 'Highlights' }, { id: 'relationships', label: 'Relationships' }]} />
     {#if tab === 'relationships'}<ProfileRelationships {projection} {id} {own} />
     {:else}<div class="list">{#each shown as post (post.id)}<PostCard {projection} {post} quote={quoteView(post.quote_post_id, postById, memberName)} {people} {dark} reactions={reacts.get(post.id) ?? new Map()} speaker={writeAs} {social} {saved} replyCount={social.replies.get(post.id) ?? 0} onreply={() => router.go(`/journal/post/${encodeURIComponent(post.id)}`)} onreact={(emoji, add, as) => react(post, emoji, add, as)} />{#if own}<div class="post-tools">{#if member.pinned_post_id !== post.id}<button onclick={() => pin(post.id)}>Pin to profile</button>{/if}<button onclick={() => highlight(post.id)}>{highlighted.has(post.id) ? 'Remove highlight' : 'Highlight post'}</button></div>{/if}{:else}<EmptyState icon="journal" label="Nothing yet" />{/each}</div>{/if}
   {:else}<p>This member is unavailable.</p>{/if}
@@ -92,7 +101,7 @@
   .profile { max-width: 760px; margin: 0 auto; display: grid; gap: var(--s-4); }
   p { margin: 0; }
   .bio { color: var(--ink-2); }
-  .action { padding: 7px 16px; border: 1px solid var(--line); border-radius: var(--r-full); color: var(--ink); font-weight: 600; text-decoration: none; }
+  .action { background: none; font: inherit; cursor: pointer; padding: 7px 16px; border: 1px solid var(--line); border-radius: var(--r-full); color: var(--ink); font-weight: 600; text-decoration: none; }
   .action:hover { background: var(--surface-2); }
   .fields, .stats { display: flex; flex-wrap: wrap; gap: var(--s-2) var(--s-4); color: var(--ink-2); }
   .fields div { display: flex; gap: var(--s-1); }
@@ -103,8 +112,5 @@
   .pinned > button { justify-self: start; }
   .post-tools { display: flex; gap: var(--s-2); }
   a, button { color: var(--accent); }
-  nav { display: flex; flex-wrap: wrap; gap: var(--s-2); border-bottom: 1px solid var(--line); }
-  nav button { border: 0; background: none; padding: var(--s-2) var(--s-3); cursor: pointer; }
-  nav button.on { border-bottom: 2px solid var(--accent); font-weight: 600; }
   .list { display: grid; gap: var(--s-3); }
 </style>
