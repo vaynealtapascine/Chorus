@@ -128,10 +128,10 @@
     const own = r.space?.kind === 'internal';
     const what = r.channel.kind === 'member_dm' ? 'this chat' : r.space?.kind === 'dm' ? `your chat with ${r.title}` : `#${r.title}`;
     if (own) {
-      if (!confirm(`Delete ${what}? It's deleted for everyone in your system, messages and all.`)) return;
+      if (!confirm(`Delete ${what}?`)) return;
       sync.create('channel.delete', `space:${r.channel.space_id}`, r.channel.id, {});
     } else {
-      if (!confirm(`Clear ${what}? It leaves your chats and its messages leave your view, on all your devices. It comes back if someone writes again; they keep everything.`)) return;
+      if (!confirm(`Clear ${what}?`)) return;
       sync.create('pref.set', sync.accountScope, null, { device: '', key: `${HIDDEN}${r.channel.id}`, value: Math.max(Date.now(), r.at) });
     }
     if (r.pinned) savePins(organize.pins.filter((p) => p !== r.id));
@@ -211,7 +211,7 @@
     <button class="compose" onclick={onnewchat} aria-label="New chat"><Icon name="edit" size={22} /></button>
   </div>
   {#if archiveView}
-    <button class="archive-bar" onclick={() => (showArchived = false)}><Icon name="back" size={18} /> Archived chats <span>A new message brings a chat back</span></button>
+    <button class="archive-bar" onclick={() => (showArchived = false)}><Icon name="back" size={18} /> Archived chats</button>
   {:else if archivedCount && !query.trim()}
     <button class="archive-bar" onclick={() => (showArchived = true)}><Icon name="archive" size={18} /> Archived chats ({archivedCount})</button>
   {/if}
@@ -357,7 +357,6 @@
   .archive-bar { display: flex; align-items: center; gap: 8px; margin: 0 12px 8px; padding: 8px 12px; border: 0; border-radius: var(--r-md);
     background: var(--surface); color: var(--ink-2); font: inherit; font-size: var(--fs-sm); cursor: pointer; text-align: left; }
   .archive-bar:hover { background: var(--surface-2); color: var(--ink); }
-  .archive-bar span { color: var(--ink-3); margin-left: auto; font-size: 12px; }
   .row-wrap { position: relative; }
   .row-wrap.drop { box-shadow: inset 0 2px 0 var(--accent); }
   .row.pinned { background: var(--surface); }

@@ -63,12 +63,11 @@
 <section class="fr-page">
   <header class="fr-bar">
     <a class="fr-icon ink" href={f ? `#/people/${encodeURIComponent(f.account.id)}` : '#/people'} aria-label="Back"><Icon name="back" /></a>
-    <div class="fr-titles"><strong>Notifications from {name}</strong><span>Only you see these settings</span></div>
+    <div class="fr-titles"><strong>Notifications from {name}</strong></div>
     <a class="fr-icon accent" href={f ? `#/people/${encodeURIComponent(f.account.id)}` : '#/people'} aria-label="Done"><Icon name="check" /></a>
   </header>
   {#if !f}<p class="fr-empty">{friends.loaded ? 'You don’t follow them any more.' : 'Loading…'}</p>
   {:else}
-    <p class="fr-note"><Icon name="shield" size={16} />{name} decide the most you can hear. Here you can only make it quieter.</p>
     {#if error}<p class="fr-error" role="alert">{error}</p>{/if}
     {#if isSystem(f.account)}
       <h2 class="fr-section"><span>Switches</span></h2>
@@ -128,7 +127,7 @@
 {/snippet}
 
 {#if quietOpen}
-  <Sheet title="Quiet hours" subtitle="Your time. Their switches wait or are skipped." onclose={() => (quietOpen = false)}>
+  <Sheet title="Quiet hours" onclose={() => (quietOpen = false)}>
     <button class="fr-toggle" role="switch" aria-checked={qOn} onclick={() => (qOn = !qOn)}><span class="fr-text"><strong>Quiet hours</strong></span><span class="fr-switch"></span></button>
     {#if qOn}
       <div class="times">

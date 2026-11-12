@@ -112,7 +112,7 @@
   </Sheet>
 {/if}
 {#if hears}
-  <Sheet title="Who {name} hear about" subtitle="Each member chooses who hears when they front" onclose={() => (hears = false)}>
+  <Sheet title="Who {name} hear about" onclose={() => (hears = false)}>
     {#each hearing as { m, on } (m.id)}
       {@const raw = projection.rows.member?.[m.id]?.fields.notify_policy}
       {@const announce = ((typeof raw === 'string' ? JSON.parse(raw) : raw) as { announce?: unknown } | null)?.announce}
@@ -130,7 +130,7 @@
   </Sheet>
 {/if}
 {#if justFor && f}
-  <Sheet title="Just for {name}" subtitle="Anything set here wins over their buckets" onclose={() => (justFor = false)}>
+  <Sheet title="Just for {name}" onclose={() => (justFor = false)}>
     <div class="flush"><CeilingDetails {projection} ceiling={override} inherited={theirs.length ? 'their buckets' : 'Everyone else'} {beneath} onchange={setCeiling} /></div>
     {#if Object.keys(override).length}
       <button class="fr-wide neutral" onclick={() => setCeiling(Object.fromEntries(Object.entries(override).filter(([k]) => k === 'fronts' || k === 'layers')))}>Use their buckets for everything</button>

@@ -1362,7 +1362,6 @@
         <div class="locked" role="status">
           <span class="lock-disc"><Icon name="lock" size={28} /></span>
           <strong>This chat is private</strong>
-          <p>It belongs to one member of your system, and opens while they're fronting or co-conscious.</p>
         </div>
       {/if}
       {#each timeline as line (line.key)}
@@ -1734,7 +1733,6 @@
   .speakers-pick { display: grid; gap: 2px; border: 0; padding: 0; margin: 0; max-height: 200px; overflow: auto; }
   .speakers-pick label { display: flex; align-items: center; gap: 6px; }
   .locked { display: grid; justify-items: center; gap: 8px; margin: auto; max-width: 340px; padding: 32px 16px; text-align: center; color: var(--ink-2); }
-  .locked p { margin: 0; font-size: var(--fs-sm); color: var(--ink-3); }
   .lock-disc { width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2); color: var(--ink-2); }
   .chat {
     display: grid;

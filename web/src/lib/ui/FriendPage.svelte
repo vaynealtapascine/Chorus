@@ -128,7 +128,6 @@
     {#if !r.following && r.follower?.status === 'active'}<p class="fr-note"><Icon name="user-plus" size={16} />{name} follows you. Once you follow back and they accept, you’ll see what they share with followers, and you’re friends.</p>{/if}
 
     {#if !isSystem(r.account)}
-      <p class="fr-note"><Icon name="user" size={16} />{name} is one person, so there’s no fronting to show. You see their posts, journal and messages.</p>
       {@render between(r)}
       <div class="fr-tabs on-page" role="tablist" aria-label="{name}’s posts">
         {#each [['posts', 'Posts'], ['journal', 'Journal'], ['about', 'About']] as [id, label] (id)}
@@ -176,7 +175,7 @@
             {#each v.history.slice(1) as h, i (i)}<p class="fr-line quiet">{h.entries.map((e) => e.name).join(' & ') || 'Nobody shared'}</p>{/each}
           </details>
         {/if}
-      {:else if waiting(r)}<p class="fr-note"><Icon name="clock" size={16} />Once they accept, you’ll see who’s around as they share it.</p>{/if}
+      {/if}
       {#if shared?.length}
         <h2 class="fr-section"><span>Members you can see</span><span class="fr-aside">{shared.length}</span></h2>
         {#if viewerPerson}
@@ -201,7 +200,6 @@
         {/if}
       {:else if shared && follows(r)}<p class="fr-note"><Icon name="members" size={16} />{name} haven’t shared any member profiles with you yet.</p>{/if}
       {@render between(r)}
-      {#if viewerPerson}<p class="fr-note"><Icon name="shield" size={16} />{name} choose what they share and when. You can make their notifications quieter, never louder.</p>{/if}
     {/if}
   {/if}
 </section>

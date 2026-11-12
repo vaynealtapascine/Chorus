@@ -64,7 +64,6 @@
   {@const b = byId.get(r.switch_b)}
   <!-- Figma F3.6: two devices switched within a minute; tap the right one, or keep both or merge -->
   <aside class="review" role="status">
-    <p class="lead">Keep an accurate history across your devices.</p>
     <p>Two devices switched within a minute.</p>
     {#each [a, b] as side, i (i)}
       <button class="side" class:on={picked[r.id] === (i === 0 ? 'a' : 'b')} aria-pressed={picked[r.id] === (i === 0 ? 'a' : 'b')} disabled={!side}
@@ -83,7 +82,6 @@
 <style>
   .review { background: var(--surface); border-radius: 16px; padding: 14px; display: grid; gap: 10px; }
   p { margin: 0; font-size: 14px; }
-  .lead { color: var(--ink-2); font-size: 13px; }
   .side { display: grid; gap: 2px; text-align: left; background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; color: var(--ink); font: inherit; cursor: pointer; }
   .side.on { border-color: var(--accent); }
   .side strong { font-size: 16px; font-weight: 600; }

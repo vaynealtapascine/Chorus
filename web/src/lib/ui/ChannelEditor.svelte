@@ -106,7 +106,7 @@
   function remove() {
     if (!channel) return;
     const name = what === 'member_dm' ? 'this chat' : `#${channel.name}`;
-    if (!confirm(`Delete ${name}? It goes for everyone here, messages and all. It can be restored from Trash.`)) return;
+    if (!confirm(`Delete ${name}?`)) return;
     sync.create('channel.delete', `space:${spaceId}`, channel.id, {});
     onclose();
     location.hash = '#/chat';
@@ -165,8 +165,7 @@
       </fieldset>
     {/if}
     {#if what === 'member_dm' || keptToSome}
-      <p class="hint">{what === 'member_dm' ? 'People in this chat.' : 'It shows only while one of them is fronting or co-conscious.'} This is privacy within your system, not a lock: you all share this account.</p>
-      {#if people.length > 8}<input class="search" bind:value={query} placeholder="Search members" aria-label="Search members" />{/if}
+            {#if people.length > 8}<input class="search" bind:value={query} placeholder="Search members" aria-label="Search members" />{/if}
       <div class="people" role="group" aria-label="Members">
         {#each shownPeople as m (m.id)}
           {@const c = core.adaptColor(m.color, dark)}

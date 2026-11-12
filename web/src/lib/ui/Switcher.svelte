@@ -112,7 +112,7 @@
 <div class="sheet" role="dialog" aria-modal="true" aria-label="Switch {view.name}">
   <div class="handle" aria-hidden="true"></div>
   <header>
-    <div class="titles"><h2>Switch · {view.name}</h2><p>Tap to place someone. Tap again to move them outward.</p></div>
+    <div class="titles"><h2>Switch · {view.name}</h2></div>
     <button class="icon-btn" aria-label={searching ? 'Close search' : 'Search'} onclick={() => { searching = !searching; query = ''; }}><Icon name="search" size={22} /></button>
     <button class="icon-btn" aria-label="Close" onclick={onclose}><Icon name="close" size={22} /></button>
   </header>
@@ -163,7 +163,6 @@
   header { display: flex; align-items: center; gap: 4px; padding: 6px 8px 4px 20px; }
   .titles { flex: 1; min-width: 0; }
   h2 { margin: 0; font-size: 18px; line-height: 24px; font-weight: 700; }
-  .titles p { margin: 0; color: var(--ink-3); font-size: 12px; line-height: 16px; }
   .icon-btn { width: 44px; height: 44px; display: grid; place-items: center; border: 0; background: none; color: var(--ink-2); border-radius: 50%; cursor: pointer; }
   .seg { display: flex; gap: 3px; margin: 8px 16px 6px; padding: 3px; border-radius: 12px; background: var(--surface-2); }
   .seg button { flex: 1; padding: 8px; min-height: 36px; border: 0; border-radius: 9px; background: none; color: var(--ink-3); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }

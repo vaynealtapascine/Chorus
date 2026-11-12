@@ -35,7 +35,7 @@
   }
 </script>
 
-<Sheet title="Let {name} follow you?" subtitle="Choose how much they hear. You can change it any time." {onclose}>
+<Sheet title="Let {name} follow you?" subtitle="Choose how much they hear" {onclose}>
   <div class="card" role="radiogroup" aria-label="How much they hear">
     {#each PRESET_IDS as p (p)}
       <button class="choice" role="radio" aria-checked={preset === p} onclick={() => (picked = p)}>
@@ -49,7 +49,6 @@
     <span class="text"><span>Bucket</span><strong>{bucket?.name ?? 'No bucket'}</strong></span>
     <span class="down"><Icon name="chevron" size={18} /></span>
   </button>
-  <p class="why"><Icon name="clock" size={16} />A delay hides when you switched as it happens. Rounding hides the exact time afterwards. Use both for real privacy.</p>
   {#snippet footer()}
     <button class="fr-wide neutral decline" onclick={ondecline}>Decline</button>
     <button class="fr-wide" onclick={accept}>{preset ? `Accept as ${presetName(preset)}` : 'Accept'}</button>
@@ -86,8 +85,6 @@
   .bucket .text strong { font-weight: 600; }
   .tile { width: 36px; height: 36px; border-radius: 9px; background: var(--surface-3, var(--bg)); color: var(--ink-3); }
   .down { color: var(--ink-3); transform: rotate(90deg); display: grid; }
-  .why { display: flex; gap: 8px; margin: 0 4px; color: var(--ink-2); font-size: 13px; line-height: 18px; }
-  .why :global(.icon) { color: var(--accent); margin-top: 1px; }
   .decline { flex: .4; }
   .options { display: grid; gap: 2px; }
   .options button { display: flex; align-items: center; gap: 14px; padding: 8px 12px; border: 0; border-radius: 12px; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }

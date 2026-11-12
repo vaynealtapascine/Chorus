@@ -122,7 +122,7 @@
       {/each}
     </div>
     {#if who.type === 'member'}
-      <button class="setting" onclick={openState}><span><strong>State</strong><span>{status ?? 'Tired, nonverbal, busy, or your own words'}</span></span><Icon name="chevron-right" size={18} /></button>
+      <button class="setting" onclick={openState}><span><strong>State</strong><span>{status ?? ''}</span></span><Icon name="chevron-right" size={18} /></button>
     {/if}
     {#if configured && fronts.length > 1}
       <p class="section">Also present in</p>

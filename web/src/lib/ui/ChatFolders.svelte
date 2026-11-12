@@ -94,7 +94,7 @@
     </fieldset>
     {#if !isNew}
       {#if confirmDelete}
-        <div class="confirm">Delete “{draft.name || 'Folder'}”? Its chats stay where they are.
+        <div class="confirm">Delete “{draft.name || 'Folder'}”
           <button class="danger" onclick={remove}>Delete</button><button class="ghost" onclick={() => (confirmDelete = false)}>Keep</button></div>
       {:else}<button class="danger-link" onclick={() => (confirmDelete = true)}>Delete folder</button>{/if}
     {/if}
@@ -103,7 +103,6 @@
       <h2>Chat folders</h2>
       <button class="ghost" onclick={onclose}>Done</button>
     </div>
-    <p class="hint">Sort chats and hide what you don’t need. Your devices share these.</p>
     <ul class="folders" aria-label="My folders">
       {#each folders as id, i (id)}
         {@const shown = !settings.hidden.includes(id)}

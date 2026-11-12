@@ -183,10 +183,7 @@
       <h1 class="display">Stage</h1>
       <button class="primary" onclick={capture}>Capture</button>
     </div>
-    <p class="hint">
-      {def.selected.length ? `${def.selected.length} picked — tap to add or remove.` : 'Tap messages to pick them. With nothing picked, everything shows.'}
-      Nothing here changes your real messages.
-    </p>
+    <p class="hint">{def.selected.length ? `${def.selected.length} picked` : ''}</p>
 
     <div class="panel">
       <div class="group">

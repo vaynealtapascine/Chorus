@@ -76,7 +76,7 @@
 <div class="page">
   <div class="bar">
     <a class="back" href="#/" aria-label="Back to Fronting"><Icon name="back" size={22} /></a>
-    <div class="titles"><strong>Layers &amp; display</strong><span>{summary?.name ?? 'Body'} · each front can be set up differently</span></div>
+    <div class="titles"><strong>Layers &amp; display</strong><span>{summary?.name ?? 'Body'}</span></div>
     <button class="icon-btn" aria-pressed={arranging} aria-label={arranging ? 'Done arranging' : 'Arrange layers'} onclick={() => (arranging = !arranging)}><Icon name={arranging ? 'check' : 'pencil'} size={22} /></button>
   </div>
 
@@ -115,7 +115,6 @@
     </div>
     <button class="add-layer" onclick={() => open('new')}><Icon name="plus" size={20} />Add a layer, e.g. Passive influence</button>
   </div>
-  <p class="hint">Names and order are shared by every front; renaming or reordering never rewrites history.</p>
 
   {#if editing}
     {@const l = editing === 'new' ? null : scene.all.find((x) => x.id === editing)}
@@ -130,7 +129,7 @@
       <div class="swatches" role="radiogroup" aria-label="Colour">
         {#each SWATCHES as hex (hex ?? 'accent')}<button type="button" role="radio" aria-checked={draft.color === hex} aria-label={hex ?? 'Accent'} class:on={draft.color === hex} style="background: {hex ?? 'var(--surface-2)'}" onclick={() => (draft.color = hex)}>{hex ? '' : 'A'}</button>{/each}
       </div>
-      <label class="inline"><input type="checkbox" bind:checked={draft.separate} /> List separately (its own row, not nested)</label>
+      <label class="inline"><input type="checkbox" bind:checked={draft.separate} /> List separately</label>
       <div class="row-buttons">
         <button class="primary" disabled={!draft.name.trim()}>Save</button>
         <button type="button" class="plain" onclick={() => (editing = null)}>Cancel</button>
@@ -158,7 +157,6 @@
 
   <h2>Front states</h2>
   <div class="panel pad">
-    <p class="hint">States like Blurry or Dissociated can be switched in like a member.</p>
     <div class="state-chips">
       {#each states as [id, row] (id)}<span class="state">{String(row.fields.name ?? 'State')}<button aria-label="Remove {String(row.fields.name ?? 'state')}" onclick={() => sync.create('state.delete', sync.accountScope, id, {})}><Icon name="close" size={14} /></button></span>{/each}
     </div>
@@ -204,7 +202,6 @@
   .mini:disabled { color: var(--ink-3); }
   .icon-btn { width: 44px; height: 44px; flex: none; display: grid; place-items: center; border: 0; background: none; color: var(--ink-2); border-radius: 50%; cursor: pointer; }
   .add-layer { display: flex; align-items: center; gap: 12px; padding: 12px 12px 12px 14px; border: 0; background: none; color: var(--accent); font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; text-align: left; }
-  .hint { margin: 4px; color: var(--ink-3); font-size: 12px; }
   .editor { padding: 14px; gap: 10px; margin-top: 8px; }
   .editor label { display: grid; gap: 4px; font-size: 13px; color: var(--ink-2); }
   .editor input:not([type='checkbox']), .add input { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }

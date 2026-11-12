@@ -127,7 +127,7 @@
     {@const back = shown.filter((r) => !r.following)}
     {#if friends.loaded && !shown.length}{@render empty()}{/if}
     {#if near.length}
-      <h2 class="fr-section"><span>Around right now</span><span class="fr-aside">as each friend shares it</span></h2>
+      <h2 class="fr-section"><span>Around right now</span></h2>
       <ul class="fr-list">{#each near as r (r.account.id)}<li>{@render row(r, true)}</li>{/each}</ul>
     {/if}
     {#if rest.length}
@@ -142,7 +142,6 @@
       <h2 class="fr-section"><span>Follow you</span><span class="fr-aside">follow back to see what they share</span></h2>
       <ul class="fr-list">{#each back as r (r.account.id)}<li>{@render row(r, false)}</li>{/each}</ul>
     {/if}
-    {#if both.length}<p class="fr-note"><Icon name="clock" size={16} />Times are as each friend shares them. Some round to the quarter hour or show only “this morning”.</p>{/if}
   {:else if tabs[tab] === 'Following'}
     {@const followed = shown.filter((r) => r.following)}
     {#if friends.loaded && !followed.length}{@render empty()}{/if}
@@ -297,10 +296,9 @@
 {/snippet}
 
 {#if adding}
-  <Sheet title="Follow someone" subtitle="They’ll get a request and choose what you see" onclose={() => (adding = false)}>
+  <Sheet title="Follow someone" onclose={() => (adding = false)}>
     <form class="follow" onsubmit={follow}>
       <label class="fr-field"><span>THEIR HANDLE</span><input bind:value={handle} placeholder="@handle" autocomplete="off" aria-label="Their handle" /></label>
-      <p class="fr-note accent"><Icon name="shield" size={16} />{person ? 'Once they accept, you see what they share with followers.' : 'Once they accept, you see what they share with followers. Following them doesn’t share anything of yours.'}</p>
       <button class="fr-wide" disabled={!handle.trim()}>Send request</button>
     </form>
   </Sheet>
@@ -348,7 +346,6 @@
   .tile { width: 44px; height: 44px; border-radius: 12px; }
   .preset { background: var(--surface-2); color: var(--ink); font-weight: 500; padding: 4px 10px; border-radius: 12px; }
   .follow { display: grid; gap: 12px; }
-  .follow .fr-note { margin: 0; }
   .options { display: grid; gap: 2px; }
   .options button { display: flex; align-items: center; gap: 14px; padding: 10px 12px; border: 0; border-radius: 12px; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
   .options button.on { background: var(--accent-soft); }

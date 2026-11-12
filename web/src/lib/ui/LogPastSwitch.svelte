@@ -74,7 +74,6 @@
     <div class="titles"><strong>Log a past switch</strong><span>{fronts.find((f) => f.id === front)?.name ?? 'Body'}</span></div>
     <button class="icon-btn accent" aria-label="Save to history" onclick={save}><Icon name="check" size={22} /></button>
   </div>
-  <p class="banner"><Icon name="history" size={18} />Logging the past doesn't change who's fronting now.</p>
   <div class="panel">
     <label class="row"><Icon name="target" size={20} /><span>Front</span>
       <select value={front} disabled={!configured} onchange={(e) => { front = e.currentTarget.value; people = []; }}>
@@ -125,8 +124,6 @@
   @media (min-width: 1024px) { .titles { visibility: hidden; } }
   .titles strong { font-size: 17px; font-weight: 600; }
   .titles span { color: var(--ink-3); font-size: 12px; }
-  .banner { display: flex; align-items: center; gap: 10px; margin: 0; padding: 10px 12px; border-radius: 12px; background: var(--accent-soft); font-size: 13px; }
-  .banner :global(.icon) { color: var(--accent); }
   .panel { background: var(--surface); border-radius: 16px; display: grid; overflow: hidden; }
   .row { display: flex; align-items: center; gap: 12px; padding: 10px 16px; min-height: 52px; border-bottom: 1px solid var(--line); }
   .row:last-child { border-bottom: 0; }

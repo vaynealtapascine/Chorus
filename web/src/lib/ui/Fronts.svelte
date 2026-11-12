@@ -99,10 +99,9 @@
 <div class="fronts">
   <div class="bar">
     <a class="back" href="#/" aria-label="Back to Fronting"><Icon name="back" size={22} /></a>
-    <div class="titles"><strong>Fronts</strong><span>Separate places someone can be present</span></div>
+    <div class="titles"><strong>Fronts</strong></div>
     <button class="icon-btn" aria-pressed={arranging} aria-label={arranging ? 'Done arranging' : 'Arrange fronts'} onclick={() => (arranging = !arranging)}><Icon name={arranging ? 'check' : 'pencil'} size={22} /></button>
   </div>
-  <p class="intro">Each front has its own layers. Track who's in the body, who's posting in Chorus and who's in your inner world, without mixing them up.</p>
 
   <ul class="cards">
     {#each live as f, i (f.id)}
@@ -143,7 +142,6 @@
                 {#each live.filter((o) => o.id !== f.id) as o (o.id)}<option value={o.id}>{o.name}</option>{/each}
               </select>
             </label>
-            <p class="hint">A following front mirrors its source. Changing it by hand keeps your change until you choose Resume following.</p>
             <a class="link" href="#/layers/{f.id}">Layers &amp; display for {f.name}</a>
             <details>
               <summary>Who counts for what</summary>
@@ -155,7 +153,6 @@
                   <label class="inline"><input type="checkbox" checked={sel === null} onchange={(e) => setSelection(f.id, p.key, e.currentTarget.checked ? null : [])} /> Use the default</label>
                   {#if sel !== null}
                     <div class="checks">{#each layers as l (l.id)}<label class="inline"><input type="checkbox" checked={sel.includes(l.id)} onchange={(e) => toggleLayer(f.id, p.key, l.id, e.currentTarget.checked)} /> {l.name}</label>{/each}</div>
-                    {#if !sel.length}<p class="hint">Nobody is selected.</p>{/if}
                   {/if}
                 </fieldset>
               {/each}
@@ -199,8 +196,6 @@
   .titles { flex: 1; display: grid; padding-left: 4px; }
   @media (min-width: 1024px) { .titles { visibility: hidden; } }
   .titles strong { font-size: 17px; font-weight: 600; }
-  .titles span { color: var(--ink-3); font-size: 12px; }
-  .intro { margin: 0 4px 4px; color: var(--ink-2); font-size: 14px; line-height: 20px; }
   .cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
   .card { display: grid; grid-template-columns: 1fr auto; gap: 0 4px; background: var(--surface); border-radius: 18px; padding: 12px 4px 12px 12px; }
   .card.dragging { opacity: 0.5; }

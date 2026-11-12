@@ -160,7 +160,7 @@
               <label>Time <input type="datetime-local" bind:value={editAt} /></label>
               <button class="link" disabled={!Number.isFinite(new Date(editAt).getTime())} onclick={() => change('amend', s.id, { occurred_at: new Date(editAt).getTime() }) && (acting = null)}>Save time</button>
               <button class="link" onclick={() => change('retract', s.id) && (acting = null)}>Undo this switch</button>
-            {:else}<p class="muted">{configured ? 'This change came from the front this one follows; edit it there.' : "This entry can't be edited here."}</p>{/if}
+            {:else}<p class="muted">{configured ? 'Comes from the front it follows' : "This entry can't be edited here."}</p>{/if}
           </div>
         {/if}</li>
       {/each}
@@ -170,7 +170,7 @@
   <button class="log" onclick={() => (logging = true)}><Icon name="history" size={20} />Log a past switch</button>
 
   <button class="saved-head" aria-expanded={savedOpen} onclick={() => (savedOpen = !savedOpen)}>
-    <span><strong>Saved entries</strong><span>Edit, undo or restore what was recorded. Past edits keep following active.</span></span><Icon name="chevron-right" size={18} />
+    <span><strong>Saved entries</strong></span><Icon name="chevron-right" size={18} />
   </button>
   {#if savedOpen}
     <ol class="saved">
@@ -239,7 +239,6 @@
   .saved-head { display: flex; align-items: center; gap: 8px; padding: 8px 4px; border: 0; background: none; font: inherit; text-align: left; cursor: pointer; color: var(--ink-3); }
   .saved-head > span { flex: 1; display: grid; }
   .saved-head strong { color: var(--ink-2); font-size: 13px; }
-  .saved-head span span { font-size: 12px; }
   .saved { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
   .saved li { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 10px 12px; background: var(--surface); border-radius: 14px; }
   .saved li time { color: var(--ink-3); font-size: 12px; }

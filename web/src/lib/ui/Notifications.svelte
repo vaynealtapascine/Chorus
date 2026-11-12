@@ -47,7 +47,7 @@
 
   async function load() {
     loading = true;
-    try { await refreshInbox(projection, true); error = ''; } catch { error = 'Couldn’t check for new notifications. Showing what this device has.'; }
+    try { await refreshInbox(projection, true); error = ''; } catch { error = 'Offline. Showing saved.'; }
     finally { loading = false; }
   }
   $effect(() => { void sync.device?.session; void load(); });
@@ -128,7 +128,6 @@
     </header>
     {#if readAs}
       <div class="read-as" role="dialog" aria-label="Read as">
-        <p>Each member keeps their own unread marks. Marks never leave your system.</p>
         {#each own as m (m.id)}
           {@const n = unread(items, marks.get(m.id) ?? { until: 0, ids: [] }, pref)}
           {@const c = core.adaptColor(m.color, dark)}
@@ -195,7 +194,6 @@
       <header><h2>Quiet hours</h2><a href="#/settings">Change</a></header>
       <p class="quiet-line"><Icon name="clock" size={18} />Set per friend in Notification settings; pings wait until morning.</p>
     </section>
-    <p class="footnote">Everything here also reaches your devices as set in Notification settings.</p>
   </aside>
 </div>
 
@@ -212,7 +210,7 @@
     <button role="menuitem" onclick={() => { menu = null; open(item); }}><Icon name="chevron-right" size={18} />{item.postId ? 'Open post' : item.channelId ? 'Open chat' : item.actor && item.accountId ? `Open ${item.actor}` : 'Open'}</button>
     {#if isFriend}
       <button role="menuitem" onclick={() => quietHour(item)}><Icon name="muted" size={18} /><span>Quiet {item.actor} for an hour<small>Their switches wait an hour</small></span></button>
-      <button role="menuitem" onclick={() => { menu = null; router.go(`/people/${encodeURIComponent(item.accountId!)}`); }}><Icon name="bell" size={18} /><span>Notifications from {item.actor}<small>Who, which layers, how often</small></span></button>
+      <button role="menuitem" onclick={() => { menu = null; router.go(`/people/${encodeURIComponent(item.accountId!)}`); }}><Icon name="bell" size={18} /><span>Notifications from {item.actor}</span></button>
     {/if}
     {#if item.shows}
       {@const label = SHOWS.find(([k]) => k === item.shows)?.[1] ?? ''}
@@ -247,7 +245,6 @@
   .chips button.on { background: var(--accent); color: var(--on-accent); }
   .chips button.on span { color: inherit; opacity: .8; }
   .read-as { margin: 0 20px 8px; padding: 8px; border-radius: var(--r-md); background: var(--surface); display: grid; gap: 2px; animation: chorus-fade-in var(--t-fast) var(--ease); }
-  .read-as p { margin: 4px 8px 8px; color: var(--ink-3); font-size: var(--fs-sm); }
   .read-as button { display: flex; align-items: center; gap: 12px; border: 0; border-radius: 12px; background: none; color: var(--ink); padding: 8px; font: inherit; cursor: pointer; text-align: left; }
   .read-as button.on { background: var(--accent-soft); }
   .read-as .who { flex: 1; font-weight: 600; }
