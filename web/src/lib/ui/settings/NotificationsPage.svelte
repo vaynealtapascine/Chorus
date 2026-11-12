@@ -1,8 +1,11 @@
 <script lang="ts">
-  // What pings this account and this browser (no Figma frame; Android's Notification settings page).
+  // What pings this account and this browser (F7.13, as far as a browser can: a status card with Turn on and
+  // Send a test, and a switch per kind the account can silence; `notify_chat` is account-wide, so it also
+  // governs the phone).
   import FormCard from '../kit/FormCard.svelte';
   import PageHeader from '../kit/PageHeader.svelte';
   import SectionLabel from '../kit/SectionLabel.svelte';
+  import Icon from '../Icon.svelte';
   import Switch from '../kit/Switch.svelte';
   import { selfMember } from '../../data';
   import { prefOf, savePref, settingsApi } from '../../settings-api';
@@ -50,7 +53,8 @@
 
   // this browser's notifications (Web Push, or the page's own while it's open)
   let pushOn = $state(false);
-  let canNotify = $state(typeof Notification !== 'undefined' && Notification.permission === 'granted');
+  let permission = $state<NotificationPermission | 'unsupported'>(typeof Notification === 'undefined' ? 'unsupported' : Notification.permission);
+  const canNotify = $derived(permission === 'granted');
   let pushNote = $state('');
   pushActive().then((on) => (pushOn = on));
   async function enableNotifications() {
@@ -58,24 +62,41 @@
       const err = await enablePush();
       pushOn = !err;
       pushNote = err ? `${err} Notifications will show while Chorus is open.` : '';
-      if (!err) { canNotify = true; return; }
+      permission = Notification.permission;
+      if (!err) return;
     }
-    canNotify = (await Notification.requestPermission()) === 'granted';
+    permission = await Notification.requestPermission();
   }
   async function sendTest() {
     const err = await testPush();
     pushNote = err ? `The test didn't go out: ${err}` : 'Sent.';
   }
-  const canAsk = $derived(typeof Notification !== 'undefined' && (!canNotify || pushSupported()));
+  const status = $derived(pushOn ? ['Notifications are on', 'Arriving through push']
+    : canNotify ? ['Notifications are on', 'While Chorus is open']
+    : permission === 'denied' ? ['Notifications are blocked', 'Blocked for this site']
+    : permission === 'unsupported' ? ['Notifications are off', 'This browser can’t show them'] : ['Notifications are off', null]);
+  const canAsk = $derived(permission === 'default' || (permission === 'granted' && pushSupported() && !pushOn));
 </script>
 
 <section class="page">
   <PageHeader title="Notifications" />
+  <FormCard label="This browser">
+    <div class="status">
+      <span class="disc" class:on={canNotify || pushOn}><Icon name={canNotify || pushOn ? 'bell' : 'bell-off'} size={22} /></span>
+      <span class="text"><strong>{status[0]}</strong>{#if status[1]}<span>{status[1]}</span>{/if}</span>
+      {#if pushOn}<button class="fr-btn soft" onclick={sendTest}>Send a test</button>
+      {:else if canAsk}<button class="fr-btn soft" onclick={enableNotifications}>Turn on</button>{/if}
+    </div>
+    {#if pushOn}<button class="row" onclick={async () => { await disablePush(); pushOn = false; }}>Turn off in this browser</button>{/if}
+  </FormCard>
+  {#if pushNote}<p class="note" role="status">{pushNote}</p>{/if}
+  <SectionLabel label="Notify me about" />
   <FormCard label="Notify me about">
     <Switch label="Mentions" checked={kinds.mention !== false} onchange={(on) => chatKind('mention', on)} />
     <Switch label="Direct messages" checked={kinds.dm !== false} onchange={(on) => chatKind('dm', on)} />
     <Switch label="Replies" checked={kinds.reply !== false} onchange={(on) => chatKind('reply', on)} />
     <Switch label="Poll nudges" checked={kinds.poll_nudge !== false} onchange={(on) => chatKind('poll_nudge', on)} />
+    {#if isSystem}<Switch label="Our own switches" checked={kinds.own_switch === true} onchange={(on) => chatKind('own_switch', on)} />{/if}
   </FormCard>
   {#if active.length}
     <SectionLabel label="Quiet hours" />
@@ -90,21 +111,8 @@
     </FormCard>
   {/if}
   {#if note}<p class="note" role="status">{note}</p>{/if}
-  <SectionLabel label="This browser" />
-  <FormCard>
-    {#if pushOn}
-      <button class="row" onclick={sendTest}>Send a test</button>
-      <button class="row" onclick={async () => { await disablePush(); pushOn = false; }}>Stop notifying this browser</button>
-    {:else if canAsk}
-      <button class="row" onclick={enableNotifications}>Notify me in this browser</button>
-    {:else}
-      <p class="row off">{canNotify ? 'Notifies while Chorus is open.' : 'This browser can’t show notifications.'}</p>
-    {/if}
-  </FormCard>
-  {#if pushNote}<p class="note" role="status">{pushNote}</p>{/if}
   {#if isSystem}
     <FormCard>
-      <Switch label="Ping my other devices when the front changes" checked={kinds.own_switch === true} onchange={(on) => chatKind('own_switch', on)} />
       <Switch label="Reply as the mentioned member" checked={kinds.reply_as_mentioned === true} onchange={(on) => chatKind('reply_as_mentioned', on)} />
     </FormCard>
   {/if}
@@ -115,6 +123,11 @@
   .times { display: flex; align-items: center; gap: 10px; padding: 10px 14px; color: var(--ink-3); }
   input[type='time'] { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; }
   .row { display: block; width: 100%; min-height: 46px; padding: 10px 14px; border: 0; background: none; color: var(--ink); font: inherit; font-size: 15px; text-align: left; cursor: pointer; margin: 0; }
-  .row.off { color: var(--ink-3); cursor: default; }
+  .status { display: flex; align-items: center; gap: 14px; padding: 12px 14px; }
+  .disc { width: 40px; height: 40px; flex: none; display: grid; place-items: center; border-radius: 50%; background: var(--surface-3, var(--surface)); color: var(--ink-3); }
+  .disc.on { background: var(--accent-soft); color: var(--accent); }
+  .text { flex: 1; min-width: 0; display: grid; }
+  .text strong { font-size: 15px; font-weight: 600; }
+  .text span { color: var(--ink-3); font-size: 13px; }
   .note { margin: 0; color: var(--ink-3); font-size: 13px; padding: 0 4px; }
 </style>
