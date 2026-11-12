@@ -1,4 +1,5 @@
 <script lang="ts">
+  import EmptyState from './kit/EmptyState.svelte';
   import { channels, trashItems, type TrashKind } from '../data';
   import { chatShown } from '../chat-visible';
   import { sync, type Projection } from '../sync/client';
@@ -52,7 +53,7 @@
         <button disabled={!item.scope} onclick={() => sync.create(restoreOp[item.kind], item.scope, item.id, {})}>Restore</button>
       </article>
     {:else}
-      <p class="empty">{query || kind !== 'all' ? 'No deleted items match.' : 'Trash is empty.'}</p>
+      <EmptyState icon="delete" label={query || kind !== 'all' ? 'Nothing here' : 'Trash is empty'} />
     {/each}
   </div>
 </section>
@@ -73,5 +74,4 @@
   article p { margin: var(--s-1) 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   article button { border: 0; background: var(--accent-soft); color: var(--accent); border-radius: var(--r-full); padding: var(--s-2) var(--s-3); cursor: pointer; }
   article button:disabled { opacity: .5; cursor: default; }
-  .empty { padding: var(--s-5); color: var(--ink-3); text-align: center; }
 </style>

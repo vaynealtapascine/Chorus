@@ -13,6 +13,7 @@
   import { sync, type Projection } from '../sync/client';
   import AvatarImage from './AvatarImage.svelte';
   import Icon from './Icon.svelte';
+  import EmptyState from './kit/EmptyState.svelte';
   import { longPress } from '../long-press';
 
   let { projection, dark, currentId, folder, folders, foldersAt = null, onfolders, directory, person, onswitch, onnewchat, viewingAs = null,
@@ -286,7 +287,7 @@
         </div>
       {:else}{@render chatRow(e, false)}{/if}
     {:else}
-      <p class="none">{query.trim() ? 'No chats match.' : 'No chats here yet.'}</p>
+      <EmptyState icon={query.trim() ? 'search' : 'chat'} label={query.trim() ? 'No matches' : 'No chats yet'} />
     {/each}
     {/if}
   </div>
@@ -405,7 +406,6 @@
   .text { flex: 1; min-width: 0; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .badge { flex: none; min-width: 22px; padding: 2px 7px; border-radius: 11px; background: var(--sun); color: var(--on-sun); font-size: 12px; line-height: 16px; font-weight: 700; text-align: center; }
   .badge.muted { background: var(--line); color: var(--ink); }
-  .none { color: var(--ink-3); text-align: center; padding: 32px 16px; font-size: var(--fs-sm); }
   /* a space's entry is a button styled as a row; its disc is rounded square, as Telegram's forums */
   button.row { width: 100%; border: 0; background: none; font: inherit; text-align: left; cursor: pointer; }
   .disc.forum { border-radius: 16px; }

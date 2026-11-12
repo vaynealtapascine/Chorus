@@ -1,4 +1,5 @@
 <script lang="ts">
+  import EmptyState from './kit/EmptyState.svelte';
   import { onMount } from 'svelte';
   import { channels, members, messageById, customEmojis, reactions as reactionRows, type MessageRow } from '../data';
   import { JournalIndex, SearchIndex, parseSearch } from '../search';
@@ -163,7 +164,7 @@
   {#if connection.status!=='live'}<p class="hint" role="status">Offline · searching what is on this device. Shared posts need a connection.</p>{/if}
   {#if error}<p role="status">Server search unavailable. Local results are below. {error}</p>{/if}
   {#if scope==='messages' && parsedMessage.error}<p role="alert">{parsedMessage.error}</p>{/if}
-  {#if !available}<p class="empty">This chat is unavailable to the current front.</p>
+  {#if !available}<EmptyState icon="lock" label="Private chat" />
   {:else if !query.trim()}<p class="empty">Type to search {channelId?'this chat':scope==='messages'?'chats available to the current front':scope==='saved'?'your saved posts':scope==='posts'?'Journal posts and entries':'switches'}.</p>
   {:else if scope==='messages'}
     <p class="hint">{hits.length} visible matches{local.length===100?' · first 100 local matches; narrow your search':''}</p>
@@ -172,14 +173,14 @@
       <article class="match" aria-label="Message search result"><p class="hint">{channels(projection).find(c=>c.id===hit.channel_id)?.name ?? 'Chat'} · {new Date(hit.occurred_at).toLocaleString()}</p>
       {#each context as m (m.id)}<div class:matched={m.id===hit.id}>{#if m.id===hit.id}<p class="hint">Match</p>{/if}<Message {m} readOnly cont={false} {people} {dark} {lookup} mine={false} right={false} onreply={noop} onreplyin={noop} onquote={noop} onedit={noop} ondelete={noop} onrestore={noop} onpin={noop} onforward={noop} onselect={noop} selecting={false} selected={false} onthread={noop} reacts={reacts.get(m.id)} speaker={null} onreact={noop} {emojiById} cwAutoExpand={false} extra={pollBody}/></div>{/each}
       <button onclick={()=>open(hit)}>Open message</button></article>
-    {:else}<p class="empty">No matching messages available to the current front.</p>{/each}
+    {:else}<EmptyState icon="search" label="No matches" />{/each}
   {:else if scope==='switches'}
-    {#each switches as sw (sw.id)}<article><p>{sw.names.join(' & ')||'Switched out'} · {new Date(sw.occurred_at).toLocaleString()}</p><p>{sw.note??''}</p></article>{:else}<p class="empty">No matching switches.</p>{/each}
+    {#each switches as sw (sw.id)}<article><p>{sw.names.join(' & ')||'Switched out'} · {new Date(sw.occurred_at).toLocaleString()}</p><p>{sw.note??''}</p></article>{:else}<EmptyState icon="search" label="No matches" />{/each}
   {:else}
     {#each allPosts as hit (hit.id)}
       {#if hit.local}<PostCard post={hit.local} {projection} {people} {dark} reactions={reacts.get(hit.id) ?? new Map()} speaker={null} {social} {saved} onreply={()=>location.hash=`/journal/post/${hit.id}`} onreact={noop}/>
       {:else if hit.remote}<FriendPostCard post={hit.remote} account="Shared post" {projection} speaker={null} speakerName="" {dark}/>{/if}
-    {:else}<p class="empty">{scope==='saved'?'No matching saved posts. Save posts with their bookmark button.':'No matching Journal posts or entries.'}</p>{/each}
+    {:else}<EmptyState icon="search" label="No matches" />{/each}
   {/if}
   {#if loading}<p class="hint" role="status">Searching…</p>{/if}
   {#if cursor && current}<button disabled={loading} onclick={more}>Load more</button>{/if}

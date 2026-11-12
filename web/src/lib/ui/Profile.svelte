@@ -1,4 +1,5 @@
 <script lang="ts">
+  import EmptyState from './kit/EmptyState.svelte';
   import { channels, fieldDefs, fieldValues, members, messages, reactions, type MemberRow } from '../data';
   import { canWriteAs, highlightedPostIds, memberPosts, postReaction, posts, type PostRow } from '../posts';
   import { frontDaily, namedFrontDays, windowStart } from '../insights';
@@ -82,14 +83,14 @@
     {/if}
     <nav aria-label="Profile sections"><button class:on={tab === 'posts'} onclick={() => (tab = 'posts')}>Posts</button><button class:on={tab === 'replies'} onclick={() => (tab = 'replies')}>Replies</button><button class:on={tab === 'highlights'} onclick={() => (tab = 'highlights')}>Highlights</button><button class:on={tab === 'relationships'} onclick={() => (tab = 'relationships')}>Relationships</button></nav>
     {#if tab === 'relationships'}<ProfileRelationships {projection} {id} {own} />
-    {:else}<div class="list">{#each shown as post (post.id)}<PostCard {projection} {post} quote={quoteView(post.quote_post_id, postById, memberName)} {people} {dark} reactions={reacts.get(post.id) ?? new Map()} speaker={writeAs} {social} {saved} replyCount={social.replies.get(post.id) ?? 0} onreply={() => router.go(`/journal/post/${encodeURIComponent(post.id)}`)} onreact={(emoji, add, as) => react(post, emoji, add, as)} />{#if own}<div class="post-tools">{#if member.pinned_post_id !== post.id}<button onclick={() => pin(post.id)}>Pin to profile</button>{/if}<button onclick={() => highlight(post.id)}>{highlighted.has(post.id) ? 'Remove highlight' : 'Highlight post'}</button></div>{/if}{:else}<p class="empty">No {tab} yet.</p>{/each}</div>{/if}
+    {:else}<div class="list">{#each shown as post (post.id)}<PostCard {projection} {post} quote={quoteView(post.quote_post_id, postById, memberName)} {people} {dark} reactions={reacts.get(post.id) ?? new Map()} speaker={writeAs} {social} {saved} replyCount={social.replies.get(post.id) ?? 0} onreply={() => router.go(`/journal/post/${encodeURIComponent(post.id)}`)} onreact={(emoji, add, as) => react(post, emoji, add, as)} />{#if own}<div class="post-tools">{#if member.pinned_post_id !== post.id}<button onclick={() => pin(post.id)}>Pin to profile</button>{/if}<button onclick={() => highlight(post.id)}>{highlighted.has(post.id) ? 'Remove highlight' : 'Highlight post'}</button></div>{/if}{:else}<EmptyState icon="journal" label="Nothing yet" />{/each}</div>{/if}
   {:else}<p>This member is unavailable.</p>{/if}
 </section>
 
 <style>
   .profile { max-width: 760px; margin: 0 auto; display: grid; gap: var(--s-4); }
   p { margin: 0; }
-  .bio, .empty { color: var(--ink-2); }
+  .bio { color: var(--ink-2); }
   .action { padding: 7px 16px; border: 1px solid var(--line); border-radius: var(--r-full); color: var(--ink); font-weight: 600; text-decoration: none; }
   .action:hover { background: var(--surface-2); }
   .fields, .stats { display: flex; flex-wrap: wrap; gap: var(--s-2) var(--s-4); color: var(--ink-2); }

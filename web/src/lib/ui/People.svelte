@@ -24,6 +24,7 @@
   import BucketGlyph from './BucketGlyph.svelte';
   import FriendFace from './FriendFace.svelte';
   import Icon from './Icon.svelte';
+  import EmptyState from './kit/EmptyState.svelte';
   import Sheet from './Sheet.svelte';
 
   let { projection, dark }: { projection: Projection; dark: boolean } = $props();
@@ -149,7 +150,7 @@
     {@render group('People', followed.filter((r) => !isSystem(r.account)))}
   {:else if tabs[tab] === 'Followers'}
     {@const list = shown.filter((r) => r.follower)}
-    {#if friends.loaded && !list.length}<p class="fr-empty">Nobody follows you yet. Share your handle so friends can ask.</p>{/if}
+    {#if friends.loaded && !list.length}<EmptyState icon="friends" label="No followers yet" />{/if}
     <ul class="fr-list">
       {#each list as r (r.account.id)}
         {@const theirs = ownBuckets.filter((b) => assignments.get(b.id)?.has(r.account.id))}
@@ -167,7 +168,7 @@
     <h2 class="fr-section"><span>Buckets</span><span class="fr-aside">who sees which posts</span></h2>
     {@render bucketRows()}
   {:else if tabs[tab] === 'Requests'}
-    {#if friends.loaded && !friends.requests.length && !asked.length && !ours.length && !hearing.length}<p class="fr-empty">No requests right now.</p>{/if}
+    {#if friends.loaded && !friends.requests.length && !asked.length && !ours.length && !hearing.length}<EmptyState icon="user-plus" label="No requests" />{/if}
     {#if friends.requests.length}
       <h2 class="fr-section"><span>Want to follow {ownName}</span></h2>
       <ul class="fr-list">
@@ -224,7 +225,7 @@
 {/snippet}
 
 {#snippet empty()}
-  <div class="fr-empty"><strong>No friends here yet</strong><br />Follow someone by their handle with the button at the top. They choose what you see.</div>
+  <EmptyState icon="friends" label="No friends yet" action="Follow" onaction={() => (adding = true)} />
 {/snippet}
 
 {#snippet row(r: FriendRow, bright: boolean)}
@@ -354,5 +355,4 @@
   .options .text { flex: 1; display: grid; }
   .options .text span { color: var(--ink-3); font-size: 13px; }
   .options button :global(.icon) { color: var(--accent); }
-  .fr-empty strong { color: var(--ink); }
 </style>

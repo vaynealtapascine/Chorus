@@ -4,8 +4,9 @@
   import type { Snippet } from 'svelte';
   import Icon from './Icon.svelte';
 
-  let { title, subtitle, onclose, children, footer, layer = 0 }: {
-    title: string; subtitle?: string | null; onclose: () => void; children: Snippet; footer?: Snippet;
+  let { title, label, subtitle, onclose, children, footer, layer = 0 }: {
+    /** no title: no header (a menu of actions), and `label` names the dialog */
+    title?: string; label?: string; subtitle?: string | null; onclose: () => void; children: Snippet; footer?: Snippet;
     /** a sheet opened from a sheet lies over it */
     layer?: number;
   } = $props();
@@ -13,12 +14,14 @@
 
 <svelte:window onkeydown={(e) => e.key === 'Escape' && onclose()} />
 <div class="scrim" onclick={onclose} role="presentation" style="z-index: {40 + layer * 2}"></div>
-<div class="sheet" role="dialog" aria-modal="true" aria-label={title} style="z-index: {41 + layer * 2}; --lower: {layer * 28}px">
+<div class="sheet" role="dialog" aria-modal="true" aria-label={title ?? label} style="z-index: {41 + layer * 2}; --lower: {layer * 28}px">
   <div class="handle" aria-hidden="true"></div>
-  <header>
-    <div class="titles"><h2>{title}</h2>{#if subtitle}<p>{subtitle}</p>{/if}</div>
-    <button class="close" aria-label="Close" onclick={onclose}><Icon name="close" size={20} /></button>
-  </header>
+  {#if title}
+    <header>
+      <div class="titles"><h2>{title}</h2>{#if subtitle}<p>{subtitle}</p>{/if}</div>
+      <button class="close" aria-label="Close" onclick={onclose}><Icon name="close" size={20} /></button>
+    </header>
+  {/if}
   <div class="body">{@render children()}</div>
   {#if footer}<footer>{@render footer()}</footer>{/if}
 </div>

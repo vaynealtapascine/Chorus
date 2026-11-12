@@ -74,7 +74,7 @@ it('shows an unavailable chat state without its private title after a front chan
  Object.assign(sync,{device:{account_id:'account'}});
  try {
   const html=render(Search,{props:{projection:p,channelId:'private',dark:true}}).body;
-  expect(html).toContain('This chat is unavailable to the current front.');
+  expect(html).toContain('Private chat');
   expect(html).not.toContain('SECRET_ROOM_TITLE');
  } finally {Object.assign(sync,{device:previous});}
 });
