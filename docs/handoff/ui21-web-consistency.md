@@ -140,6 +140,14 @@ Findings (fixed in the commit that carries this table unless noted):
 | Stage (chat) | all | Dark in both themes (the capture surface); the Style / Filters / Names tabs were not opened | left (not toured: tab clicks missed) |
 | API tokens, Webhooks | all | Two "add" controls: the header button and an action inside the empty state | fixed (empty state has no action; the header button stays) |
 | This device | all | "This app uses 1.8 MB on this device of 10.0 GB" repeats the Space used row above it | left (an e2e spec reads this sentence) |
+| Fronting, front card options (the three dots on a front's card) | all | Hand-built dropdown (Switch / Layers & display / Front history / Manage fronts), while a member's three dots opens a sheet | fixed (kit MenuSheet; "Layers & display" is still a link; e2e opens it by the "Layers and display" link in the app bar, not this menu) |
+| API tokens, Webhooks | all | Header "New token" / "Add webhook" were hand-rolled 40 px pills (kit pills are 36) | fixed (kit Button sm) |
+| API tokens | all | With one token the card carried a "Tokens 1" heading under a page already called API tokens (Webhooks has none) | fixed (heading removed) |
+| Webhooks, Add webhook sheet | all | A refused address ("outside the tailnet") showed as red text on the page behind the sheet, out of sight, while the sheet stayed open; same for New token | fixed (the error shows inside the sheet while it is open) |
+| Webhooks | 390 | With a long URL, Test and Edit squeezed it into a three-line column | fixed (the actions wrap under the URL, right aligned) |
+| History | 1280 / 390, Larger text | The lane-name column was 96 px whatever the text size: names cut to "Foxglo..." | fixed (clamp(96px, 28%, 150px)) |
+| Side bar | 1280 | The unread badge on Notifications touched the label | fixed (4 px gap when a badge shows) |
+| Larger text, Compact density | 1280 / 390 | Members, History, Settings root, Appearance, Notifications, Journal composer, Chat, Stage looked at in both; nothing clipped beyond the History names; small literals (11-14 px) in the Stage tab strip, History legend and tags do not follow Text size | left (the 14 px / 11 px literals are the deferred decision) |
 | Connection banner | 1280 / 390 | In a chat the offline strip pushed the full-height chat down: the composer slid below the fold exactly when the strip shows | fixed (the banner publishes its height as `--banner-h`; Chat's height subtracts it) |
 | Connection banner | all | Looked at "The server isn't answering" with Retry on Fronting, Chat, Journal, 1280 and 390, dark and light | fine |
 | Chat list while offline | all | The Junipers DM shows as "Direct message" until the server answers (friend names come from it) | left (needs a decision: cache the name) |

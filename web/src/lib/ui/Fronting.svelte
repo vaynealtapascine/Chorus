@@ -156,12 +156,6 @@
           <span class="since">{[frontSince ? `since ${time(frontSince)}` : null, `${scene.here} here`].filter(Boolean).join(' · ')}</span>
           <span class="menu-wrap">
             <button class="icon-btn" aria-label="{selected?.name ?? 'Front'} options" aria-expanded={menu} onclick={() => (menu = !menu)}><Icon name="more-vert" size={20} /></button>
-            {#if menu}<div class="menu" role="menu">
-              <button role="menuitem" onclick={() => { menu = false; onswitch(frontId); }}>Switch…</button>
-              <a role="menuitem" href="#/layers/{frontId}" onclick={() => (menu = false)}>Layers &amp; display</a>
-              <a role="menuitem" href="#/history" onclick={() => (menu = false)}>Front history</a>
-              <a role="menuitem" href="#/fronts" onclick={() => (menu = false)}>Manage fronts</a>
-            </div>{/if}
           </span>
         </header>
         {#if note}<p class="note">{note}</p>{/if}
@@ -241,6 +235,14 @@
 
 {#if placing}<PlaceSheet {projection} {dark} front={frontId} who={placing} since={since.get(placing.id) ?? null} onclose={() => (placing = null)} onstate={() => { stating = placing; placing = null; }} />{/if}
 {#if stating}<MemberState {projection} {dark} who={stating} onclose={() => (stating = null)} />{/if}
+{#if menu}
+  <MenuSheet title={selected?.name ?? 'Front'} onclose={() => (menu = false)}>
+    <MenuRow icon="swap" label="Switch…" onclick={() => { menu = false; onswitch(frontId); }} />
+    <MenuRow icon="layers" label="Layers & display" href="#/layers/{frontId}" onclick={() => (menu = false)} />
+    <MenuRow icon="history" label="Front history" href="#/history" onclick={() => (menu = false)} />
+    <MenuRow icon="front" label="Manage fronts" href="#/fronts" onclick={() => (menu = false)} />
+  </MenuSheet>
+{/if}
 {#if rowMenu}
   <MenuSheet title={rowMenu.name} onclose={() => (rowMenu = null)}>
     {#if rowMenu.type === 'member'}<MenuRow icon="smile" label="Set state" onclick={() => { stating = rowMenu; rowMenu = null; }} />{/if}
@@ -268,10 +270,6 @@
   .card-head strong { font-size: var(--fs-base); font-weight: 600; }
   .since { flex: 1; min-width: 0; color: var(--ink-3); font-size: var(--fs-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .note { margin: 0 var(--s-1); color: var(--ink-2); font-size: var(--fs-sm); }
-  .menu-wrap { position: relative; }
-  .menu { position: absolute; right: 0; top: 100%; z-index: 5; display: grid; min-width: 190px; padding: 6px; background: var(--surface-2); border-radius: var(--r-row); box-shadow: var(--shadow-pop); }
-  .menu > * { text-align: left; background: none; border: 0; padding: 10px var(--s-3); border-radius: 8px; color: var(--ink); font: inherit; font-size: 14px; text-decoration: none; cursor: pointer; }
-  .menu > *:hover { background: var(--surface-3); }
   .icon-btn { width: 32px; height: 32px; flex: none; display: grid; place-items: center; background: none; border: 0; border-radius: 50%; color: var(--ink-3); cursor: pointer; }
   .icon-btn.add { color: var(--l-label); }
   .layer { border: 1.5px var(--l-dash) var(--l-border); background: var(--l-fill); border-radius: var(--r, 18px); padding-bottom: 10px; display: grid; gap: 6px; }

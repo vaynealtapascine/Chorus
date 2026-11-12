@@ -70,9 +70,9 @@
 
 <section class="page">
   <PageHeader title="API tokens" sub="For overlays, scripts and dashboards">
-    {#snippet action()}<button class="add" onclick={() => (adding = true)}><Icon name="plus" size={18} />New token</button>{/snippet}
+    {#snippet action()}<Button variant="primary" size="sm" onclick={() => (adding = true)}><Icon name="plus" size={18} />New token</Button>{/snippet}
   </PageHeader>
-  {#if error}<p class="error" role="alert">{error}</p>{/if}
+  {#if error && !adding}<p class="error" role="alert">{error}</p>{/if}
   {#if fresh}
     <div class="card">
       <h2><span class="tile warn"><Icon name="target" size={18} /></span>New token shown once</h2>
@@ -85,7 +85,6 @@
     </div>
   {/if}
   <div class="card">
-    <h2>Tokens<span class="count">{tokens.length}</span></h2>
     {#each tokens as t (t.id)}
       <div class="row">
         <span class="tile"><Icon name="globe" size={20} /></span>
@@ -111,6 +110,7 @@
           <Switch label={s.label} checked={chosen.includes(s.id)} onchange={(on) => (chosen = on ? [...chosen, s.id] : chosen.filter((c) => c !== s.id))} />
         {/each}
       </FormCard>
+      {#if error}<p class="error" role="alert">{error}</p>{/if}
     </form>
     {#snippet footer()}<Button variant="primary" size="lg" grow class="primary" form="new-token" disabled={!chosen.length || !name.trim()}>Create token</Button>{/snippet}
   </Sheet>
@@ -121,10 +121,8 @@
 
 <style>
   .page { display: grid; gap: var(--s-3); max-width: 720px; align-content: start; }
-  .add { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 var(--s-4); border: 0; border-radius: var(--r-full); background: var(--accent); color: var(--on-accent); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
   .card { display: grid; gap: 14px; padding: 14px; border-radius: var(--r-md); background: var(--surface-2); }
   h2 { display: flex; align-items: center; gap: 10px; margin: 0; font-size: var(--fs-base); }
-  .count { margin-left: auto; color: var(--ink-3); font-size: 14px; font-weight: 400; }
   .row { display: flex; align-items: flex-start; gap: var(--s-3); }
   .tile { display: grid; place-items: center; width: 40px; height: 40px; border-radius: var(--r-row); background: var(--accent-soft); color: var(--accent); flex: none; }
   .tile.warn { width: 32px; height: 32px; border-radius: var(--r-sm); background: color-mix(in oklab, var(--sun) 22%, transparent); color: var(--sun); }

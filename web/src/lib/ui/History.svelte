@@ -202,7 +202,7 @@
   .fronts button { border: 1px solid var(--line); border-radius: var(--r-full); background: var(--surface); color: var(--ink); font: inherit; font-size: var(--fs-sm); font-weight: 600; padding: 7px var(--s-3); cursor: pointer; white-space: nowrap; }
   .fronts button.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
   .timeline { background: var(--surface); border-radius: var(--r-md); padding: var(--s-3); display: grid; gap: var(--s-2); }
-  .axis, .lane { display: grid; grid-template-columns: 96px 1fr; align-items: center; }
+  .axis, .lane { display: grid; grid-template-columns: clamp(96px, 28%, 150px) 1fr; align-items: center; }
   .nav { display: flex; gap: var(--s-1); }
   .nav button { border: 0; background: none; color: var(--accent); font-size: var(--fs-lg); padding: 0 var(--s-2); cursor: pointer; }
   .ticks { position: relative; height: 16px; }

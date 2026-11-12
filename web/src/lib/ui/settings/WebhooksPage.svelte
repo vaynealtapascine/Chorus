@@ -73,9 +73,9 @@
 
 <section class="page">
   <PageHeader title="Webhooks" sub="Tell another service when something happens">
-    {#snippet action()}<button class="add" onclick={() => (adding = true)}><Icon name="plus" size={18} />Add webhook</button>{/snippet}
+    {#snippet action()}<Button variant="primary" size="sm" onclick={() => (adding = true)}><Icon name="plus" size={18} />Add webhook</Button>{/snippet}
   </PageHeader>
-  {#if error}<p class="error" role="alert">{error}</p>{/if}
+  {#if error && !adding}<p class="error" role="alert">{error}</p>{/if}
   {#if secret}
     <div class="card">
       <h2>Signing secret, shown once</h2>
@@ -88,8 +88,10 @@
       <div class="head">
         <span class="tile"><Icon name="globe" size={20} /></span>
         <strong class="url">{h.url}</strong>
-        <Button size="sm" class="pill" onclick={() => test(h.id)}><Icon name="send" size={16} />Test</Button>
-        <Button size="sm" class="pill" onclick={() => (editing = h)}><Icon name="edit" size={16} />Edit</Button>
+        <span class="acts">
+          <Button size="sm" class="pill" onclick={() => test(h.id)}><Icon name="send" size={16} />Test</Button>
+          <Button size="sm" class="pill" onclick={() => (editing = h)}><Icon name="edit" size={16} />Edit</Button>
+        </span>
       </div>
       <div class="chips">{#each h.events as ev (ev)}<code>{ev}</code>{/each}{#if !h.is_enabled}<code class="off">off</code>{/if}</div>
       {#if notes[h.id] || h.last_status || h.last_error}
@@ -111,6 +113,7 @@
           <Switch label={ev.label} checked={events.includes(ev.id)} onchange={(on) => (events = on ? [...events, ev.id] : events.filter((c) => c !== ev.id))} />
         {/each}
       </FormCard>
+      {#if error}<p class="error" role="alert">{error}</p>{/if}
     </form>
     {#snippet footer()}<Button variant="primary" size="lg" grow class="primary" form="new-hook" disabled={!events.length || !url.trim()}>Add webhook</Button>{/snippet}
   </Sheet>
@@ -129,12 +132,12 @@
 
 <style>
   .page { display: grid; gap: var(--s-3); max-width: 720px; align-content: start; }
-  .add { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 var(--s-4); border: 0; border-radius: var(--r-full); background: var(--accent); color: var(--on-accent); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
   .card { display: grid; gap: var(--s-3); padding: 14px; border-radius: var(--r-md); background: var(--surface-2); }
   h2 { margin: 0; font-size: var(--fs-base); }
-  .head { display: flex; align-items: center; gap: 10px; }
+  .head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .acts { display: flex; gap: var(--s-2); margin-left: auto; }
   .tile { display: grid; place-items: center; width: 40px; height: 40px; border-radius: var(--r-row); background: var(--accent-soft); color: var(--accent); flex: none; }
-  .url { flex: 1; min-width: 0; font-family: var(--font-mono); font-size: 14px; font-weight: 500; word-break: break-all; }
+  .url { flex: 1 1 12rem; min-width: 0; font-family: var(--font-mono); font-size: 14px; font-weight: 500; word-break: break-all; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
   code { font-family: var(--font-mono); background: var(--surface-3); padding: 3px 10px; border-radius: var(--r-full); font-size: var(--fs-xs); word-break: break-all; }
   code.off { color: var(--ink-3); }

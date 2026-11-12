@@ -140,7 +140,6 @@
 <aside class="journal-context" aria-label="Journal shortcuts">
   <a class="context-search" href="#/search/posts"><Icon name="search" size={18} />Search Journal</a>
   <section><h2>Your journal</h2><button onclick={() => (section = 'timeline')}><Icon name="journal" size={18} />{self ? 'My timeline' : 'System timeline'}</button><button onclick={() => (section = 'friends')}><Icon name="friends" size={18} />Friends’ posts</button><button onclick={() => (section = 'saved')}><Icon name="bookmark" size={18} />Saved posts</button><button onclick={() => (section = 'feeds')}><Icon name="layers" size={18} />Your feeds</button><button onclick={() => (section = 'lists')}><Icon name="members" size={18} />Member lists</button></section>
-  <section><h2>{self ? 'Sharing your posts' : 'Writing together'}</h2><p>{self ? 'The audience on each post controls who can read it.' : "Choose who's speaking before posting. The audience on each post controls who can read it."}</p><a href="#/settings">Privacy and preferences</a></section>
 </aside></div>
 
 <style>
@@ -148,7 +147,6 @@
   .journal-context { display: grid; align-content: start; gap: var(--s-4); min-width: 0; }
   .journal-context section { display: grid; gap: var(--s-3); background: var(--surface); border-radius: var(--r-md); padding: var(--s-4); }
   .journal-context h2 { font-size: var(--fs-sm); }
-  .journal-context p { color: var(--ink-3); font-size: var(--fs-sm); line-height: 1.5; }
   .journal-context a { color: var(--accent); text-decoration: none; font-size: var(--fs-xs); }
   .journal-context button, .context-search { display: flex; align-items: center; gap: 10px; border: 0; background: none; color: var(--ink-2); padding: var(--s-2) 0; text-align: left; font-size: var(--fs-sm); cursor: pointer; }
   .journal-context .context-search { background: var(--surface-2); border-radius: var(--r-full); padding: var(--s-3) var(--s-4); color: var(--ink-3); }

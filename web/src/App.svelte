@@ -311,6 +311,7 @@
   nav a { display: flex; gap: var(--s-3); align-items: center; padding: var(--s-3); min-height: 48px; color: var(--ink-2); text-decoration: none; border-radius: var(--r-full); font-size: var(--fs-md); font-weight: 500; }
   nav a.on { background: var(--surface-2); color: var(--ink); font-weight: 700; }
   .tab-icon { position: relative; display: inline-grid; }
+  @media (min-width: 1024px) { .tab-icon:has(.badge) { margin-right: var(--s-2); } }
   .badge { position: absolute; top: -6px; right: -10px; min-width: 16px; height: 16px; padding: 0 var(--s-1); border-radius: 8px; background: var(--sun); color: var(--on-sun);
     font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; }
   nav a.on :global(.icon) { color: var(--accent); }
