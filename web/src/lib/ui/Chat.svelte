@@ -25,6 +25,8 @@
   import { chatPrefs, dayLabel, discColor, dmFace, folderOf, frontEvents, FOLDERS, jumpBack, pushJump } from '../chat-list';
   import { contains, folderPrefs, label as folderLabel, mutedChat, visible as visibleFolders } from '../chat-folders';
   import AttachmentView from './AttachmentView.svelte';
+  import AttachSheet from './AttachSheet.svelte';
+  import { linkTo } from '../share-links';
   import { expandFront } from '../subsystems';
   import Icon from './Icon.svelte';
   import EmptyState from './kit/EmptyState.svelte';
@@ -254,6 +256,8 @@
   let pending = $state<{ file: File; alt: string; spoiler: boolean }[]>([]);
   let uploadError = $state('');
   let fileInput: HTMLInputElement | undefined = $state();
+  let photoInput: HTMLInputElement | undefined = $state();
+  let attaching = $state(false);
   let replyTo = $state<MessageRow | null>(null);
   let quoting = $state<QuoteValue | null>(null);
   let editing = $state<MessageRow | null>(null);
@@ -578,6 +582,9 @@
     preview ? preview.segments.map((s) => s.authors.map((a) => people.get(a)?.name ?? '?').join(' & ')).join(' → ') : '',
   );
 
+  // own recent Journal posts for the attach sheet's Journal tile
+  const ownPosts = $derived(attaching ? posts(projection).filter((p) => !p.deleted && !p.repost_of && !p.reply_to && p.account_id === sync.accountId)
+    .sort((a, b) => b.occurred_at - a.occurred_at).slice(0, 30).map((p) => ({ id: p.id, label: (p.title || p.text).replace(/\s+/g, ' ').slice(0, 80) || 'Post' })) : []);
   function addFiles(files: FileList | File[]) {
     pending = [...pending, ...[...files].map((file) => ({ file, alt: '', spoiler: false }))];
   }
@@ -1569,6 +1576,7 @@
     {/if}
     {#if !lockedOut}
     <div class="composer">
+      <input class="file-input" type="file" multiple accept="image/*,video/*" bind:this={photoInput} onchange={(e) => { addFiles(e.currentTarget.files ?? []); e.currentTarget.value = ''; }} aria-label="Choose photos" />
       <input class="file-input" type="file" multiple bind:this={fileInput} onchange={(e) => { addFiles(e.currentTarget.files ?? []); e.currentTarget.value = ''; }} aria-label="Choose attachments" />
       {#if !editing}<div class="chip-wrap">
         <button class="send-as" onclick={() => (picking = !picking)} title="Speaking as {speaker ? people.get(speaker)?.name ?? '' : 'no one'}" aria-label="Speaking as {speaker ? people.get(speaker)?.name ?? '' : 'no one'}. Change">
@@ -1641,7 +1649,7 @@
         {#if !editing}
           <button class="in-pill" class:on={optionsOpen || !!cw.trim() || pollOn || visibilityMode === 'members'} onclick={() => (optionsOpen = !optionsOpen)}
             aria-label="Message options" aria-expanded={optionsOpen} title="Content warning, poll, who can see it"><Icon name="sliders" size={20} /></button>
-          <button class="in-pill" onclick={() => fileInput?.click()} title="Attach files" aria-label="Attach files"><Icon name="attach" size={22} /></button>
+          <button class="in-pill" onclick={() => (attaching = true)} title="Attach" aria-label="Attach"><Icon name="attach" size={22} /></button>
         {/if}
       </div>
       <button class="send" class:ready={editing ? true : canSend} onclick={() => void send()} aria-label={editing ? 'Save' : aside ? 'Send as aside' : 'Send'} title={editing ? 'Save' : aside ? 'Send as aside' : 'Send'}
@@ -1704,6 +1712,11 @@
     </aside>
   {/if}
 </div>
+{#if attaching && !lockedOut}
+  <AttachSheet bind:pending bind:draft {pollOn} {canSend} journal={ownPosts} onphotos={() => photoInput?.click()} onfiles={() => fileInput?.click()}
+    onpoll={() => { optionsOpen = true; pollOn = true; }} onlink={(id) => { draft = draft + (draft && !/s$/.test(draft) ? ' ' : '') + linkTo(location.origin, { kind: 'post', id }); }}
+    onsend={() => void send()} onclose={() => (attaching = false)} />
+{/if}
 {#if forwarding && !lockedOut}
   <ForwardSheet targets={targetRows} {dark} speaker={speaker ? people.get(speaker) ?? null : null} label="Forward to" exclude={current?.id}
     warning={leavingCard} onsend={forwardTo} onclose={() => (forwarding = null)} />

@@ -181,7 +181,7 @@ test('a file queued offline goes up after a reload and a new version of the app'
   const word = `fz${run}`;
   await kill();
   await offline(page);
-  await page.locator('input.file-input').setInputFiles({ name: `tomatoes-${run}.txt`, mimeType: 'text/plain', buffer: Buffer.from(`tomatoes ${run}`) });
+  await page.getByLabel('Choose attachments').setInputFiles({ name: `tomatoes-${run}.txt`, mimeType: 'text/plain', buffer: Buffer.from(`tomatoes ${run}`) });
   await send(page, `${word} with a file`);
   await send(page, `${word} after it`);
   await page.reload();
