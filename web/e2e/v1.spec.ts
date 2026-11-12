@@ -333,11 +333,12 @@ test('a feed shared with followers', async () => {
   const name = `Garden ${run}`;
   await go(stars.page, 'journal');
   await stars.page.getByRole('button', { name: 'Feeds' }).click();
+  await stars.page.getByRole('button', { name: 'New feed' }).click();
   await stars.page.getByLabel('Name', { exact: true }).fill(name);
   await stars.page.getByLabel('Filter').fill('tag:garden');
   await shareWithFriends(stars.page, 'This feed');
   await stars.page.getByRole('button', { name: 'Save feed' }).click();
-  await expect(stars.page.locator('nav[aria-label="Saved feeds"]')).toContainText(name);
+  await expect(stars.page.locator('section[aria-label="Custom feeds"]')).toContainText(name);
 
   await go(friend.page, 'journal');
   await friend.page.getByRole('button', { name: 'Feeds' }).click();
@@ -353,7 +354,7 @@ test('a feed shared with followers', async () => {
   await shareWithFriends(stars.page, 'This feed');
   await expect(stars.page.getByRole('note')).toContainText('who was fronting when these posts were written');
   await stars.page.getByRole('button', { name: 'Save feed' }).click();
-  await expect(stars.page.locator('nav[aria-label="Saved feeds"]')).toContainText(fronting);
+  await expect(stars.page.locator('section[aria-label="Custom feeds"]')).toContainText(fronting);
   await friend.page.reload();
   await live(friend.page);
   await friend.page.getByRole('button', { name: 'Feeds' }).click();

@@ -12,6 +12,9 @@
   import { router } from '../router.svelte';
   import JournalLists from './JournalLists.svelte';
   import JournalFeeds from './JournalFeeds.svelte';
+  import FeedPosts from './FeedPosts.svelte';
+  import { savedFeeds } from '../feeds';
+  import { BUILT_IN_NAMES, pinnedTabs, storedPins } from '../feed-pins';
   import { inbox, refreshActivity } from '../inbox-state.svelte';
   import { remotePost } from '../remote-posts.svelte';
 
@@ -49,10 +52,13 @@
   let actingAs = $state('');
   const speaker = $derived(actingAs || frontSpeaker || active[0]?.id || null);
   // Android's tabs (Our system, Friends, Journals), then what Android keeps in its menu
-  const TABS = [['timeline', 'Our system'], ['friends', 'Friends'], ['entries', 'Journals']] as const;
-  type TabId = (typeof TABS)[number][0];
+  // the tabs are the pinned feeds (F6.8): the built-ins, then saved feeds, as the Feeds screen arranges them
+  const feedRows = $derived(savedFeeds(projection));
+  const tabIds = $derived(pinnedTabs(storedPins(projection, sync.accountId), new Set(feedRows.map((f) => f.id))));
+  const tabs = $derived(tabIds.map((id) => ({ id: id === 'system' ? 'timeline' : id, label: BUILT_IN_NAMES[id] ?? feedRows.find((f) => f.id === id)?.name ?? 'Feed' })));
   const SUB: Record<string, string> = { saved: 'Saved', lists: 'Lists', feeds: 'Feeds' };
-  let section = $state<TabId | 'saved' | 'lists' | 'feeds'>('timeline');
+  let section = $state<string>('timeline');
+  const pinnedFeed = $derived(feedRows.find((f) => f.id === section));
   let menu = $state(false);
   const shownTimeline = $derived(section === 'entries' ? timeline.filter((item) => item.kind === 'post' && item.post.kind === 'entry') : timeline);
   const savedPostsList = $derived(savedList(entries, saved));
@@ -88,8 +94,9 @@
       <button class="icon-btn" aria-label="Feeds" title="Feeds" onclick={() => (section = 'feeds')}><Icon name="hash" size={22} /></button>
       <button class="icon-btn" aria-label="More" aria-haspopup="menu" title="More" onclick={() => (menu = true)}><Icon name="more-vert" size={22} /></button></div></header>
   {#if SUB[section]}<div class="sub"><button class="icon-btn back" aria-label="Back" onclick={() => (section = 'timeline')}><Icon name="chevron" size={20} /></button><h2>{SUB[section]}</h2></div>
-  {:else}<UnderlineTabs label="Journal sections" value={section as TabId} tabs={TABS.map(([id, label]) => ({ id, label }))} onchange={(id) => (section = id)} />{/if}
-  {#if section === 'lists'}<JournalLists {projection} {dark} />{:else if section === 'feeds'}<JournalFeeds {projection} {dark} />
+  {:else}<UnderlineTabs label="Journal sections" value={section} {tabs} onchange={(id) => (section = id)} />{/if}
+  {#if section === 'lists'}<JournalLists {projection} {dark} />{:else if section === 'feeds'}<JournalFeeds {projection} {dark} onlists={() => (section = 'lists')} />
+  {:else if pinnedFeed}<FeedPosts {projection} {dark} feed={pinnedFeed} />
   {:else if section === 'friends'}<JournalFriends {projection} {speaker} speakerName={speaker ? name(speaker) : ''} {dark} />
   {:else if section === 'saved'}
   <div class="timeline">
