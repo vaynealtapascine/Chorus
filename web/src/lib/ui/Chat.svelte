@@ -2129,6 +2129,8 @@
   .info-actions button { gap: var(--s-1); padding: var(--s-2) var(--s-1); min-height: 54px; font-size: 11px; color: var(--accent); }
   .info-actions button[aria-pressed='true'] { color: var(--ink-2); }
   .info-tabs { position: sticky; top: 0; z-index: 1; background: var(--surface); }
+  /* five tabs in a 300 px panel: tighter than the page-wide tab row */
+  .info-tabs :global(button) { padding-inline: var(--s-2); gap: var(--s-1); font-size: var(--fs-base); }
   .info-poll { display: flex; align-items: center; gap: 10px; padding: var(--s-2) var(--s-4); min-height: 56px; color: var(--ink); text-decoration: none; }
   .info-poll:hover { background: var(--surface-2); }
   .folder-row { display: flex; align-items: center; gap: var(--s-3); width: 100%; min-height: 46px; padding: var(--s-2) var(--s-5); border: 0; background: none; color: var(--ink); font: inherit; font-size: var(--fs-md); text-align: left; cursor: pointer; }

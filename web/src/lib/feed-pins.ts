@@ -5,8 +5,6 @@ import { sync, type Projection } from './sync/client';
 export const PINNED_FEEDS = 'journal.pinned_feeds';
 export const BUILT_IN_TABS = ['system', 'friends', 'entries'] as const;
 export const BUILT_IN_NAMES: Record<string, string> = { system: 'Our system', friends: 'Friends', entries: 'Journals' };
-const DESCRIPTION: Record<string, string> = { system: 'Posts from our members', friends: 'Posts from people we follow', entries: 'Long entries' };
-export const builtInLine = (id: string) => DESCRIPTION[id] ?? '';
 
 /** The tabs to show: pins that still exist (`live` are saved feed ids), never none. */
 export function pinnedTabs(stored: unknown, live: Set<string>): string[] {

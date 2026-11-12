@@ -22,7 +22,7 @@
   import DragList from './kit/DragList.svelte';
   import SectionLabel from './kit/SectionLabel.svelte';
   import Icon from './Icon.svelte';
-  import { BUILT_IN_NAMES, builtInLine, pinned as withPin, pinnedTabs, savePins, storedPins } from '../feed-pins';
+  import { BUILT_IN_NAMES, pinned as withPin, pinnedTabs, savePins, storedPins } from '../feed-pins';
 
   let { projection, dark, onlists }: { projection: Projection; dark: boolean; onlists?: () => void } = $props();
   const feeds = $derived(savedFeeds(projection));
@@ -40,7 +40,7 @@
   const speaker = $derived(members(projection).find((m) => canWriteAs(projection, m.id, sync.accountId))?.id ?? null);
   const tabIds = $derived(pinnedTabs(storedPins(projection, sync.accountId), new Set(feeds.map((f) => f.id))));
   const pinnedRows = $derived(tabIds.map((id) => ({ id, name: BUILT_IN_NAMES[id] ?? feeds.find((f) => f.id === id)?.name ?? 'Feed',
-    line: BUILT_IN_NAMES[id] ? builtInLine(id) : feeds.find((f) => f.id === id)?.description ?? '', builtIn: !!BUILT_IN_NAMES[id] })));
+    line: BUILT_IN_NAMES[id] ? '' : feeds.find((f) => f.id === id)?.description ?? '', builtIn: !!BUILT_IN_NAMES[id] })));
   let find = $state('');
   const matches = (n: string) => !find.trim() || n.toLowerCase().includes(find.trim().toLowerCase());
   let editing = $state(false);
@@ -153,7 +153,7 @@
     {#if unpinnedBuiltIns.length || mine.length}
       <SectionLabel label="Made by you" />
       {#each unpinnedBuiltIns as id (id)}
-        <div class="card"><span class="tile"><Icon name="journal" size={20} /></span><span class="text"><strong>{BUILT_IN_NAMES[id]}</strong><span>{builtInLine(id)}</span></span>
+        <div class="card"><span class="tile"><Icon name="journal" size={20} /></span><span class="text"><strong>{BUILT_IN_NAMES[id]}</strong></span>
           <button type="button" class="pin" aria-label="Pin {BUILT_IN_NAMES[id]}" onclick={() => savePins(withPin(tabIds, id, true))}><Icon name="pin" size={18} /></button></div>
       {/each}
       {#each mine as feed (feed.id)}

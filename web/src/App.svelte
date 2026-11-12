@@ -204,7 +204,7 @@
     {#if navOpen}<button class="scrim" aria-label="Close navigation" onclick={() => (navOpen = false)}></button>{/if}
     <div class="workspace">
       <!-- Fronting's subpages carry their own back-arrow bars (Figma F3.4, F3.5, F3.7, F3.9), as Friends' pages do (F7) -->
-      <header class="app-bar" class:own-head={['notifications', 'friend', 'people'].includes(router.route.name)} class:subpage={(['fronts', 'layers', 'history', 'review'].includes(router.route.name) && !person) || router.route.name === 'friend' || router.route.name === 'people'}>
+      <header class="app-bar" class:own-head={['notifications', 'friend', 'people', 'insights'].includes(router.route.name) || (router.route.name === 'settings' && !!router.route.id)} class:own-head-wide={router.route.name === 'settings'} class:subpage={(['fronts', 'layers', 'history', 'review'].includes(router.route.name) && !person) || router.route.name === 'friend' || router.route.name === 'people'}>
         <div><strong>{routeTitle}</strong><span class="account-subtitle">{accountName}{#if router.route.name === 'fronting' && !person}{' · '}{homeSimple ? 'simple view' : `${current.length} here now`}{:else if router.route.name === 'home'}{' · '}{new Date().toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' })}{/if}</span></div>
         {#if router.route.name === 'home'}
           <button class="sections-pill" onclick={() => (homeUi.sections = true)}><Icon name="sliders" size={18} />Sections</button>
@@ -214,7 +214,7 @@
           <a class="icon-button" href="#/history" aria-label="Front history"><Icon name="history" /></a>
           <a class="icon-button" href="#/layers/{frontingUi.front ?? sync.accountId}" aria-label="Layers and display"><Icon name="sliders" /></a>
         {:else}
-        <a class="icon-button" href="#/search" aria-label="Search"><Icon name="search" /></a>
+        {#if router.route.name !== 'search'}<a class="icon-button" href="#/search" aria-label="Search"><Icon name="search" /></a>{/if}
         {/if}
         {#if !person && !['home', 'fronting'].includes(router.route.name)}<button class="icon-button mobile-switch" onclick={() => (switching = true)} aria-label="Open switcher"><Icon name="swap" /></button>{/if}
       </header>
@@ -332,6 +332,7 @@
   @media (max-width: 1023px) { .app-bar.subpage { display: none; } }
   /* Friends and Notifications carry their own title row: no second one above it */
   .app-bar.own-head { display: none; }
+  @media (min-width: 1024px) { .app-bar.own-head-wide { display: none; } }
   main { padding: var(--s-6); max-width: 1200px; margin-inline: auto; min-width: 0; outline: none; }
   .chat-page main { padding: 0; max-width: none; }
   /* a page fades in when you go to it (owner, 2026-11-07) */

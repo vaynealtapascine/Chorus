@@ -176,6 +176,8 @@
   const noop = () => {};
   const chatName = (id: string) => channels(projection).find((c) => c.id === id)?.name ?? 'Chat';
   const who = (m: MessageRow) => (m.authors ?? []).map((a) => people.get(a)?.display_name ?? people.get(a)?.name).filter(Boolean).join(' & ') || 'Someone';
+  /** a click on a button or link inside a result (a spoiler's Reveal) is that control's, not the result's */
+  const inner = (e: MouseEvent) => { const b = (e.target as HTMLElement).closest('button, a'); return !!b && b !== e.currentTarget; };
   const goChat = (id: string) => { location.hash = `/chat/${id}`; onclose?.(); };
   const label = $derived(tab === 'messages' ? 'Search all chats' : `Search ${TABS.find((t) => t.id === tab)?.label ?? ''}`);
   const open = (m:MessageRow) => {if(!visible(m)) return; if(onopen) {onopen(m);return;} location.hash=`/chat/${m.channel_id}/${m.id}`;onclose?.();};
@@ -211,10 +213,10 @@
     {:else}<EmptyState icon="search" label="No chats found" />{/each}
   {:else if scope==='media' || scope==='files' || scope==='links'}
     {#if scope==='media'}
-      <div class="media">{#each library as item (item.id)}<div class="tile" role="button" tabindex="0" onclick={() => open(item.message)} onkeydown={(e) => e.key === 'Enter' && open(item.message)}>{#if item.attachment}<AttachmentView attachment={item.attachment} revealable={false} />{/if}</div>{/each}</div>
+      <div class="media">{#each library as item (item.id)}<div class="tile" role="button" tabindex="0" onclick={(e) => !inner(e) && open(item.message)} onkeydown={(e) => e.key === 'Enter' && e.target === e.currentTarget && open(item.message)}>{#if item.attachment}<AttachmentView attachment={item.attachment} revealable={false} />{/if}</div>{/each}</div>
     {:else}
       {#each library as item (item.id)}
-        <div class="row" role="button" tabindex="0" onclick={() => open(item.message)} onkeydown={(e) => e.key === 'Enter' && open(item.message)}>
+        <div class="row" role="button" tabindex="0" onclick={(e) => !inner(e) && open(item.message)} onkeydown={(e) => e.key === 'Enter' && e.target === e.currentTarget && open(item.message)}>
           <span class="disc"><Icon name={scope === 'links' ? 'link' : 'doc'} size={20} /></span>
           <span class="line"><strong>{item.label}</strong><small>{who(item.message)} · {chatName(item.message.channel_id)} · {new Date(item.message.occurred_at).toLocaleDateString()}</small></span>
         </div>
@@ -227,7 +229,7 @@
     <p class="count">{hits.length}{local.length===100 || cursor ? '+' : ''} {hits.length === 1 ? 'message' : 'messages'} found</p>
     {#each hits as hit (hit.id)}
       {@const context = contexts.get(hit.id) ?? []}
-      <div class="match" role="link" tabindex="0" aria-label="Message search result" onclick={() => open(hit)} onkeydown={(e) => e.key === 'Enter' && open(hit)}>
+      <div class="match" role="link" tabindex="0" aria-label="Message search result" onclick={(e) => !inner(e) && open(hit)} onkeydown={(e) => e.key === 'Enter' && e.target === e.currentTarget && open(hit)}>
         <p class="where">{who(hit)} · {chatName(hit.channel_id)} · {new Date(hit.occurred_at).toLocaleString()}</p>
         {#each context as m (m.id)}<div class:matched={m.id===hit.id}><Message {m} readOnly cont={false} {people} {dark} {lookup} mine={false} right={false} onreply={noop} onreplyin={noop} onquote={noop} onedit={noop} ondelete={noop} onrestore={noop} onpin={noop} onforward={noop} onselect={noop} selecting={false} selected={false} onthread={noop} reacts={reacts.get(m.id)} speaker={null} onreact={noop} {emojiById} cwAutoExpand={false} extra={pollBody}/></div>{/each}
       </div>

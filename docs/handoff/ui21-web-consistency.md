@@ -114,7 +114,7 @@ Desktop 1280 and phone width, light and dark, plus Large text and Compact densit
 ## Browser tour
 
 Toured against a demo server on a copy of a seeded data dir (Lanterns account, Chrome via Playwright, 1280x800 and 390x844, dark and
-light). Toured so far: Home, Fronting, History, Fronts, Layers, Members (+ tabs), Chat list, Journal, Friends, Notifications.
+light). Toured so far: Home, Fronting, History, Fronts, Layers, Members (+ tabs), Chat list, Chat (+ message actions, attach, info, new message), Journal, Feeds, Friends, Notifications, More, Settings (root, Appearance, Notifications), Insights, Search, Switcher, Home sections.
 Findings (fixed in the commit that carries this table unless noted):
 
 | Screen | Width / theme | What was wrong | Status |
@@ -123,6 +123,12 @@ Findings (fixed in the commit that carries this table unless noted):
 | Journal | all | A second big "Journal" h1 under the app bar's own title | fixed (h1 removed; the React-as / Feeds / More tools stay, right aligned) |
 | Notifications | all | Two titles: the app bar and the page's own header | fixed (app bar hidden on screens that carry their own title row: Notifications, Friends, a friend's page) |
 | Friends | 1280 | Same double title | fixed (as above) |
+| More | all | App bar "More" plus a second "More" page title (Figma F10.1 has one) | fixed (PageHeader dropped; the app bar is the title) |
+| Insights, Settings pages | all | App bar title above the page's own title; on phone a third, the "< Settings" back link | fixed (app bar hidden where the page has its own header: Insights, every Settings page, and Settings at 1280) |
+| Search | all | A Search icon in the app bar on the Search screen itself | fixed (icon dropped there) |
+| Search results | all | A spoiler's Reveal button inside a result card also opened the message (click and Enter bubbled to the card) | fixed (card ignores events from inner buttons/links) |
+| Feeds | all | Built-in feed rows (Our system, Friends, Journals) carried descriptions the Figma frames do not have | fixed (removed) |
+| Members tabs, Chat info tabs | 390 / 300 px panel | The selected tab could sit half cut off at the edge of a scrolling tab row; Chat info's five tabs ran past the panel | fixed (UnderlineTabs scrolls the selected tab into view; tighter tab padding in Chat info) |
 
 ## How counted
 

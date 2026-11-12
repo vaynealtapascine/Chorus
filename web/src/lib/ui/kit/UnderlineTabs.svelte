@@ -3,9 +3,16 @@
   let { tabs, value = $bindable(), label, onchange }: {
     tabs: { id: T; label: string; count?: number | null }[]; value: T; label: string; onchange?: (v: T) => void;
   } = $props();
+  let bar: HTMLDivElement | undefined = $state();
+  // a tab row wider than the screen scrolls: keep the selected tab in view
+  $effect(() => {
+    void value;
+    const on = bar?.querySelector<HTMLElement>('[aria-selected="true"]');
+    if (bar && on) bar.scrollTo({ left: on.offsetLeft - (bar.clientWidth - on.offsetWidth) / 2 });
+  });
 </script>
 
-<div class="tabs" role="tablist" aria-label={label}>
+<div class="tabs" role="tablist" aria-label={label} bind:this={bar}>
   {#each tabs as t (t.id)}
     <button role="tab" aria-selected={value === t.id} onclick={() => { value = t.id; onchange?.(t.id); }}>
       {t.label}{#if t.count != null}<span class="count">{t.count}</span>{/if}
