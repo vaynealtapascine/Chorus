@@ -2,6 +2,8 @@
 // `Retry-After` (seconds). Reads (GET/HEAD) wait that long and try again, a couple of times at
 // most; a write, or a read that is still limited, fails with a message fit to show.
 
+import { slowDown } from './notices';
+
 /** Retries after the first attempt, for GET/HEAD. */
 const RETRIES = 2;
 /** Longest wait before a retry; a longer `Retry-After` fails straight away instead. */
@@ -54,6 +56,7 @@ export async function apiFetch(input: string, init: RequestInit = {}): Promise<R
     const response = await fetch(input, init);
     if (response.status !== 429) return response;
     const ms = retryAfterMs(response);
+    slowDown(Math.max(1, Math.ceil(ms / 1000)));
     if (!idempotent || attempt >= RETRIES || ms > MAX_WAIT_MS) throw new RateLimitedError(ms);
     await wait(ms, init.signal);
   }

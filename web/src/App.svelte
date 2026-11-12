@@ -37,6 +37,8 @@
   import Trash from './lib/ui/Trash.svelte';
   import ThisComputer from './lib/ui/ThisComputer.svelte';
   import UndoToast from './lib/ui/UndoToast.svelte';
+  import ConnectionBanner from './lib/ui/kit/ConnectionBanner.svelte';
+  import SlowDownToast from './lib/ui/kit/SlowDownToast.svelte';
   import { selfMember, members, groups } from './lib/data';
   import { core } from './lib/core';
   import { appearance } from './lib/appearance.svelte';
@@ -97,14 +99,6 @@
     }),
   );
 
-  const statusLabel: Record<Status, string> = {
-    live: 'Live',
-    connecting: 'Connecting…',
-    offline: 'Offline · saved on this device',
-    renewing: 'Connecting…',
-    'signed-out': '', // onboarding shows instead
-    'no-device': '',
-  };
   // a person account has one member, themself, and no front to switch (D-003)
   const person = $derived(!!projection && !!selfMember(projection));
   // Figma F11: Notifications beside Fronting and Chat; on a phone-wide screen the bar keeps
@@ -201,7 +195,6 @@
       <!-- Fronting's subpages carry their own back-arrow bars (Figma F3.4, F3.5, F3.7, F3.9), as Friends' pages do (F7) -->
       <header class="app-bar" class:subpage={(['fronts', 'layers', 'history'].includes(router.route.name) && !person) || router.route.name === 'friend' || router.route.name === 'people'}>
         <div><strong>{routeTitle}</strong><span class="account-subtitle">{accountName}{#if router.route.name === 'home' && !person}{' · '}{homeSimple ? 'simple view' : `${current.length} here now`}{/if}</span></div>
-        <span class="status" data-status={status} role="status"><span class="status-dot"></span>{statusLabel[status]}</span>
         {#if router.route.name === 'home' && !person}
           <!-- Fronting's own bar (Figma F3.1): history and Layers & display for the shown front -->
           <a class="icon-button" href="#/history" aria-label="Front history"><Icon name="history" /></a>
@@ -211,6 +204,7 @@
         {/if}
         {#if !person && router.route.name !== 'home'}<button class="icon-button mobile-switch" onclick={() => (switching = true)} aria-label="Open switcher"><Icon name="swap" /></button>{/if}
       </header>
+    <ConnectionBanner {status} />
     {#if storageFull}
       <p class="storage-full" role="alert">
         This browser's storage is full, so changes made here aren't saved on this device yet. They
@@ -283,6 +277,7 @@
     <Switcher {projection} {dark} front={switchFront} addTo={switchAddTo} onclose={() => { switching = false; switchFront = undefined; switchAddTo = undefined; }} />
   {/if}
   <UndoToast />
+  <SlowDownToast />
 {/if}
 
 <style>
@@ -315,9 +310,6 @@
   .app-bar > div { min-width: 0; }
   .app-bar strong { display: block; font-size: 20px; line-height: 26px; }
   .account-subtitle { display: block; color: var(--ink-3); font-size: var(--fs-xs); }
-  .status { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--ink-3); }
-  .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-3); flex: none; }
-  .status[data-status='live'] .status-dot { background: var(--ok); }
   .mobile-switch { display: none; }
   @media (max-width: 1023px) { .app-bar.subpage { display: none; } }
   main { padding: 24px; max-width: 1200px; margin-inline: auto; min-width: 0; outline: none; }
@@ -350,8 +342,6 @@
     nav a.on { background: transparent; color: var(--accent); }
     nav a.wide-only { display: none; }
     .app-bar { min-height: 72px; padding: 10px 16px; gap: 4px; }
-    .app-bar .status { font-size: 0; gap: 0; }
-    .app-bar .status-dot { width: 7px; height: 7px; margin-right: 10px; }
     .mobile-switch { display: inline-grid; }
     main { padding: 16px; }
   }

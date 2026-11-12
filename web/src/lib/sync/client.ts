@@ -5,6 +5,7 @@ import type { SwitchRow } from '../front.svelte';
 import { loadHead, loadOps, mergeJournal, save, saveDevice, saveSnapshot, type Changes, type DeviceRecord, type SignedOut, type Snapshot } from './persist';
 import { eraseKeptCopy, erasedHere, forgetErased, forgetTab } from './erase';
 import { renew } from './device';
+import { slowDown } from '../notices';
 import { applyDelta, type Delta } from './delta';
 import { readSnapshot } from './snapshot';
 import { FrontHistoryCache, type NamedHistory } from '../front-history';
@@ -884,6 +885,7 @@ export class SyncClient {
         this.bus?.postMessage({ t: 'typing-receive', frame: frame as TypingFrame, offset: this.typingOffset } satisfies BusMessage);
         return;
       }
+      if (frame.t === 'error' && frame.code === 'rate_limited') slowDown(null);
       if (frame.t === 'error' && frame.code === 'unauthenticated') {
         this.move('renewing');
         return;
@@ -905,7 +907,7 @@ export class SyncClient {
     };
   }
 
-  private reconnectNow(): void {
+  reconnectNow(): void {
     if (!this.leader || this.status !== 'offline') return;
     this.backoff = 1000;
     this.connect();
