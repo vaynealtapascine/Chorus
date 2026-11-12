@@ -1,5 +1,5 @@
 # What's new in the next Android build: up to three short lines, shown in the update drawer (F10.5).
 # Rewrite them for each deploy; lines starting with # are skipped.
-A phone signed out from another device goes back to the welcome screen
-It keeps its copy for two days, or erases it at once if you choose that
-Notifications for deleted or hidden messages go away
+Chorus in the browser now looks and works like the phone app
+Home, Members, Journal, Chat and Settings follow the same screens
+Menus open as sheets, and nothing hides behind the tab bar
