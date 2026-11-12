@@ -27,6 +27,7 @@
   import AttachmentView from './AttachmentView.svelte';
   import { expandFront } from '../subsystems';
   import Icon from './Icon.svelte';
+  import EmptyState from './kit/EmptyState.svelte';
   import { authorCards, listSpaces, openDm, spaceTitle, type SpaceInfo } from '../spaces';
   import { accountsLabel, frontingLine } from '../friends';
   import { frontOf, refreshFront } from '../friend-fronts.svelte';
@@ -836,6 +837,8 @@
     : current?.kind === 'member_dm' ? current.name
     : space?.kind === 'shared' && spaceChannels.length <= 1 ? space.name
     : current?.name ?? 'Chat');
+  // a channel is named with its # (Figma F5.16); a chat that carries a person's or a space's name is not
+  const headTitle = $derived(!lockedOut && current && current.kind !== 'thread' && current.kind !== 'member_dm' && roomTitle === current.name && space?.kind !== 'dm' ? `# ${roomTitle}` : roomTitle);
   const roomSubtitle = $derived.by(() => {
     if (lockedOut) return 'Opens while its member is here';
     if (current?.kind === 'thread') return parentChannel ? `in #${parentChannel.name}` : '';
@@ -1179,7 +1182,7 @@
       {/if}
       <span class="room-disc" style={roomDisc.style}>{#if roomDisc.member}<AvatarImage hash={roomDisc.member.avatar_blob} glyph={roomDisc.glyph} name={roomTitle} />{:else if roomDisc.blob}<AvatarImage hash={roomDisc.blob} glyph={roomDisc.glyph} name={roomTitle} />{:else}{roomDisc.glyph}{/if}</span>
       <button class="titles" onclick={() => (showInfo = !showInfo)} aria-label="Chat info" aria-expanded={showInfo}>
-        <h1>{roomTitle}</h1>
+        <h1>{headTitle}</h1>
         {#if typingSubtitle}<span class="sub typing" role="status">{typingSubtitle}</span>{:else if roomSubtitle}<span class="sub">{roomSubtitle}</span>{/if}
       </button>
       <button class="icon-button" onclick={() => searchHere = !searchHere} aria-label="Search this chat" aria-expanded={searchHere}><Icon name="search" size={22} /></button>
@@ -1191,7 +1194,6 @@
             <a href="#/stage/{current.id}"><Icon name="select" size={18} />Stage… (screenshot)</a>
             <a href="#/trash/{current.id}"><Icon name="delete" size={18} />Show deleted</a>
             {#if canEditChannel}<button onclick={() => { editingChannel = true; menuOpen = false; }}><Icon name="edit" size={18} />{current.kind === 'member_dm' ? 'Edit chat…' : 'Edit channel…'}</button>{/if}
-            <button onclick={() => { newChat = true; menuOpen = false; }}><Icon name="plus" size={18} />New chat…</button>
             {#if space?.kind === 'shared' && canManage}<button onclick={() => { addingChannel = true; menuOpen = false; }}><Icon name="hash" size={18} />New channel in {space.name}…</button>{/if}
             {#if space?.kind === 'internal'}
               <label class="notify">Viewing as
@@ -1262,7 +1264,6 @@
                 <option value="none">never</option>
               </select>
             </label>
-            <p class="menu-note">Speaker parsing and content warning preferences are in <a href="#/settings">Settings</a>.</p>
             {#if sync.device?.is_admin}
               <details class="emoji-manager">
                 <summary>Manage custom emoji</summary>
@@ -1371,7 +1372,7 @@
           <div class="service"><span>{line.text}</span></div>
         {:else if line.kind === 'msg'}
         {@const m = line.m}
-        {#if m.id === firstUnread && unreadBoundary > 0}<div class="service unread-divider"><span>Unread messages</span></div>{/if}
+        {#if m.id === firstUnread && unreadBoundary > 0}<div class="service unread-divider"><span>{pendingUnread} unread</span></div>{/if}
         <Message
           {m}
           handleOf={(id) => shownHandle(people.get(id), ownHandles)}
@@ -1415,7 +1416,7 @@
         />
         {/if}
       {:else}
-        {#if !lockedOut}<p class="empty">{sides?.mine.length ? `A private chat for ${sides.mine.map(nameOf).join(' & ')}. Nobody else in your system sees it or writes here.` : space?.kind === 'internal' ? 'Say hello — messages here are only for your system.' : 'No messages yet. Say hello.'}</p>{/if}
+        {#if !lockedOut}<EmptyState icon="chat" label="No messages yet" />{/if}
       {/each}
     </div>
 
@@ -1495,7 +1496,6 @@
           </select>
         </label>
         {#if visibilityMode === 'members'}
-          <p class="hint">This is a view filter within your system, not a security boundary. Members fronting or co-conscious can see it.</p>
           <div class="visibility-members" aria-label="Members who can view this message">
             {#each members(projection).filter((m) => !m.deleted && !m.archived) as person (person.id)}
               <label><input type="checkbox" checked={visibleTo.includes(person.id)} onchange={(e) => {
@@ -1810,10 +1810,6 @@
     flex-direction: column;
     min-height: 0;
   }
-  .empty {
-    color: var(--ink-3);
-    margin: auto;
-  }
   .bar {
     display: flex;
     align-items: center;
@@ -1972,8 +1968,6 @@
   .menu-items > button:hover, .menu-items > a:hover { background: var(--surface-2); }
   .room-menu .notify { border-top: 0; color: var(--ink-2); padding: 6px 10px; }
   .room-menu .notify select { padding: 4px 6px; }
-  .menu-note { margin: 4px 10px; font-size: var(--fs-xs); color: var(--ink-3); }
-  .menu-note a { color: var(--accent); display: inline; padding: 0; }
   .emoji-manager { padding: 6px 10px; font-size: var(--fs-xs); color: var(--ink-3); }
   .emoji-manager summary { cursor: pointer; }
   .pinned-bar { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 52px; padding: 8px 16px 8px 0; border: 0; border-bottom: 1px solid var(--line);

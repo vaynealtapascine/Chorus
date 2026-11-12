@@ -137,6 +137,11 @@
     if (r.pinned) savePins(organize.pins.filter((p) => p !== r.id));
     if (r.channel.id === currentId) location.hash = '#/chat';
   }
+  // Mute is the notification level "none"; unmuting goes back to the default (D-100: DMs tell, other chats mention)
+  function mute(r: Row) {
+    menuFor = null;
+    sync.create('pref.set', sync.accountScope, null, { device: '', key: `notify_channel:${r.channel.id}`, value: r.muted ? (r.space?.kind === 'dm' ? 'all' : 'mentions') : 'none' });
+  }
   // archiving is when, so a newer message brings the chat back on every device (D-111)
   function archive(r: Row) {
     menuFor = null;
@@ -324,6 +329,7 @@
         onclick={() => { foldersFor = null; menuFor = menuFor === r.id ? null : r.id; }}><Icon name="more" size={18} /></button>
       {#if menuFor === r.id}
         <div class="row-menu" role="menu">
+          <button role="menuitem" onclick={() => mute(r)}><Icon name="muted" size={16} /> {r.muted ? 'Unmute' : 'Mute'}</button>
           <button role="menuitem" onclick={() => { menuFor = null; savePins(togglePin(organize.pins, r.id)); }}><Icon name="pin" size={16} /> {r.pinned ? 'Unpin' : 'Pin to top'}</button>
           <button role="menuitem" onclick={() => archive(r)}><Icon name="archive" size={16} /> {r.stowed ? 'Unarchive' : 'Archive'}</button>
           {#if foldersFor === r.id}
