@@ -148,7 +148,7 @@
     { id: 'fronts' as Tab, label: 'Custom fronts' },
     { id: 'fields' as Tab, label: 'Custom fields' },
   ]);
-  const subtitle = $derived(current === 'groups' ? `${gs.length} ${gs.length === 1 ? 'group' : 'groups'}` : `${n.all} ${n.all === 1 ? 'member' : 'members'}`);
+  const subtitle = $derived(current === 'groups' ? `${gs.length} ${gs.length === 1 ? 'group' : 'groups'}` : current === 'members' ? `${n.all} ${n.all === 1 ? 'member' : 'members'}` : '');
   const addLabel = $derived(current === 'groups' ? 'New group' : current === 'fronts' ? 'New custom front' : current === 'fields' ? 'Add field' : 'Add member');
   function add() {
     if (current === 'groups') creatingGroup = true;

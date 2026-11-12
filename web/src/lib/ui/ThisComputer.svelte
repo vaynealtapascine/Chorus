@@ -1,6 +1,10 @@
 <script lang="ts">
   import PageHeader from './kit/PageHeader.svelte';
   import Button from './kit/Button.svelte';
+  import FormCard from './kit/FormCard.svelte';
+  import SectionLabel from './kit/SectionLabel.svelte';
+  import Switch from './kit/Switch.svelte';
+  import TextField from './kit/TextField.svelte';
   // Chorus Home's *This computer* page (D-071, FLOWS F2.3–F2.4): add a phone over the home wifi,
   // and the few settings a home install has, instead of editing chorus.toml.
   import { onMount } from 'svelte';
@@ -54,7 +58,7 @@
     error = '';
     note = 'Saving… Chorus restarts for a few seconds.';
     try {
-      const url = await saveHomeSettings({ port, lan, keep_daily: keepDaily });
+      const url = await saveHomeSettings({ port: Number(port), lan, keep_daily: Number(keepDaily) });
       if (await waitForServer(url)) {
         if (new URL(url).port !== location.port) location.href = `${url}#/computer`;
         else location.reload();
@@ -79,8 +83,8 @@
   {:else}
     {#if welcome}<p class="lead">You're set up. Chorus runs in the background and starts with Windows.</p>{/if}
 
-    <article class="card">
-      <h2>Add a phone</h2>
+    <SectionLabel label="Add a phone" />
+    <div class="card">
       {#if status.lan}
         <ol>
           <li>Install the Chorus app on the phone (<a href="https://github.com/vaynealtapascine/Chorus/releases/latest" target="_blank" rel="noreferrer">download page</a>).</li>
@@ -92,7 +96,7 @@
           <p class="hint">Works once, for a day. <button class="ghost" onclick={addPhone}>New code</button></p>
           <details><summary>Can't scan?</summary><code>{phoneLink}</code><p class="hint">Paste this into the app's invite box.</p></details>
         {:else}
-          <Button variant="primary" class="primary" onclick={addPhone}>Show the code</Button>
+          <Button variant="primary" block onclick={addPhone}>Show the code</Button>
         {/if}
         <p class="hint">
           Other browsers on the wifi (a laptop, an iPhone) will see a security warning and can't work offline.
@@ -101,52 +105,54 @@
       {:else}
         <p class="muted">Phones can't connect: "Let devices on my wifi connect" is off below.</p>
       {/if}
-    </article>
+    </div>
 
-    <form class="card" onsubmit={save}>
-      <h2>Settings</h2>
-      <label class="check"><input type="checkbox" bind:checked={lan} /> Let devices on my wifi connect</label>
-      <label>
-        <span>Keep this many daily backups</span>
-        <input type="number" min="1" max="365" bind:value={keepDaily} />
-      </label>
-      <details>
-        <summary>Advanced</summary>
-        <label>
-          <span>Port on this computer</span>
-          <input type="number" min="1024" max="65534" bind:value={port} />
-          <small class="hint">Phones use the next one ({port + 1}). Change it only if something else needs {status.port}.</small>
-        </label>
-      </details>
+    <form onsubmit={save}>
+      <SectionLabel label="Settings" />
+      <FormCard>
+        <Switch label="Let devices on my wifi connect" bind:checked={lan} />
+        <label class="field"><span>Keep this many daily backups</span><TextField type="number" min="1" max="365" bind:value={keepDaily} /></label>
+        <details>
+          <summary>Advanced</summary>
+          <label class="field">
+            <span>Port on this computer</span>
+            <TextField type="number" min="1024" max="65534" bind:value={port} />
+            <small class="hint">Phones use the next one ({Number(port) + 1}). Change it only if something else needs {status.port}.</small>
+          </label>
+        </details>
+      </FormCard>
       {#if note}<p class="hint" role="status">{note}</p>{/if}
       {#if error}<p class="error" role="alert">{error}</p>{/if}
-      <Button variant="primary" class="primary" disabled={saving}>{saving ? 'Restarting…' : 'Save'}</Button>
+      <div class="save"><Button variant="primary" block disabled={saving}>{saving ? 'Restarting…' : 'Save'}</Button></div>
     </form>
 
-    <article class="card facts">
-      <h2>About</h2>
+    <SectionLabel label="About" />
+    <div class="card facts">
       <p>Chorus Home {status.version}</p>
       {#if status.lan_address}<p>On the wifi at <code>{status.lan_address}</code></p>{/if}
       <p>Data: <code>{status.data_dir}</code></p>
       <p>Backups: <code>{status.backup.dir}</code></p>
       <p class="hint">Remove Chorus Home from Windows Settings → Apps. Your data stays unless you choose otherwise.</p>
-    </article>
+    </div>
   {/if}
 </section>
 
 <style>
-  .computer { display: grid; gap: var(--s-4); max-width: 620px; margin: auto; }
-  h2 { margin: 0; }
-  h2 { font-size: var(--fs-lg); }
+  .computer { display: grid; gap: var(--s-1); max-width: 620px; align-content: start; }
   .lead { color: var(--ink-2); margin: 0; }
-  .card { display: grid; gap: var(--s-3); padding: var(--s-5); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); }
+  .card { display: grid; gap: var(--s-3); padding: var(--s-4); background: var(--surface-2); border-radius: var(--r-md); }
   ol { margin: 0; padding-left: var(--s-5); color: var(--ink-2); display: grid; gap: var(--s-1); }
   .qr { width: min(240px, 100%); justify-self: center; background: #fff; padding: var(--s-3); border-radius: var(--r-md); }
   .qr :global(svg) { width: 100%; height: auto; display: block; }
-  label { display: grid; gap: var(--s-1); font-size: var(--fs-sm); color: var(--ink-2); }
-  label.check { display: flex; gap: var(--s-2); align-items: center; color: var(--ink); font-size: var(--fs-md); }
-  input[type='number'] { max-width: 10ch; }
+  .field { display: grid; gap: var(--s-1); padding: var(--s-3) var(--s-4); font-size: var(--fs-sm); color: var(--ink-2); }
+  .field :global(.field) { background: var(--surface); max-width: 12ch; }
+  details { padding: var(--s-3) var(--s-4); color: var(--ink-2); }
+  details .field { padding-inline: 0; }
+  summary { cursor: pointer; }
+  .save { padding-top: var(--s-3); }
+  form > :global(.hint), form > .error { margin: var(--s-2) var(--s-1) 0; }
   .facts p { margin: 0; color: var(--ink-2); }
+  .ghost { border: 0; background: none; padding: 0; color: var(--accent); font: inherit; cursor: pointer; }
   code { font-size: var(--fs-sm); word-break: break-all; }
   .hint, .muted { color: var(--ink-3); font-size: var(--fs-sm); margin: 0; }
   .error { color: var(--danger); margin: 0; }

@@ -140,6 +140,13 @@ Findings (fixed in the commit that carries this table unless noted):
 | Stage (chat) | all | Dark in both themes (the capture surface); the Style / Filters / Names tabs were not opened | left (not toured: tab clicks missed) |
 | API tokens, Webhooks | all | Two "add" controls: the header button and an action inside the empty state | fixed (empty state has no action; the header button stays) |
 | This device | all | "This app uses 1.8 MB on this device of 10.0 GB" repeats the Space used row above it | left (an e2e spec reads this sentence) |
+| Devices (Settings) | all | Bare unstyled text rows ("name · cli · last seen"), plain "Sign out" links and a plain "Link another device..." link, none of it in a card | fixed (FormCard rows with a sub line, quiet pill "Sign out", neutral block button; the sign-out confirmation keeps its text, checkbox and group role, buttons are Cancel / danger) |
+| This computer | all | Native checkbox, native number inputs (white boxes in dark), hand-made cards with a border (not the settings surface), no section labels | fixed (SectionLabel + surface-2 cards, Switch row, TextField, Button; port / backups are sent as numbers) |
+| Members: Custom fronts, Custom fields tabs | all | The header still said "4 members" (and Groups said "1 group") above tabs that list neither | fixed (the count shows on Members and Groups only) |
+| System board | all | App bar title plus the page's own "System board" bar; empty state had a "New post" button beside the header's plus | fixed (app bar hidden, empty state has no action) |
+| Custom fields, New field / field detail sheet | 390 light | Name box was white on a white sheet: no visible field | fixed (surface-2 inside the sheet; the 1280 side panel keeps surface) |
+| Post overflow menu (the three dots on a post) | 390 / 1280 | Popover hung off the card and ran past the bottom of the screen: Change audience / Stage cut off, and behind the phone tab bar | fixed (kit MenuSheet with MenuRows; labels and menuitem roles unchanged; no spec opens it) |
+| Sync issues | all | Page only exists when the account has sync issues; not reachable in the demo | not toured |
 
 ### Stage 1's open decisions, settled by the tour
 

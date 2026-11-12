@@ -119,7 +119,7 @@
 {/if}
 
 {#snippet detail()}
-  <div class="detail">
+  <div class="detail" class:in-sheet={!wide}>
     {#if wide}<h2>{current?.name ?? 'New field'}</h2>{/if}
     {#if current}
       <label class="name"><span>Name</span><input value={current.name} maxlength="60" onchange={(e) => rename(e.currentTarget)} onkeydown={(e) => e.key === 'Enter' && e.currentTarget.blur()} /></label>
@@ -170,6 +170,7 @@
   .detail { display: grid; gap: var(--s-3); }
   h2 { margin: 0; font-size: var(--fs-base); }
   .name { display: grid; gap: 2px; padding: var(--s-2) 14px; border-radius: var(--r-control); background: var(--surface); color: var(--accent); font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+  .in-sheet .name { background: var(--surface-2); }
   .name:focus-within { box-shadow: inset 0 0 0 1.5px var(--accent); }
   .name input { font: inherit; font-size: var(--fs-base); letter-spacing: 0; text-transform: none; font-weight: 400; color: var(--ink); background: none; border: 0; padding: 2px 0; min-width: 0; }
   .name input:focus { outline: none; }

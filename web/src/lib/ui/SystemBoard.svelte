@@ -48,7 +48,7 @@
         replyCount={social.replies.get(post.id) ?? 0} onreply={() => router.go(`/journal/post/${encodeURIComponent(post.id)}`)}
         onreact={(emoji, add, as) => react(post, emoji, add, as)} />
     {:else}
-      <EmptyState icon={tab === 'polls' ? 'poll' : 'journal'} label={tab === 'polls' ? 'No polls yet' : 'Nothing yet'} action="New post" href="#/journal" />
+      <EmptyState icon={tab === 'polls' ? 'poll' : 'journal'} label={tab === 'polls' ? 'No polls yet' : 'Nothing yet'} />
     {/each}
   </div>
 </section>

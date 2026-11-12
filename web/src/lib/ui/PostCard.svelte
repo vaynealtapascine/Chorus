@@ -3,6 +3,8 @@
   // time, the post, then one quiet icon row (reply, repost, heart, save, share) and a ⋯ menu.
   import Pill from './kit/Pill.svelte';
   import Button from './kit/Button.svelte';
+  import MenuSheet from './kit/MenuSheet.svelte';
+  import MenuRow from './kit/MenuRow.svelte';
   import PollCard from './PollCard.svelte';
   import { closePost, pollOf } from '../polls';
   import { sync, type Projection } from '../sync/client';
@@ -235,19 +237,21 @@
     </div>
     <span class="pop-anchor overflow">
       <button class="more" aria-haspopup="menu" aria-expanded={menu} aria-label="More options for this post" onclick={() => (menu = !menu)}><Icon name="more" size={18} /></button>
-      {#if menu}<div class="menu right" role="menu" use:outside={() => (menu = false)}>
-        {#if !inThread}<a role="menuitem" href={threadHref} onclick={() => (menu = false)}>Open post</a>{/if}
-        <button role="menuitem" onclick={copyLink}>Copy link</button>
-        {#if share}<button role="menuitem" onclick={copy}>Copy text</button>{/if}
-        {#if own && !post.repost_of}<button role="menuitem" onclick={() => { menu = false; editing = true; }}>Edit post</button>{/if}
-        {#if own}<button role="menuitem" onclick={() => { menu = false; changingAudience = true; }}>Change audience</button>{/if}
-        <a role="menuitem" href="#/stage-post/{post.id}" onclick={() => (menu = false)}>Stage</a>
-      </div>{/if}
     </span>
   </div>
   {#if editing}<PostEdit {post} onclose={() => (editing = false)} />{/if}
 </article>
 
+{#if menu}
+  <MenuSheet label="Post options" onclose={() => (menu = false)}>
+    {#if !inThread}<MenuRow icon="action-thread" label="Open post" href={threadHref} onclick={() => (menu = false)} />{/if}
+    <MenuRow icon="link" label="Copy link" onclick={copyLink} />
+    {#if share}<MenuRow icon="copy" label="Copy text" onclick={copy} />{/if}
+    {#if own && !post.repost_of}<MenuRow icon="edit" label="Edit post" onclick={() => { menu = false; editing = true; }} />{/if}
+    {#if own}<MenuRow icon="users" label="Change audience" onclick={() => { menu = false; changingAudience = true; }} />{/if}
+    <MenuRow icon="layers" label="Stage" href="#/stage-post/{post.id}" onclick={() => (menu = false)} />
+  </MenuSheet>
+{/if}
 {#if editing}<PostEdit {post} onclose={() => (editing = false)} />{/if}
 {#if changingAudience && projection}<PostAudienceDialog {projection} postId={post.id} current={audienceOf(post.visibility)} onclose={() => (changingAudience = false)} />{/if}
 
@@ -329,9 +333,8 @@
   .more { display: grid; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 50%; background: none; color: var(--ink-3); cursor: pointer; }
   .more:hover { background: var(--surface-2); }
   .menu { position: absolute; top: 100%; left: 0; z-index: 5; display: grid; min-width: 160px; padding: 6px; border: 1px solid var(--line); border-radius: var(--r-row); background: var(--surface); box-shadow: 0 8px 24px rgb(0 0 0 / .18); }
-  .menu.right { left: auto; right: 0; }
-  .menu button, .menu a { display: flex; align-items: center; gap: 10px; padding: 10px var(--s-3); border: 0; border-radius: 8px; background: none; color: var(--ink); font: inherit; font-size: var(--fs-sm); text-align: left; text-decoration: none; cursor: pointer; }
-  .menu button:hover:not(:disabled), .menu a:hover { background: var(--surface-2); }
+  .menu button { display: flex; align-items: center; gap: 10px; padding: 10px var(--s-3); border: 0; border-radius: 8px; background: none; color: var(--ink); font: inherit; font-size: var(--fs-sm); text-align: left; text-decoration: none; cursor: pointer; }
+  .menu button:hover:not(:disabled) { background: var(--surface-2); }
   .menu button:disabled { color: var(--ink-3); cursor: default; }
   .disclose { max-width: 360px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); color: var(--ink); padding: var(--s-5); }
   .disclose::backdrop { background: var(--scrim); }
