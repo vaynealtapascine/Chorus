@@ -239,3 +239,27 @@ Each slice: read its audit rows and frames, grep the web for the existing piece 
 tests, `python scripts/verify.py --changed`, run `bash scripts/e2e-web.sh` when routes change (slice 2 and 4 change
 routes), update `PROGRESS.md` via `python scripts/board.py` with a log line, deploy web with the next Android wave 8
 deploy or on its own through `deploy-linux.ps1` when the owner asks.
+
+## 6. Status (2026-11-12)
+
+Done and on main, not deployed (check, vitest and build passed per commit; most screens were seen only in dark at
+one width, some only type-checked): slice 1 kit + sweep + banner/toast + both bugs; 2 Home; 3 Chat; 4 Settings;
+5 Members; 6 onboarding, Insights, More, whats-new.txt; 7 Journal; 8 Fronting/Friends/Notifications; 9 chat
+remainder. In progress: 10 Stage (`ui21-web` worktree), and the e2e suite being brought back to green
+(`ui21-web-home` worktree; it had not been run by any slice).
+
+Left over from the slices, to pick up in or after the design consistency pass (ui21-plan.md):
+
+- Home: the F0.7/F0.8 right-hand column (search, Requests, Your spaces, Also new); a "Reading as" switcher; a deep
+  link into the composer for "Write something"; DM titles from author cards.
+- Chat: `@everyone` (waits for a spec line); offline retry and the clock on pending bubbles, and Retry on Sync
+  issues (need a wasm `retry_issue` export); per-option detail on chat info's Polls tab.
+- Settings: Webhooks' Deliveries list (data isn't on web); a System settings page with the words (F1.2) editable
+  after setup; LinkDevice and ThisComputer still unrestyled.
+- Members: the held menu; Restore on an archived profile; drag handles for group members. "Show age" only changes
+  what is drawn: the date still reaches readers who may see the field.
+- Journal: a drafts list; the feed rule builder and its two switches; the "Co-fronting with" chip; hanging-indent
+  lists; Relationships as its own page; the F6.13 right rail. The built-in feed descriptions are not from the frames.
+- Notifications: no per-kind filter on this device (the switches are the account-wide `notify_chat`), no push-tap
+  deep links or notification actions (the service worker has no click routing).
+- Fronting: the front editor is still an inline card, not value rows and sheets.
