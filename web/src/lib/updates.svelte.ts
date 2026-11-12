@@ -18,9 +18,11 @@ export function watchUpdates(reg: ServiceWorkerRegistration) {
   reg.addEventListener('updatefound', () => {
     const worker = reg.installing;
     if (!worker) return;
+    // with no controller yet this is the first install (the worker claims the page when it
+    // activates, which must not look like an update)
+    const update = !!navigator.serviceWorker.controller;
     worker.addEventListener('statechange', () => {
-      // with no controller this is the first install, not an update
-      if ((worker.state === 'installed' || worker.state === 'activated') && navigator.serviceWorker.controller && !updates.ready) {
+      if (update && (worker.state === 'installed' || worker.state === 'activated') && !updates.ready) {
         updates.ready = true;
         updates.later = false;
         void loadNotes();
