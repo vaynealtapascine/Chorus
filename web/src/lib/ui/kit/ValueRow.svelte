@@ -15,7 +15,7 @@
   <span class="chev"><Icon name="chevron-right" size={18} /></span>
 {/snippet}
 {#if href && !disabled}<a class="value-row" {href}>{@render inner()}</a>
-{:else}<button class="value-row" {disabled} {onclick}>{@render inner()}</button>{/if}
+{:else}<button type="button" class="value-row" {disabled} {onclick}>{@render inner()}</button>{/if}
 
 <style>
   .value-row { display: flex; align-items: center; gap: var(--s-3); width: 100%; min-height: 46px; padding: 10px 14px; border: 0; background: none;

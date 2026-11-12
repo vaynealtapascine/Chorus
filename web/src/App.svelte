@@ -204,7 +204,7 @@
     {#if navOpen}<button class="scrim" aria-label="Close navigation" onclick={() => (navOpen = false)}></button>{/if}
     <div class="workspace">
       <!-- Fronting's subpages carry their own back-arrow bars (Figma F3.4, F3.5, F3.7, F3.9), as Friends' pages do (F7) -->
-      <header class="app-bar" class:own-head={['notifications', 'friend', 'people', 'insights', 'member', 'post', 'board'].includes(router.route.name) || ((router.route.name === 'settings' || router.route.name === 'chat') && !!router.route.id)} class:own-head-wide={router.route.name === 'settings'} class:subpage={(['fronts', 'layers', 'history', 'review'].includes(router.route.name) && !person) || router.route.name === 'friend' || router.route.name === 'people'}>
+      <header class="app-bar" class:own-head={['notifications', 'friend', 'people', 'insights', 'member', 'post', 'board', 'review'].includes(router.route.name) || ((router.route.name === 'settings' || router.route.name === 'chat') && !!router.route.id)} class:own-head-wide={router.route.name === 'settings'} class:subpage={(['fronts', 'layers', 'history', 'review'].includes(router.route.name) && !person) || router.route.name === 'friend' || router.route.name === 'people'}>
         <div><strong>{routeTitle}</strong><span class="account-subtitle">{accountName}{#if router.route.name === 'fronting' && !person}{' · '}{homeSimple ? 'simple view' : `${current.length} here now`}{:else if router.route.name === 'home'}{' · '}{new Date().toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' })}{/if}</span></div>
         {#if router.route.name === 'home'}
           <button class="sections-pill" onclick={() => (homeUi.sections = true)}><Icon name="sliders" size={18} />Sections</button>

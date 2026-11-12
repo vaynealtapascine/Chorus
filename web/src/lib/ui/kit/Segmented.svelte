@@ -7,7 +7,7 @@
 
 <div class="segmented" role="radiogroup" aria-label={label}>
   {#each options as o (o.id)}
-    <button role="radio" aria-checked={value === o.id} onclick={() => { value = o.id; onchange?.(o.id); }}>{o.label}</button>
+    <button type="button" role="radio" aria-checked={value === o.id} onclick={() => { value = o.id; onchange?.(o.id); }}>{o.label}</button>
   {/each}
 </div>
 

@@ -14,7 +14,7 @@
     {#if leading}{@render leading()}{/if}{label ?? ''}{@render children?.()}
   </a>
 {:else}
-  <button class="chip {cls}" class:on role={on === undefined ? undefined : 'checkbox'} aria-checked={on} {...rest}>
+  <button type="button" class="chip {cls}" class:on role={on === undefined ? undefined : 'checkbox'} aria-checked={on} {...rest}>
     {#if leading}{@render leading()}{/if}{label ?? ''}{@render children?.()}
   </button>
 {/if}

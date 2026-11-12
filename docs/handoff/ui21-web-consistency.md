@@ -115,6 +115,7 @@ Desktop 1280 and phone width, light and dark, plus Large text and Compact densit
 
 Toured against a demo server on a copy of a seeded data dir (Lanterns account, Chrome via Playwright, 1280x800 and 390x844, dark and
 light). Toured so far: Home, Fronting, History, Fronts, Layers, Members (+ tabs), Chat list, Chat (+ message actions, attach, info, new message), Journal, Feeds, Friends, Notifications, More, Settings (root, Account, Appearance, Notifications, Sharing, Tokens, Webhooks, This device, Updates, Server health), Insights, Search, Switcher, Home sections, Edit member, Post page, a friend's page, Stage (chat), Lists, New group sheet, Large text and Compact density on the dense screens.
+Second half (all four variants unless noted): Trash (empty and with one item), This device, Updates, Devices, This computer (home status faked), Your data, API tokens and Webhooks (empty and with one item, plus their add sheets), Custom fields / Custom fronts / Groups tabs and sheets, Reorder members, member profile (+ Relationships, Add relationship), Fronting (switch sheet, member and front menus, state sheet, place sheet), Review (made with two demo devices), History, System board, Journal (More menu, Lists, Feeds, post overflow, audience menu, poll composer, a poll post, Close poll), Chat (folders sheet, new folder, new message, shared space and info, poll in chat, message actions, Forward), Stage (all five tabs, Save drawer), welcome and Setup, the offline banner on Fronting, Chat and Journal, and Large text and Compact density over Members, History, Settings (root, Appearance, Notifications), Journal composer, Chat and Stage. Not toured: Sync issues (only exists with an unsynced op), the slow-down toast, the Votes list and Nudge (need other accounts' votes), drafts beyond "Draft restored".
 Findings (fixed in the commit that carries this table unless noted):
 
 | Screen | Width / theme | What was wrong | Status |
@@ -140,6 +141,13 @@ Findings (fixed in the commit that carries this table unless noted):
 | Stage (chat) | all | Dark in both themes (the capture surface); the Style / Filters / Names tabs were not opened | left (not toured: tab clicks missed) |
 | API tokens, Webhooks | all | Two "add" controls: the header button and an action inside the empty state | fixed (empty state has no action; the header button stays) |
 | This device | all | "This app uses 1.8 MB on this device of 10.0 GB" repeats the Space used row above it | left (an e2e spec reads this sentence) |
+| Review (two devices switched together) | 1280 | App bar "Review" above the page's own "Review / 1 thing to check" bar | fixed (app bar hidden on Review; phone already hid it) |
+| Review | all | Reached it with two demo devices switching within a minute; layout, radio rows and the Later / Save pair look right in all four variants | none |
+| Review | any | Opening `#/review/<front>` by reload or link bounces straight back: the "nothing to check" rule runs before the projection has loaded (`!configured` is still true), so `history.back()` leaves | left (behaviour; needs a decision: wait for the projection before leaving) |
+| Kit Switch, ValueRow, Segmented, Chip | all | Their buttons had no `type`, so a Switch inside a form submitted it (This computer's would have saved and restarted Chorus; Add relationship's type form created a type) | fixed (`type="button"`; Button keeps the default so it still submits) |
+| Add relationship / Types sheet | all | Native checkbox, small unlabelled-looking inputs, native selects at 10ch, a link-style "Types" beside the button | fixed (TextField, Switch row, full-width filled selects, block Button; Types is a quiet button) |
+| Journal, right rail | 1280 | "Writing together / Choose who's speaking before posting..." card and a "Privacy and preferences" link: an explanation with no Figma frame | fixed (removed) |
+| Fronting, "Devices and data" disclosure | all | A second copy of Settings > Devices (sign out, link a device, Trash, API tokens) under the fronting cards | left (e2e v1 and typing specs use the Link another device button there; needs an owner decision on removing it) |
 | Fronting, front card options (the three dots on a front's card) | all | Hand-built dropdown (Switch / Layers & display / Front history / Manage fronts), while a member's three dots opens a sheet | fixed (kit MenuSheet; "Layers & display" is still a link; e2e opens it by the "Layers and display" link in the app bar, not this menu) |
 | API tokens, Webhooks | all | Header "New token" / "Add webhook" were hand-rolled 40 px pills (kit pills are 36) | fixed (kit Button sm) |
 | API tokens | all | With one token the card carried a "Tokens 1" heading under a page already called API tokens (Webhooks has none) | fixed (heading removed) |
@@ -173,10 +181,8 @@ Findings (fixed in the commit that carries this table unless noted):
 - Kit `IconButton` and `FaceRow`: **deferred.** Round icon buttons looked consistent on every screen toured (44 px target, ink-2
   glyph, surface-2 hover), so no visible gain for a 13-file change with no e2e cover on the face rows.
 - The five `.fr-seg` controls: left alone; the e2e specs were not checked for their roles.
-- Not toured (usage and time): Trash, Sync issues, Link device, This computer pages, Export/Import, Chat folders, Custom fields
-  sheets, Forward sheet, Relationships, System board, poll card and Votes, Stage's five tool tabs and Save drawer, the connection
-  banner and slow-down toast, ConfirmSheets. Large text and Compact density: Members, History and Settings screenshots were taken
-  but not individually viewed.
+- Still not toured after the second half: Sync issues, the slow-down toast, the Votes list and Nudge, drafts beyond "Draft restored".
+  Everything else from the first list has been looked at (see "Toured so far").
 
 ## How counted
 

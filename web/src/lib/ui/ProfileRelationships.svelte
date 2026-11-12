@@ -1,6 +1,9 @@
 <script lang="ts">
   import Pill from './kit/Pill.svelte';
   import Button from './kit/Button.svelte';
+  import FormCard from './kit/FormCard.svelte';
+  import Switch from './kit/Switch.svelte';
+  import TextField from './kit/TextField.svelte';
   import { buckets, members, relationshipTypes, relationships } from '../data';
   import AudienceChip from './AudienceChip.svelte';
   import { audienceOf, type Audience } from '../profile-audience';
@@ -110,10 +113,10 @@
 
 {#snippet typeForm()}
   <form class="editor" onsubmit={createType}>
-    <label>New type <input bind:value={typeName} required maxlength="60" placeholder="Friend" /></label>
-    <label><input type="checkbox" bind:checked={symmetric} /> Same in both directions</label>
-    {#if !symmetric}<label>Reverse name <input bind:value={inverseName} maxlength="60" placeholder="Friend of" /></label>{/if}
-    <div class="actions"><Button variant="primary" class="primary">Add type</Button></div>
+    <TextField bind:value={typeName} required maxlength={60} placeholder="New type, e.g. Friend" aria-label="New type" />
+    <FormCard><Switch label="Same in both directions" bind:checked={symmetric} /></FormCard>
+    {#if !symmetric}<TextField bind:value={inverseName} maxlength={60} placeholder="Reverse name, e.g. Friend of" aria-label="Reverse name" />{/if}
+    <Button variant="primary" block class="primary">Add type</Button>
   </form>
 {/snippet}
 
@@ -129,7 +132,8 @@
         <label>Note <input bind:value={note} maxlength="300" /></label>
         <AudienceChip label="New relationship" value={audience} own buckets={sharing} onchange={(a) => (audience = a ?? { mode: 'private' })} />
         {#if error}<p class="error" role="alert">{error}</p>{/if}
-        <div class="actions"><button type="button" class="link-btn" onclick={() => { adding = false; typesOpen = true; }}>Types</button><Button variant="primary" class="primary" disabled={!(selectedType || types.length === 1)}>Add relationship</Button></div>
+        <Button variant="primary" block class="primary" disabled={!(selectedType || types.length === 1)}>Add relationship</Button>
+        <Button variant="quiet" block type="button" onclick={() => { adding = false; typesOpen = true; }}>Types</Button>
       </form>
     {:else}
       {@render typeForm()}
@@ -157,17 +161,15 @@
   .who { flex: 1; min-width: 0; display: grid; gap: 2px; }
   .act { padding: 6px 14px; border: 1px solid var(--line); border-radius: var(--r-full); color: var(--ink); text-decoration: none; background: none; font: inherit; font-weight: 600; font-size: var(--fs-sm); }
   .more { display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; background: none; color: var(--ink-3); border-radius: 50%; }
-  .add { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-3); border: 1px dashed var(--line); border-radius: var(--r-row); background: none; justify-self: stretch; justify-content: center; }
-  .actions { display: flex; justify-content: space-between; align-items: center; }
-  .link-btn { border: 0; background: none; }
+  .add { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-3); color: var(--accent); cursor: pointer; font: inherit; border: 1px dashed var(--line); border-radius: var(--r-row); background: none; justify-self: stretch; justify-content: center; }
   .type { display: flex; justify-content: space-between; align-items: center; padding: var(--s-1) 0; }
   .relations, .editor { display: grid; gap: var(--s-3); }
   .relations ul { list-style: none; display: grid; gap: var(--s-2); margin: 0; padding: 0; }
-  .link, .editor { padding: var(--s-3); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); }
+  .link { padding: var(--s-3); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); }
   .link { display: flex; justify-content: space-between; gap: var(--s-2); }
   .link small { color: var(--ink-3); }
-  label { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-2); }
-  input:not([type='checkbox']), select { min-width: 10ch; max-width: 100%; padding: var(--s-2); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); color: var(--ink); font: inherit; }
-  button { justify-self: start; color: var(--accent); cursor: pointer; }
+  label { display: grid; gap: var(--s-1); color: var(--ink-3); font-size: var(--fs-sm); }
+  input, select { box-sizing: border-box; width: 100%; min-width: 0; padding: var(--s-3) 14px; border: 0; border-radius: var(--r-row); background: var(--surface-2); color: var(--ink); font: inherit; font-size: var(--fs-md); }
+  .type button { color: var(--accent); cursor: pointer; }
   .error { color: var(--danger); }
 </style>

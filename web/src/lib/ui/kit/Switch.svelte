@@ -10,12 +10,12 @@
 </script>
 
 {#if label}
-  <button class="toggle-row" role="switch" aria-checked={checked} {disabled} onclick={flip}>
+  <button type="button" class="toggle-row" role="switch" aria-checked={checked} {disabled} onclick={flip}>
     <span class="text"><strong>{label}</strong>{#if sub}<span>{sub}</span>{/if}</span>
     <span class="track" class:on={checked} aria-hidden="true"></span>
   </button>
 {:else}
-  <button class="bare" role="switch" aria-checked={checked} aria-label={aria} {disabled} onclick={flip}><span class="track" class:on={checked}></span></button>
+  <button type="button" class="bare" role="switch" aria-checked={checked} aria-label={aria} {disabled} onclick={flip}><span class="track" class:on={checked}></span></button>
 {/if}
 
 <style>
