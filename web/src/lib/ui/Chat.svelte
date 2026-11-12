@@ -1714,7 +1714,7 @@
 </div>
 {#if attaching && !lockedOut}
   <AttachSheet bind:pending bind:draft {pollOn} {canSend} journal={ownPosts} onphotos={() => photoInput?.click()} onfiles={() => fileInput?.click()}
-    onpoll={() => { optionsOpen = true; pollOn = true; }} onlink={(id) => { draft = draft + (draft && !/s$/.test(draft) ? ' ' : '') + linkTo(location.origin, { kind: 'post', id }); }}
+    onpoll={() => { optionsOpen = true; pollOn = true; }} onlink={(id) => { draft = draft + (draft && !/\s$/.test(draft) ? ' ' : '') + linkTo(location.origin, { kind: 'post', id }); }}
     onsend={() => void send()} onclose={() => (attaching = false)} />
 {/if}
 {#if forwarding && !lockedOut}

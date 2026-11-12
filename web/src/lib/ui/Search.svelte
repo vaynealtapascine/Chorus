@@ -1,5 +1,10 @@
 <script lang="ts">
   import EmptyState from './kit/EmptyState.svelte';
+  import UnderlineTabs from './kit/UnderlineTabs.svelte';
+  import Icon from './Icon.svelte';
+  import Sheet from './Sheet.svelte';
+  import AttachmentView from './AttachmentView.svelte';
+  import { libraryOf, setOperator } from '../search-library';
   import { onMount } from 'svelte';
   import { channels, members, messageById, customEmojis, reactions as reactionRows, type MessageRow } from '../data';
   import { JournalIndex, SearchIndex, parseSearch } from '../search';
@@ -19,10 +24,15 @@
 
   let { projection, dark = true, channelId, onclose, onopen, initialScope = 'messages' }: {
     projection: Projection; dark?: boolean; channelId?: string; onclose?: () => void; onopen?: (m:MessageRow) => void;
-    initialScope?: 'messages' | 'posts' | 'saved' | 'switches';
+    initialScope?: Tab;
   } = $props();
+  type Tab = 'chats' | 'messages' | 'media' | 'files' | 'links' | 'posts' | 'saved' | 'switches';
+  const TABS: { id: Tab; label: string }[] = [{ id: 'chats', label: 'Chats' }, { id: 'messages', label: 'Messages' }, { id: 'media', label: 'Media' }, { id: 'files', label: 'Files' },
+    { id: 'links', label: 'Links' }, { id: 'posts', label: 'Journal' }, { id: 'saved', label: 'Saved' }, { id: 'switches', label: 'Switches' }];
+  const LIBRARY = ['chats', 'media', 'files', 'links'];
   let query = $state('');
-  let tab = $state<'messages' | 'posts' | 'saved' | 'switches'>('messages');
+  let tab = $state<Tab>('messages');
+  let picking = $state<'from' | 'in' | 'date' | null>(null);
   $effect(() => { tab = initialScope; });
   let revision = $state(0);
   let index: SearchIndex | null = null, journal: JournalIndex | null = null;
@@ -89,6 +99,23 @@
       ...remoteRows.filter(p => !own.has(p.id) && projection.rows.post?.[p.id]?.fields.deleted_at == null && (scope !== 'saved' || saved.has(p.id)) && (!parsed.from || p.author_cards?.some(a => a.id===parsed.from || (a.display_name??a.name??'').normalize('NFKD').replace(/\p{M}/gu,'').toLocaleLowerCase().includes(parsed.from!.normalize('NFKD').replace(/\p{M}/gu,'').toLocaleLowerCase())))).map(remote => ({id:remote.id,at:remote.occurred_at,local:undefined as PostRow|undefined,remote}))]
       .sort((a,b) => b.at-a.at || b.id.localeCompare(a.id));
   });
+  const chatHits = $derived.by(() => {
+    if (scope !== 'chats') return [];
+    return channels(projection).filter((c) => c.kind !== 'thread' && !c.archived && visible(remoteMessage({ id: '__search_chat__', channel_id: c.id, text: '', occurred_at: Number.MAX_SAFE_INTEGER })) &&
+      parsed.terms.every((w) => c.name.normalize('NFKD').replace(/\p{M}/gu, '').toLocaleLowerCase().includes(w))).slice(0, 100);
+  });
+  const library = $derived.by(() => {
+    void revision;
+    if (scope !== 'media' && scope !== 'files' && scope !== 'links') return [];
+    const rows = Object.keys(projection.rows.message ?? {}).map((id) => messageById(projection, id)).filter((m): m is MessageRow => !!m && visible(m));
+    return libraryOf(rows, scope, parsed.terms);
+  });
+  const peopleList = $derived(members(projection).filter((m) => !m.deleted && !m.archived));
+  const chatList = $derived(channels(projection).filter((c) => c.kind !== 'thread' && !c.archived));
+  const DAY = 86_400_000;
+  const dates = [['Any date', 0], ['Past day', DAY], ['Past week', 7 * DAY], ['Past month', 30 * DAY], ['Past year', 365 * DAY]] as const;
+  const dateLabel = $derived(parsed.after != null ? (dates.find(([, ms]) => ms && Math.abs(Date.now() - ms - parsed.after!) < DAY * 2)?.[0] ?? 'Custom') : 'Any date');
+  const pick = (key: 'from' | 'in' | 'after', value: string | null) => { query = setOperator(query, key, value); picking = null; };
   const switches = $derived.by(() => { void revision; return query.trim() ? journal?.searchSwitches(parsed) ?? [] : []; });
   function url(next?: string) {
     const params = new URLSearchParams({q: scope === 'messages' ? query.trim() : parsed.terms.map(t => `"${t}"*`).join(' '),limit:'25'});
@@ -125,7 +152,7 @@
   $effect(() => {
     const p=projection,k=key,c=connection; void revision;
     remote=[]; remotePosts=[]; cursor=null; owner=null; active=null; ancestors=new Map(); error=''; loading=false;
-    if(!query.trim() || scope==='switches' || c.status!=='live' || (scope==='messages' ? !parsedMessage.q : !parsed.terms.length)) return;
+    if(!query.trim() || scope==='switches' || LIBRARY.includes(scope) || c.status!=='live' || (scope==='messages' ? !parsedMessage.q : !parsed.terms.length)) return;
     const ctx:Request={projection:p,key:k,connection:c,revision,url:url(),scope};active=ctx;
     const abort=new AbortController();controller=abort;
     const timer=setTimeout(async()=>{
@@ -147,6 +174,10 @@
   }
   const lookup = (id:string) => {const m=messageById(projection,id);return m && visible(m) ? m : undefined;};
   const noop = () => {};
+  const chatName = (id: string) => channels(projection).find((c) => c.id === id)?.name ?? 'Chat';
+  const who = (m: MessageRow) => (m.authors ?? []).map((a) => people.get(a)?.display_name ?? people.get(a)?.name).filter(Boolean).join(' & ') || 'Someone';
+  const goChat = (id: string) => { location.hash = `/chat/${id}`; onclose?.(); };
+  const label = $derived(tab === 'messages' ? 'Search all chats' : `Search ${TABS.find((t) => t.id === tab)?.label ?? ''}`);
   const open = (m:MessageRow) => {if(!visible(m)) return; if(onopen) {onopen(m);return;} location.hash=`/chat/${m.channel_id}/${m.id}`;onclose?.();};
 </script>
 
@@ -157,21 +188,49 @@
 {/snippet}
 
 <section class="search-page" aria-label={channelId ? 'Search this chat' : 'Search'}>
-  <header><h1 class="display">{channelId ? (available ? `Search ${channels(projection).find(c=>c.id===channelId)?.name ?? 'this chat'}` : 'Search this chat') : 'Search'}</h1>{#if onclose}<button onclick={onclose}>Close search</button>{/if}</header>
-  {#if !channelId}<nav aria-label="Search scope">{#each [['messages','All chats'],['posts','Journal'],['saved','Saved'],['switches','Switches']] as [id,label]}<button aria-pressed={scope===id} onclick={()=>tab=id as typeof tab}>{label}</button>{/each}</nav>{/if}
-  <input type="search" aria-label={channelId ? 'Search this chat' : `Search ${scope==='messages'?'all chats':scope==='saved'?'saved posts':scope==='posts'?'Journal':'switches'}`} placeholder="Search words or filters" bind:value={query}/>
-  <p class="hint">{scope==='messages' ? 'Current front · from:, in:, has:, before:, after:, is:pinned. Context shows only messages available now.' : scope==='switches' ? 'Switch names and notes · before: and after:.' : `${scope==='saved'?'Bookmarked posts':'Journal posts and entries'} · titles, text and tags; before: and after:.`}</p>
+  <header>
+    <button class="back" aria-label="Back" onclick={() => (onclose ? onclose() : history.back())}><Icon name="back" size={22} /></button>
+    <label class="field"><Icon name="search" size={20} />
+      <!-- svelte-ignore a11y_autofocus -->
+      <input type="search" aria-label={channelId ? 'Search this chat' : label} placeholder={channelId ? `Search ${available ? chatName(channelId) : 'this chat'}` : 'Search'} bind:value={query} autofocus />
+      {#if query}<button class="clear" aria-label="Clear" onclick={() => (query = '')}><Icon name="close" size={18} /></button>{/if}</label>
+  </header>
+  {#if !channelId}<UnderlineTabs tabs={TABS} bind:value={tab} label="Search scope" />{/if}
+  {#if scope === 'messages'}
+    <div class="chips" role="group" aria-label="Filters">
+      <button class:on={!!parsed.from} onclick={() => (picking = 'from')}>From: {parsed.from ?? 'any member'}</button>
+      {#if !channelId}<button class:on={!!parsed.in} onclick={() => (picking = 'in')}>In: {parsed.in ?? 'all chats'}</button>{/if}
+      <button class:on={parsed.after != null} onclick={() => (picking = 'date')}>{dateLabel}</button>
+    </div>
+  {/if}
   {#if error}<p role="status">Server search unavailable. Local results are below. {error}</p>{/if}
   {#if scope==='messages' && parsedMessage.error}<p role="alert">{parsedMessage.error}</p>{/if}
   {#if !available}<EmptyState icon="lock" label="Private chat" />
-  {:else if !query.trim()}<p class="empty">Type to search {channelId?'this chat':scope==='messages'?'chats available to the current front':scope==='saved'?'your saved posts':scope==='posts'?'Journal posts and entries':'switches'}.</p>
+  {:else if scope==='chats'}
+    {#each chatHits as c (c.id)}<button class="row" onclick={() => goChat(c.id)}><span class="disc">{c.name[0]?.toUpperCase() ?? '#'}</span><span class="line"><strong>{c.kind === 'member_dm' ? c.name : `# ${c.name}`}</strong></span><Icon name="chevron-right" size={18} /></button>
+    {:else}<EmptyState icon="search" label="No chats found" />{/each}
+  {:else if scope==='media' || scope==='files' || scope==='links'}
+    {#if scope==='media'}
+      <div class="media">{#each library as item (item.id)}<div class="tile" role="button" tabindex="0" onclick={() => open(item.message)} onkeydown={(e) => e.key === 'Enter' && open(item.message)}>{#if item.attachment}<AttachmentView attachment={item.attachment} revealable={false} />{/if}</div>{/each}</div>
+    {:else}
+      {#each library as item (item.id)}
+        <div class="row" role="button" tabindex="0" onclick={() => open(item.message)} onkeydown={(e) => e.key === 'Enter' && open(item.message)}>
+          <span class="disc"><Icon name={scope === 'links' ? 'link' : 'doc'} size={20} /></span>
+          <span class="line"><strong>{item.label}</strong><small>{who(item.message)} · {chatName(item.message.channel_id)} · {new Date(item.message.occurred_at).toLocaleDateString()}</small></span>
+        </div>
+      {/each}
+    {/if}
+    {#if !library.length}<EmptyState icon={scope === 'media' ? 'image' : scope === 'files' ? 'doc' : 'link'} label={scope === 'media' ? 'No media' : scope === 'files' ? 'No files' : 'No links'} />{/if}
+  {:else if scope==='messages' && !query.trim()}<EmptyState icon="search" label="Search messages" />
+  {:else if scope!=='messages' && !query.trim()}<EmptyState icon="search" label="Type to search" />
   {:else if scope==='messages'}
-    <p class="hint">{hits.length} visible matches{local.length===100?' · first 100 local matches; narrow your search':''}</p>
+    <p class="count">{hits.length}{local.length===100 || cursor ? '+' : ''} {hits.length === 1 ? 'message' : 'messages'} found</p>
     {#each hits as hit (hit.id)}
       {@const context = contexts.get(hit.id) ?? []}
-      <article class="match" aria-label="Message search result"><p class="hint">{channels(projection).find(c=>c.id===hit.channel_id)?.name ?? 'Chat'} · {new Date(hit.occurred_at).toLocaleString()}</p>
-      {#each context as m (m.id)}<div class:matched={m.id===hit.id}>{#if m.id===hit.id}<p class="hint">Match</p>{/if}<Message {m} readOnly cont={false} {people} {dark} {lookup} mine={false} right={false} onreply={noop} onreplyin={noop} onquote={noop} onedit={noop} ondelete={noop} onrestore={noop} onpin={noop} onforward={noop} onselect={noop} selecting={false} selected={false} onthread={noop} reacts={reacts.get(m.id)} speaker={null} onreact={noop} {emojiById} cwAutoExpand={false} extra={pollBody}/></div>{/each}
-      <button onclick={()=>open(hit)}>Open message</button></article>
+      <div class="match" role="link" tabindex="0" aria-label="Message search result" onclick={() => open(hit)} onkeydown={(e) => e.key === 'Enter' && open(hit)}>
+        <p class="where">{who(hit)} · {chatName(hit.channel_id)} · {new Date(hit.occurred_at).toLocaleString()}</p>
+        {#each context as m (m.id)}<div class:matched={m.id===hit.id}><Message {m} readOnly cont={false} {people} {dark} {lookup} mine={false} right={false} onreply={noop} onreplyin={noop} onquote={noop} onedit={noop} ondelete={noop} onrestore={noop} onpin={noop} onforward={noop} onselect={noop} selecting={false} selected={false} onthread={noop} reacts={reacts.get(m.id)} speaker={null} onreact={noop} {emojiById} cwAutoExpand={false} extra={pollBody}/></div>{/each}
+      </div>
     {:else}<EmptyState icon="search" label="No matches" />{/each}
   {:else if scope==='switches'}
     {#each switches as sw (sw.id)}<article><p>{sw.names.join(' & ')||'Switched out'} · {new Date(sw.occurred_at).toLocaleString()}</p><p>{sw.note??''}</p></article>{:else}<EmptyState icon="search" label="No matches" />{/each}
@@ -181,9 +240,48 @@
       {:else if hit.remote}<FriendPostCard post={hit.remote} account="Shared post" {projection} speaker={null} speakerName="" {dark}/>{/if}
     {:else}<EmptyState icon="search" label="No matches" />{/each}
   {/if}
-  {#if loading}<p class="hint" role="status">Searching…</p>{/if}
-  {#if cursor && current}<button disabled={loading} onclick={more}>Load more</button>{/if}
+  {#if loading}<p class="count" role="status">Searching…</p>{/if}
+  {#if cursor && current}<button class="more" disabled={loading} onclick={more}>Load more</button>{/if}
 </section>
+{#if picking}
+  <Sheet title={picking === 'from' ? 'From' : picking === 'in' ? 'In' : 'Date'} onclose={() => (picking = null)}>
+    {#if picking === 'from'}
+      <button class="choice" onclick={() => pick('from', null)}>Any member{#if !parsed.from}<Icon name="check" size={18} />{/if}</button>
+      {#each peopleList as m (m.id)}<button class="choice" onclick={() => pick('from', m.display_name ?? m.name)}>{m.display_name ?? m.name}{#if parsed.from === (m.display_name ?? m.name)}<Icon name="check" size={18} />{/if}</button>{/each}
+    {:else if picking === 'in'}
+      <button class="choice" onclick={() => pick('in', null)}>All chats{#if !parsed.in}<Icon name="check" size={18} />{/if}</button>
+      {#each chatList as c (c.id)}<button class="choice" onclick={() => pick('in', c.name)}>{c.name}{#if parsed.in === c.name}<Icon name="check" size={18} />{/if}</button>{/each}
+    {:else}
+      {#each dates as [name, ms] (name)}<button class="choice" onclick={() => pick('after', ms ? new Date(Date.now() - ms).toISOString().slice(0, 10) : null)}>{name}{#if name === dateLabel}<Icon name="check" size={18} />{/if}</button>{/each}
+    {/if}
+  </Sheet>
+{/if}
 <style>
-.search-page{display:grid;gap:var(--s-3);padding:var(--s-4);min-width:0;overflow:auto}header{display:flex;align-items:center;justify-content:space-between;gap:var(--s-3)}h1{margin:0;font-size:var(--fs-xl)}nav{display:flex;flex-wrap:wrap;gap:var(--s-2)}input,button{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 16px}button{cursor:pointer;min-height:44px}button[aria-pressed=true]{background:var(--surface-3);color:var(--accent)}button:disabled{opacity:.5;cursor:default}input{width:100%;box-sizing:border-box;caret-color:var(--accent)}.hint,.empty{margin:0;color:var(--ink-3);font-size:var(--fs-sm)}.empty{padding:var(--s-4) 0}.match{display:grid;gap:var(--s-3);border-bottom:1px solid var(--line);padding:var(--s-3) 0}.matched{background:var(--surface);border-radius:12px;padding:var(--s-2)}.match>button{justify-self:start}:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+  .search-page { display: grid; gap: 8px; align-content: start; padding: 8px 16px 16px; min-width: 0; overflow: auto; }
+  header { display: flex; align-items: center; gap: 4px; }
+  .back, .clear { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: 50%; background: none; color: var(--ink-2); cursor: pointer; }
+  .clear { width: 32px; height: 32px; }
+  .field { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 8px 0 14px; border-radius: 22px; background: var(--surface-2); color: var(--ink-3); }
+  .field input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--ink); font: inherit; font-size: 16px; caret-color: var(--accent); }
+  .field:focus-within { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent) 60%, transparent); }
+  .chips { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0; scrollbar-width: none; }
+  .chips button { flex: none; min-height: 34px; padding: 0 14px; border: 1px solid var(--line); border-radius: 17px; background: none; color: var(--ink-2); font: inherit; font-size: 14px; cursor: pointer; }
+  .chips button.on { border-color: var(--accent); background: var(--accent-soft, var(--surface-2)); color: var(--accent); }
+  .count, .where { margin: 0; color: var(--ink-3); font-size: var(--fs-sm); }
+  .match { display: grid; gap: 6px; padding: 10px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
+  .match:hover { background: color-mix(in srgb, var(--ink) 3%, transparent); }
+  .matched { background: var(--surface); border-radius: 12px; padding: 4px 8px; }
+  .row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 6px 0; border: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+  .disc { flex: none; width: 40px; height: 40px; display: grid; place-items: center; border-radius: 50%; background: var(--surface-2); color: var(--ink-2); font-weight: 700; }
+  .line { flex: 1; min-width: 0; display: grid; }
+  .line strong, .line small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .line small { color: var(--ink-3); font-size: var(--fs-xs); }
+  .media { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+  .tile { aspect-ratio: 1; overflow: hidden; border-radius: 8px; background: var(--surface-2); cursor: pointer; }
+  .tile :global(img) { width: 100%; height: 100%; object-fit: cover; }
+  .more { min-height: 44px; border: 1px solid var(--line); border-radius: 12px; background: none; color: var(--accent); font: inherit; cursor: pointer; }
+  .more:disabled { opacity: .5; cursor: default; }
+  .choice { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 46px; padding: 8px 20px; border: 0; background: none; color: var(--ink); font: inherit; font-size: 15px; text-align: left; cursor: pointer; }
+  .choice :global(.icon) { color: var(--accent); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 </style>

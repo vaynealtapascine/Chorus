@@ -291,7 +291,7 @@ test('a post with a reply and a reaction across accounts', async () => {
 
 test('search finds messages and posts', async () => {
   const scope = (page: typeof stars.page, name: string) =>
-    page.getByRole('navigation', { name: 'Search scope' }).getByRole('button', { name }).click();
+    page.getByRole('tablist', { name: 'Search scope' }).getByRole('tab', { name, exact: true }).click();
   await go(stars.page, 'search');
   await stars.page.getByLabel('Search all chats').fill(`Robin ${run}`);
   await expect(stars.page.locator('article', { hasText: `hello from Robin ${run}` }).first()).toBeVisible();
@@ -302,7 +302,7 @@ test('search finds messages and posts', async () => {
   await friend.page.getByLabel('Search Journal').fill(`tomatoes ${run}`);
   await expect(friend.page.locator('article', { hasText: `tomatoes are in ${run}` }).first()).toBeVisible();
   await friend.page.getByLabel('Search Journal').fill(`nothing-like-this-${run}`);
-  await expect(friend.page.getByText('No matching Journal posts or entries.')).toBeVisible();
+  await expect(friend.page.getByText('No matches')).toBeVisible();
 
   // switches, searched on the device (works offline)
   await scope(stars.page, 'Switches');

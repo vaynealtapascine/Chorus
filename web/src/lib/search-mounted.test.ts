@@ -18,6 +18,7 @@ beforeAll(async()=>{
   '../posts':`export const posts=()=>[];`,
   '../journal-social':`export const savedPosts=()=>new Set();export const socialIndex=()=>({});`,
   '../search-view':`export const searchView=()=>()=>true;export const searchContexts=()=>new Map();export const remoteMessage=x=>x;export const searchAncestors=async(p,fetch,wanted)=>{window.ancestorScopes=[...wanted];return new Map()};`,
+  './kit/UnderlineTabs.svelte':`<script>let {tabs,value=$bindable()}=$props();</script><div role="tablist">{#each tabs as t}<button role="tab" onclick={()=>value=t.id}>{t.label}</button>{/each}</div>`,
   '../polls':`export const pollOf=()=>null;`
  };
  const bundle=await rolldown({input:'test:entry',platform:'browser',resolve:{conditionNames:['browser','import','default']},plugins:[{
@@ -72,7 +73,7 @@ it('invalidates a retained projection generation and rejects late A-to-B-to-A qu
 
 it('revalidates missing ancestors for retained pages as pagination adds other channels',async()=>{
  const page=await start();try{
-  await page.getByRole('button',{name:'All chats',exact:true}).click();await calls(page,2);
+  await page.getByRole('tab',{name:'Messages',exact:true}).click();await calls(page,2);
   await reply(page,1,'FIRST_THREAD');await expect.poll(()=>page.getByRole('button',{name:'Load more',exact:true}).count()).toBe(1);
   expect(await page.evaluate(()=>(window as any).ancestorScopes)).toEqual(['channel-1']);
   await page.getByRole('button',{name:'Load more',exact:true}).click();await calls(page,3);await reply(page,2,'SECOND_THREAD');
