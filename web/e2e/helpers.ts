@@ -153,7 +153,7 @@ export async function switchSheet(page: Page, names: string[], taps = 1): Promis
   await page.getByRole('button', { name: 'Switch', exact: true }).click();
   const sheet = page.getByRole('dialog', { name: /^Switch / });
   for (const name of names) for (let i = 0; i < taps; i++) await sheet.locator('button.pick', { hasText: name }).click();
-  await sheet.locator('button.confirm').click();
+  await sheet.getByRole('button', { name: 'Switch', exact: true }).click();
   await expect(sheet).toHaveCount(0);
 }
 

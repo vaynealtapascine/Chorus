@@ -7,6 +7,12 @@
   import * as fd from '../fronting-display';
   import { sync, type Projection } from '../sync/client';
   import Icon from './Icon.svelte';
+  import Sheet from './Sheet.svelte';
+  import FormCard from './kit/FormCard.svelte';
+  import SectionLabel from './kit/SectionLabel.svelte';
+  import Swatches from './kit/Swatches.svelte';
+  import Switch from './kit/Switch.svelte';
+  import ValueRow from './kit/ValueRow.svelte';
 
   let { projection, front }: { projection: Projection; front: string } = $props();
   const display = $derived(fd.displayPrefs(projection.rows.pref, sync.accountId));
@@ -17,7 +23,7 @@
   const layers = $derived(frontLayers(projection, sync.accountId));
   const scene = $derived(fd.scene(layers, summary?.entries ?? [], display, front, []));
   const ORIGINAL = new Set(['front', 'cocon', 'present']);
-  const SWATCHES = [null, '#42A397', '#E8776D', '#E0B560', '#B99CE8', '#6FA8DC', '#86BFA5'];
+  const SWATCHES = ['#42A397', '#E8776D', '#E0B560', '#B99CE8', '#6FA8DC', '#86BFA5'];
 
   let editing = $state<string | 'new' | null>(null);
   let dragging = $state<string | null>(null);
@@ -80,7 +86,7 @@
     <button class="icon-btn" aria-pressed={arranging} aria-label={arranging ? 'Done arranging' : 'Arrange layers'} onclick={() => (arranging = !arranging)}><Icon name={arranging ? 'check' : 'pencil'} size={22} /></button>
   </div>
 
-  <h2>Preset</h2>
+  <SectionLabel label="Preset" />
   <div class="presets" role="radiogroup" aria-label="Preset">
     {#each fd.PRESETS as p (p.id)}
       {@const steps = p.id === 'simple' ? 0 : p.id === 'detailed' ? 2 : 4}
@@ -94,7 +100,7 @@
     {/each}
   </div>
 
-  <h2>Layers · inner to outer</h2>
+  <SectionLabel label="Layers · inner to outer" />
   <div class="panel">
     {#each scene.all as l, i (l.id)}
       <div class="layer-row" class:dragging={dragging === l.id} role="listitem" ondragover={(e) => e.preventDefault()} ondrop={() => drop(l.id)}>
@@ -118,50 +124,52 @@
 
   {#if editing}
     {@const l = editing === 'new' ? null : scene.all.find((x) => x.id === editing)}
-    <form class="panel editor" onsubmit={(e) => { e.preventDefault(); saveLayer(); }}>
-      <strong>{l ? l.name : 'New layer'}</strong>
-      <label>Name <input bind:value={draft.name} maxlength="40" /></label>
-      <label>Description <input bind:value={draft.about} maxlength="80" placeholder="e.g. In control · counts as fronting" /></label>
-      <div class="choices" role="radiogroup" aria-label="Look">
-        <button type="button" role="radio" aria-checked={draft.style === null} class:on={draft.style === null} onclick={() => (draft.style = null)}>Automatic</button>
-        {#each fd.STYLES as s (s)}<button type="button" role="radio" aria-checked={draft.style === s} class:on={draft.style === s} onclick={() => (draft.style = s)}>{s[0].toUpperCase() + s.slice(1)}</button>{/each}
+    <Sheet title={l ? l.name : 'New layer'} onclose={() => (editing = null)}>
+      <label class="field">Name <input bind:value={draft.name} maxlength="40" /></label>
+      <label class="field">Description <input bind:value={draft.about} maxlength="80" placeholder="e.g. In control · counts as fronting" /></label>
+      <SectionLabel label="Look" />
+      <div class="fr-chips pad" role="radiogroup" aria-label="Look">
+        <button type="button" class="fr-chip" role="radio" aria-checked={draft.style === null} class:on={draft.style === null} onclick={() => (draft.style = null)}>Automatic</button>
+        {#each fd.STYLES as st (st)}<button type="button" class="fr-chip" role="radio" aria-checked={draft.style === st} class:on={draft.style === st} onclick={() => (draft.style = st)}>{st[0].toUpperCase() + st.slice(1)}</button>{/each}
       </div>
-      <div class="swatches" role="radiogroup" aria-label="Colour">
-        {#each SWATCHES as hex (hex ?? 'accent')}<button type="button" role="radio" aria-checked={draft.color === hex} aria-label={hex ?? 'Accent'} class:on={draft.color === hex} style="background: {hex ?? 'var(--surface-2)'}" onclick={() => (draft.color = hex)}>{hex ? '' : 'A'}</button>{/each}
+      <SectionLabel label="Colour" />
+      <div class="colour">
+        <button type="button" class="fr-chip" aria-pressed={draft.color === null} onclick={() => (draft.color = null)}>Automatic</button>
+        <Swatches value={draft.color} colors={SWATCHES} custom onpick={(c) => (draft.color = c)} />
       </div>
-      <label class="inline"><input type="checkbox" bind:checked={draft.separate} /> List separately</label>
-      <div class="row-buttons">
-        <button class="primary" disabled={!draft.name.trim()}>Save</button>
-        <button type="button" class="plain" onclick={() => (editing = null)}>Cancel</button>
-        {#if l && !ORIGINAL.has(l.id)}<button type="button" class="plain danger" onclick={() => { editLayer(l.id, { deleted: true }); editing = null; }}>Remove layer</button>{/if}
-      </div>
-    </form>
+      <FormCard><Switch label="List separately" bind:checked={draft.separate} /></FormCard>
+      {#snippet footer()}
+        {#if l && !ORIGINAL.has(l.id)}<button type="button" class="fr-wide neutral remove" onclick={() => { editLayer(l.id, { deleted: true }); editing = null; }}>Remove layer</button>{/if}
+        <button type="button" class="fr-wide" disabled={!draft.name.trim()} onclick={saveLayer}>Save</button>
+      {/snippet}
+    </Sheet>
   {/if}
 
-  <h2>Reduce clutter</h2>
-  <div class="panel">
+  <SectionLabel label="Reduce clutter" />
+  <FormCard>
     {#each [['hideEmpty', 'Hide empty layers'], ['collapseAway', 'Collapse away members'], ['showTime', 'Show time in front'], ['showOthers', 'Show other fronts on Fronting']] as [key, label] (key)}
       {@const k = key as 'hideEmpty' | 'collapseAway' | 'showTime' | 'showOthers'}
-      <label class="toggle"><span>{label}</span><input type="checkbox" role="switch" checked={view[k]} onchange={(e) => setView((v) => ({ ...v, [k]: e.currentTarget.checked }))} /></label>
+      <Switch {label} checked={view[k]} onchange={(on) => setView((v) => ({ ...v, [k]: on }))} />
     {/each}
-    {#if named}
-      <button class="toggle link" aria-expanded={speakers} onclick={() => (speakers = !speakers)}><span>Suggested speakers in chat</span><em>{speakerSummary}</em><Icon name="chevron-right" size={18} /></button>
-      {#if speakers}
-        <div class="speakers">
-          <label class="inline"><input type="checkbox" checked={named.authorship_layers === null} onchange={(e) => defineFront(front, { authorship_layers: e.currentTarget.checked ? null : layers.slice(0, 2).map((l) => l.id) })} /> Default (fronting and co-conscious)</label>
-          {#if named.authorship_layers !== null}{#each layers as l (l.id)}<label class="inline"><input type="checkbox" checked={named.authorship_layers.includes(l.id)} onchange={(e) => toggleSpeaker(l.id, e.currentTarget.checked)} /> {l.name}</label>{/each}{/if}
-        </div>
-      {/if}
-    {/if}
-  </div>
+    {#if named}<ValueRow label="Suggested speakers in chat" value={speakerSummary} onclick={() => (speakers = true)} />{/if}
+  </FormCard>
+  {#if speakers && named}
+    <Sheet title="Suggested speakers in chat" onclose={() => (speakers = false)}>
+      <FormCard>
+        <Switch label="Default (fronting and co-conscious)" checked={named.authorship_layers === null} onchange={(on) => defineFront(front, { authorship_layers: on ? null : layers.slice(0, 2).map((l) => l.id) })} />
+        {#if named.authorship_layers !== null}{#each layers as l (l.id)}<Switch label={l.name} checked={named.authorship_layers.includes(l.id)} onchange={(on) => toggleSpeaker(l.id, on)} />{/each}{/if}
+      </FormCard>
+      {#snippet footer()}<button class="fr-wide" onclick={() => (speakers = false)}>Done</button>{/snippet}
+    </Sheet>
+  {/if}
 
-  <h2>Front states</h2>
+  <SectionLabel label="Front states" />
   <div class="panel pad">
     <div class="state-chips">
       {#each states as [id, row] (id)}<span class="state">{String(row.fields.name ?? 'State')}<button aria-label="Remove {String(row.fields.name ?? 'state')}" onclick={() => sync.create('state.delete', sync.accountScope, id, {})}><Icon name="close" size={14} /></button></span>{/each}
     </div>
     <form class="add" onsubmit={(e) => { e.preventDefault(); const n = newState.trim(); if (n) { sync.create('state.create', sync.accountScope, sync.newId(), { name: n, icon: '?' }); newState = ''; } }}>
-      <input bind:value={newState} maxlength="40" placeholder="New state, e.g. Blurry" aria-label="New state" /><button class="primary" disabled={!newState.trim()}>Add</button>
+      <input bind:value={newState} maxlength="40" placeholder="New state, e.g. Blurry" aria-label="New state" /><button class="fr-btn primary" disabled={!newState.trim()}>Add</button>
     </form>
   </div>
 </div>
@@ -175,7 +183,6 @@
   @media (min-width: 1024px) { .titles { visibility: hidden; } }
   .titles strong { font-size: 17px; font-weight: 600; }
   .titles span { color: var(--ink-3); font-size: 12px; }
-  h2 { margin: 16px 4px 6px; color: var(--accent); font-size: 13px; font-weight: 600; }
   .presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
   .presets button { display: grid; justify-items: center; align-content: start; gap: 6px; padding: 12px 8px; border: 1.5px solid transparent; border-radius: 14px; background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; text-align: center; }
   .presets button.on { background: var(--accent-soft); border-color: var(--accent); }
@@ -202,27 +209,11 @@
   .mini:disabled { color: var(--ink-3); }
   .icon-btn { width: 44px; height: 44px; flex: none; display: grid; place-items: center; border: 0; background: none; color: var(--ink-2); border-radius: 50%; cursor: pointer; }
   .add-layer { display: flex; align-items: center; gap: 12px; padding: 12px 12px 12px 14px; border: 0; background: none; color: var(--accent); font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; text-align: left; }
-  .editor { padding: 14px; gap: 10px; margin-top: 8px; }
-  .editor label { display: grid; gap: 4px; font-size: 13px; color: var(--ink-2); }
-  .editor input:not([type='checkbox']), .add input { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
-  .inline { display: flex !important; align-items: center; gap: 6px; }
-  .choices { display: flex; flex-wrap: wrap; gap: 6px; }
-  .choices button { border: 1px solid var(--line); border-radius: 999px; background: none; color: var(--ink-2); font: inherit; font-size: 13px; padding: 6px 12px; cursor: pointer; }
-  .choices button.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
-  .swatches { display: flex; gap: 8px; }
-  .swatches button { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--line); color: var(--ink-3); font-size: 12px; cursor: pointer; }
-  .swatches button.on { border: 2px solid var(--ink); }
-  .row-buttons { display: flex; gap: 8px; align-items: center; }
-  .primary { border: 0; border-radius: 10px; background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; padding: 10px 16px; cursor: pointer; }
-  .primary:disabled { opacity: 0.5; }
-  .plain { border: 0; background: none; color: var(--ink-2); font: inherit; cursor: pointer; }
-  .danger { color: var(--danger); }
-  .toggle { display: flex; align-items: center; gap: 16px; min-height: 48px; padding: 10px 16px; font-size: 15px; color: var(--ink); border: 0; background: none; font: inherit; text-align: left; cursor: pointer; }
-  .toggle > span { flex: 1; }
-  .toggle input { width: 40px; height: 24px; accent-color: var(--accent); }
-  .toggle em { font-style: normal; color: var(--accent); font-size: 14px; }
-  .toggle :global(.icon) { color: var(--ink-3); }
-  .speakers { display: grid; gap: 6px; padding: 0 16px 12px; }
+  .field { display: grid; gap: 4px; font-size: 13px; color: var(--ink-2); }
+  .field input, .add input { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  .pad { padding: 0; }
+  .colour { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .remove { flex: 0 0 auto; color: var(--danger); }
   .state-chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .state { display: inline-flex; align-items: center; gap: 2px; padding: 4px 4px 4px 12px; border-radius: 999px; background: var(--surface-2); font-size: 13px; }
   .state button { width: 28px; height: 28px; display: grid; place-items: center; border: 0; background: none; color: var(--ink-3); border-radius: 50%; cursor: pointer; }

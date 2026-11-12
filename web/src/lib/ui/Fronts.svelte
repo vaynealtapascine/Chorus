@@ -10,6 +10,9 @@
   import { sync, type Projection } from '../sync/client';
   import Icon from './Icon.svelte';
   import Orbit from './Orbit.svelte';
+  import FormCard from './kit/FormCard.svelte';
+  import SectionLabel from './kit/SectionLabel.svelte';
+  import Switch from './kit/Switch.svelte';
 
   let { projection, dark }: { projection: Projection; dark: boolean } = $props();
 
@@ -147,17 +150,17 @@
               <summary>Who counts for what</summary>
               {#each PURPOSES as p (p.key)}
                 {@const sel = selection(f.id, p.key)}
-                <fieldset>
-                  <legend>{p.label}</legend>
-                  <p class="hint">{p.hint}</p>
-                  <label class="inline"><input type="checkbox" checked={sel === null} onchange={(e) => setSelection(f.id, p.key, e.currentTarget.checked ? null : [])} /> Use the default</label>
-                  {#if sel !== null}
-                    <div class="checks">{#each layers as l (l.id)}<label class="inline"><input type="checkbox" checked={sel.includes(l.id)} onchange={(e) => toggleLayer(f.id, p.key, l.id, e.currentTarget.checked)} /> {l.name}</label>{/each}</div>
-                  {/if}
-                </fieldset>
+                <div class="purpose" role="group" aria-label={p.label}>
+                <SectionLabel label={p.label} />
+                <p class="hint">{p.hint}</p>
+                <FormCard>
+                  <Switch label="Use the default" checked={sel === null} onchange={(on) => setSelection(f.id, p.key, on ? null : [])} />
+                  {#if sel !== null}{#each layers as l (l.id)}<Switch label={l.name} checked={sel.includes(l.id)} onchange={(on) => toggleLayer(f.id, p.key, l.id, on)} />{/each}{/if}
+                </FormCard>
+                </div>
               {/each}
             </details>
-            {#if !f.body}<button class="danger" onclick={() => { defineFront(f.id, { deleted: true }); editing = null; }}>Remove {f.name}</button>{/if}
+            {#if !f.body}<button class="fr-btn danger" onclick={() => { defineFront(f.id, { deleted: true }); editing = null; }}>Remove {f.name}</button>{/if}
           </div>
         {/if}
       </li>
@@ -166,14 +169,14 @@
       <button class="new-head" onclick={() => (naming = true)}><span class="plus"><Icon name="plus" size={20} /></span><span><strong>New front</strong><span>Start from a template or build your own</span></span></button>
       <div class="templates">
         <!-- a template already in use isn't offered twice -->
-        {#each fd.TEMPLATES.filter((t) => !live.some((f) => f.name.toLowerCase() === t.name.toLowerCase())) as t (t.name)}<button class="pill" onclick={() => create(t.name, t)}>{t.name}</button>{/each}
-        <button class="pill" onclick={() => (naming = true)}>Custom</button>
+        {#each fd.TEMPLATES.filter((t) => !live.some((f) => f.name.toLowerCase() === t.name.toLowerCase())) as t (t.name)}<button class="fr-chip" onclick={() => create(t.name, t)}>{t.name}</button>{/each}
+        <button class="fr-chip" onclick={() => (naming = true)}>Custom</button>
       </div>
       {#if naming}
         <form class="add" onsubmit={(e) => { e.preventDefault(); create(newName); }}>
           <!-- svelte-ignore a11y_autofocus -->
           <input bind:value={newName} placeholder="Name, e.g. Headspace" aria-label="New front name" autofocus />
-          <button class="primary" disabled={!newName.trim()}>Add</button>
+          <button class="fr-btn primary" disabled={!newName.trim()}>Add</button>
         </form>
       {/if}
     </li>
@@ -220,11 +223,7 @@
   .icons button.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
   .hint { margin: 0; color: var(--ink-3); font-size: 12px; }
   details summary { cursor: pointer; color: var(--accent); font-weight: 600; font-size: 13px; padding: 6px 0; }
-  fieldset { border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; margin: 6px 0; }
-  legend { font-weight: 600; font-size: 14px; color: var(--ink); }
-  .inline { display: flex !important; flex-direction: row; align-items: center; gap: 6px; }
-  .checks { display: flex; flex-wrap: wrap; gap: 4px 12px; }
-  .danger { justify-self: start; background: none; border: 1px solid var(--line); color: var(--danger); border-radius: 12px; padding: 10px 14px; font: inherit; font-weight: 600; cursor: pointer; }
+  .danger { justify-self: start; color: var(--danger); }
   .new { display: grid; gap: 12px; padding: 16px; border: 1px dashed var(--line); border-radius: 18px; }
   .new-head { display: flex; align-items: center; gap: 12px; border: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; padding: 0; }
   .new-head > span:last-child { display: grid; }
@@ -232,11 +231,8 @@
   .new-head span span { color: var(--ink-3); font-size: 12px; }
   .plus { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 50%; background: var(--accent-soft); color: var(--accent); }
   .templates { display: flex; flex-wrap: wrap; gap: 6px; }
-  .pill { border: 0; border-radius: 999px; background: var(--surface-2); color: var(--ink); font: inherit; font-size: 13px; font-weight: 500; padding: 7px 12px; cursor: pointer; }
   .add { display: flex; gap: 8px; }
   .add input { flex: 1; min-width: 0; font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
-  .primary { border: 0; border-radius: 10px; background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; padding: 0 16px; cursor: pointer; }
-  .primary:disabled { opacity: 0.5; }
   .removed summary { color: var(--ink-2); }
   .removed .row { display: flex; justify-content: space-between; align-items: center; padding: 4px 12px; background: var(--surface); border-radius: 12px; margin-top: 6px; }
 </style>

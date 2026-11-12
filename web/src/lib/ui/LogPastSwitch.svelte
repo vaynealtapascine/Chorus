@@ -13,6 +13,8 @@
   import { sync, type Projection } from '../sync/client';
   import Face from './Face.svelte';
   import Icon from './Icon.svelte';
+  import FormCard from './kit/FormCard.svelte';
+  import SectionLabel from './kit/SectionLabel.svelte';
 
   let { projection, dark, front: initial, named, onclose }: {
     projection: Projection; dark: boolean; front: string; named: NamedHistory | null; onclose: () => void;
@@ -74,16 +76,16 @@
     <div class="titles"><strong>Log a past switch</strong><span>{fronts.find((f) => f.id === front)?.name ?? 'Body'}</span></div>
     <button class="icon-btn accent" aria-label="Save to history" onclick={save}><Icon name="check" size={22} /></button>
   </div>
-  <div class="panel">
+  <FormCard>
     <label class="row"><Icon name="target" size={20} /><span>Front</span>
       <select value={front} disabled={!configured} onchange={(e) => { front = e.currentTarget.value; people = []; }}>
         {#each fronts as f (f.id)}<option value={f.id}>{f.name}</option>{/each}
       </select></label>
     <label class="row"><Icon name="clock" size={20} /><span>From</span><input type="datetime-local" bind:value={fromText} max={local(Date.now())} /></label>
     <label class="row"><Icon name="clock" size={20} /><span>Until</span><input type="datetime-local" bind:value={untilText} max={local(Date.now())} /></label>
-  </div>
-  <h2>Who was there</h2>
-  <div class="panel">
+  </FormCard>
+  <SectionLabel label="Who was there" />
+  <FormCard>
     {#each people as e, i (whoKey(e.subject_type, e.subject_id))}
       {@const w = who.get(whoKey(e.subject_type, e.subject_id))}{@const l = scene.all.find((x) => x.id === e.layer_id)}
       <div class="person">
@@ -107,11 +109,11 @@
         {/each}</div>
       </div>
     {/if}
-  </div>
-  <h2>Note</h2>
+  </FormCard>
+  <SectionLabel label="Note" />
   <textarea bind:value={note} rows="2" placeholder="Quiet morning, woke up early." aria-label="Note"></textarea>
   {#if error}<p class="error" role="alert">{error}</p>{/if}
-  <button class="primary" onclick={save}>Save to history</button>
+  <button class="fr-wide" onclick={save}>Save to history</button>
 </section>
 
 <style>
@@ -124,24 +126,20 @@
   @media (min-width: 1024px) { .titles { visibility: hidden; } }
   .titles strong { font-size: 17px; font-weight: 600; }
   .titles span { color: var(--ink-3); font-size: 12px; }
-  .panel { background: var(--surface); border-radius: 16px; display: grid; overflow: hidden; }
-  .row { display: flex; align-items: center; gap: 12px; padding: 10px 16px; min-height: 52px; border-bottom: 1px solid var(--line); }
-  .row:last-child { border-bottom: 0; }
+  .row { display: flex; align-items: center; gap: 12px; padding: 10px 16px; min-height: 52px; }
   .row :global(.icon) { color: var(--ink-2); }
   .row span { flex: 1; font-size: 15px; }
   .row select, .row input { font: inherit; color: var(--accent); font-weight: 500; background: none; border: 0; text-align: right; color-scheme: inherit; }
-  h2 { margin: 12px 4px 0; color: var(--accent); font-size: 13px; font-weight: 600; }
-  .person { display: flex; align-items: center; gap: 12px; padding: 8px 4px 8px 12px; border-bottom: 1px solid var(--line); }
+  .person { display: flex; align-items: center; gap: 12px; padding: 8px 4px 8px 12px; }
   .person strong { flex: 1; font-size: 16px; font-weight: 600; }
   .layer { font: inherit; font-size: 13px; font-weight: 500; color: var(--l-label, var(--ink)); background: var(--l-fill, transparent); border: 1px var(--l-dash, solid) var(--l-border, var(--line)); border-radius: 8px; padding: 6px 8px; }
   .add { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border: 0; background: none; color: var(--accent); font: inherit; font-size: 15px; font-weight: 500; cursor: pointer; text-align: left; }
   .picker { display: grid; gap: 8px; padding: 0 12px 12px; }
   .picker input, textarea { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
-  textarea { background: var(--surface); border: 0; border-radius: 12px; padding: 14px; resize: vertical; }
+  textarea { background: var(--surface-2); border: 0; border-radius: 12px; padding: 14px; resize: vertical; }
   .cands { display: grid; max-height: 280px; overflow: auto; }
   .cands button { display: flex; align-items: center; gap: 12px; padding: 8px 4px; border: 0; background: none; color: var(--ink); font: inherit; cursor: pointer; text-align: left; border-radius: 10px; }
   .cands span { flex: 1; }
   .cands small { color: var(--ink-3); }
   .error { color: var(--danger); margin: 0; }
-  .primary { margin-top: 6px; padding: 14px; border: 0; border-radius: 14px; background: var(--accent); color: var(--on-accent); font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
 </style>

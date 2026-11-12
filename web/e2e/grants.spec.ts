@@ -15,10 +15,10 @@ test('a follower sees an additional front only once granted', async ({ browser }
 
     // a second front whose Fronting layer drives switch notifications
     await newFront(sys.page, 'Headspace');
-    const notify = sys.page.locator('fieldset', { hasText: 'Switch notifications' });
+    const notify = sys.page.getByRole('group', { name: 'Switch notifications', exact: true });
     await sys.page.getByText('Who counts for what').click();
-    await notify.getByLabel('Use the default').uncheck();
-    await notify.getByLabel('Fronting').check();
+    await notify.getByRole('switch', { name: 'Use the default' }).click();
+    await notify.getByRole('switch', { name: 'Fronting', exact: true }).click();
 
     await enrol(friend.page, invite('person'), 'Robin', `robin${run}`);
     await follow(friend.page, `@grants${run}`);

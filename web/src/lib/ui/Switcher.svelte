@@ -14,7 +14,11 @@
   import { sync, type Projection } from '../sync/client';
   import Face from './Face.svelte';
   import Icon from './Icon.svelte';
+  import Sheet from './Sheet.svelte';
   import EmptyState from './kit/EmptyState.svelte';
+  import FormCard from './kit/FormCard.svelte';
+  import Segmented from './kit/Segmented.svelte';
+  import ValueRow from './kit/ValueRow.svelte';
 
   let { projection, dark, onclose, front, addTo, handover = false }: {
     projection: Projection; dark: boolean; onclose: () => void; front?: string; addTo?: string; handover?: boolean;
@@ -107,19 +111,11 @@
   }
 </script>
 
-<svelte:window onkeydown={(e) => e.key === 'Escape' && onclose()} />
-<div class="scrim" onclick={onclose} role="presentation"></div>
-<div class="sheet" role="dialog" aria-modal="true" aria-label="Switch {view.name}">
-  <div class="handle" aria-hidden="true"></div>
-  <header>
-    <div class="titles"><h2>Switch · {view.name}</h2></div>
+<Sheet title="Switch · {view.name}" {onclose}>
+  {#snippet actions()}
     <button class="icon-btn" aria-label={searching ? 'Close search' : 'Search'} onclick={() => { searching = !searching; query = ''; }}><Icon name="search" size={22} /></button>
-    <button class="icon-btn" aria-label="Close" onclick={onclose}><Icon name="close" size={22} /></button>
-  </header>
-  <div class="seg" role="tablist" aria-label="How to switch">
-    <button role="tab" aria-selected={!add} class:on={!add} onclick={() => mode(false)}>Replace front</button>
-    <button role="tab" aria-selected={add} class:on={add} onclick={() => mode(true)}>Add to front</button>
-  </div>
+  {/snippet}
+  <Segmented label="How to switch" value={add ? 'add' : 'replace'} options={[{ id: 'replace', label: 'Replace front' }, { id: 'add', label: 'Add to front' }]} onchange={(v) => mode(v === 'add')} />
   <!-- svelte-ignore a11y_autofocus -->
   {#if searching}<input class="search" bind:value={query} onkeydown={onkey} placeholder="Search {subjects.length} members" aria-label="Search members" autofocus />{/if}
   <div class="grid">
@@ -133,42 +129,27 @@
       </button>
     {:else}<div class="none"><EmptyState icon="members" label={query ? 'No one matches' : 'No members yet'} /></div>{/each}
   </div>
-  <div class="start">
-    <button class="when" onclick={() => (options = !options)}>
-      <Icon name="clock" size={18} /><span>{at && Number.isFinite(at) ? `Starting ${new Date(at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}` : 'Starting now'}</span>
-      <strong>{options ? 'Done' : 'Change'}</strong>
-    </button>
+  <FormCard>
+    <ValueRow icon="clock" label="Starting" value={at && Number.isFinite(at) ? new Date(at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'Now'} onclick={() => (options = !options)} />
     {#if options}
       <div class="opts">
         <label>Happened at<input type="datetime-local" bind:value={atText} max={new Date(Date.now() - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 16)} /></label>
         {#if !add}
           <label>{handover ? "Handover note for whoever's next" : 'Note (optional)'}<input bind:value={note} /></label>
-          <label>Alerts<select bind:value={notify}><option value="default">Usual alerts</option><option value="silent">Silent</option><option value="now">Alert now</option><option value="extra_delay">Delay</option></select></label>
+          <div class="alerts"><span>Alerts</span><Segmented label="Alerts" bind:value={notify} options={[{ id: 'default', label: 'Usual' }, { id: 'silent', label: 'Silent' }, { id: 'now', label: 'Now' }, { id: 'extra_delay', label: 'Delay' }]} /></div>
         {/if}
       </div>
     {/if}
-    {#if !add && !placed.length && current.length}<button class="out" onclick={() => commit([])}>Switch everyone out of {view.name}</button>{/if}
-  </div>
-  <button class="confirm" disabled={!canSwitch} onclick={() => commit(withPrimary(placed))}>
-    <strong>Switch</strong><span>{summary || 'Tap someone to place them'}</span>
-  </button>
-</div>
+  </FormCard>
+  {#if !add && !placed.length && current.length}<button class="fr-btn out" onclick={() => commit([])}>Switch everyone out of {view.name}</button>{/if}
+  {#if summary}<p class="sum">{summary}</p>{/if}
+  {#snippet footer()}<button class="fr-wide" disabled={!canSwitch} onclick={() => commit(withPrimary(placed))}>Switch</button>{/snippet}
+</Sheet>
 
 <style>
-  .scrim { position: fixed; inset: 0; z-index: 30; background: rgba(0, 0, 0, 0.55); }
-  .sheet { position: fixed; z-index: 31; inset: auto 0 0 0; margin: 0 auto; max-width: 560px; max-height: 92vh; overflow: auto; background: var(--surface);
-    border-radius: 20px 20px 0 0; box-shadow: var(--shadow-pop); padding-bottom: env(safe-area-inset-bottom); display: grid; }
-  @media (min-width: 641px) { .sheet { inset: 6vh 0 auto 0; border-radius: 20px; } }
-  .handle { width: 36px; height: 4px; border-radius: 2px; background: var(--line); margin: 8px auto 4px; }
-  header { display: flex; align-items: center; gap: 4px; padding: 6px 8px 4px 20px; }
-  .titles { flex: 1; min-width: 0; }
-  h2 { margin: 0; font-size: 18px; line-height: 24px; font-weight: 700; }
   .icon-btn { width: 44px; height: 44px; display: grid; place-items: center; border: 0; background: none; color: var(--ink-2); border-radius: 50%; cursor: pointer; }
-  .seg { display: flex; gap: 3px; margin: 8px 16px 6px; padding: 3px; border-radius: 12px; background: var(--surface-2); }
-  .seg button { flex: 1; padding: 8px; min-height: 36px; border: 0; border-radius: 9px; background: none; color: var(--ink-3); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
-  .seg button.on { background: var(--surface); color: var(--ink); font-weight: 600; }
-  .search { margin: 4px 16px; font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
-  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px 0; padding: 10px 12px 6px; max-height: 44vh; overflow: auto; }
+  .search { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px 0; padding: 4px 0; max-height: 44vh; overflow: auto; }
   .pick { display: grid; justify-items: center; gap: 6px; padding: 0; border: 0; background: none; color: var(--ink); font: inherit; cursor: pointer; min-width: 0; }
   .ring { padding: 3px; border-radius: 50%; border: 2.5px solid transparent; display: grid; }
   .pick.on .ring { border-color: var(--l-ring); }
@@ -179,17 +160,9 @@
   .tag { font-size: 10px; line-height: 13px; font-weight: 700; padding: 1px 7px; border-radius: 8px; background: var(--l-tag-fill); color: var(--l-tag-ink); border: 1px var(--l-dash) var(--l-tag-border); max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tag.empty { visibility: hidden; height: 15px; padding: 0; border: 0; }
   .none { grid-column: 1 / -1; color: var(--ink-3); padding: 8px; }
-  .start { border-top: 1px solid var(--line); display: grid; }
-  .when { display: flex; align-items: center; gap: 10px; padding: 10px 20px; border: 0; background: none; color: var(--ink); font: inherit; font-size: 14px; cursor: pointer; text-align: left; }
-  .when > :global(.icon) { color: var(--ink-2); }
-  .when span { flex: 1; }
-  .when strong { color: var(--accent); font-weight: 600; }
-  .opts { display: grid; gap: 10px; padding: 0 20px 10px; }
-  .opts label { display: grid; gap: 4px; font-size: 13px; color: var(--ink-2); }
-  .opts input, .opts select { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
-  .out { justify-self: start; margin: 0 20px 6px; padding: 8px 0; border: 0; background: none; color: var(--danger); font: inherit; font-size: 13px; cursor: pointer; }
-  .confirm { display: grid; justify-items: center; gap: 1px; margin: 4px 16px 20px; padding: 12px 16px; border: 0; border-radius: 14px; background: var(--accent); color: var(--on-accent); font: inherit; cursor: pointer; }
-  .confirm strong { font-size: 15px; font-weight: 600; }
-  .confirm span { font-size: 12px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .confirm:disabled { background: var(--surface-3, var(--surface-2)); color: var(--ink-3); cursor: default; }
+  .opts { display: grid; gap: 10px; padding: 10px 14px 14px; }
+  .opts label, .alerts { display: grid; gap: 4px; font-size: 13px; color: var(--ink-2); }
+  .opts input { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  .out { justify-self: start; color: var(--danger); }
+  .sum { margin: 0; color: var(--ink-3); font-size: 12px; text-align: center; }
 </style>

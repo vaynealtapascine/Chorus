@@ -1,6 +1,7 @@
 <script lang="ts">
   // One Advanced notification detail (UI11c, D-115): inherited until customized, then a typed
   // control. Delays are entered in minutes and stored in seconds; nothing invalid is saved.
+  import Switch from './kit/Switch.svelte';
   import { choiceLabel, validCeilingValue, type CeilingField } from '../bucket-controls';
 
   let { field, ceiling, inherited, onchange }: {
@@ -35,17 +36,17 @@
   {#if !custom}
     <span class="inherited">{inherited}</span>
   {:else if field.kind === 'bool'}
-    <label class="toggle"><input type="checkbox" checked={value === true} aria-labelledby={id} onchange={(e) => save(e.currentTarget.checked)} />{value ? 'On' : 'Off'}</label>
+    <Switch aria={field.label} checked={value === true} onchange={(on) => save(on)} />
   {:else if field.kind === 'enum'}
-    <select aria-labelledby={id} value={value as string} onchange={(e) => save(e.currentTarget.value)}>
-      {#each field.choices ?? [] as c (c)}<option value={c}>{choiceLabel(c)}</option>{/each}
-    </select>
+    <div class="fr-chips pad" role="radiogroup" aria-labelledby={id}>
+      {#each field.choices ?? [] as c (c)}<button class="fr-chip" role="radio" aria-checked={value === c} class:on={value === c} onclick={() => save(c)}>{choiceLabel(c)}</button>{/each}
+    </div>
   {:else if field.kind === 'levels'}
-    <div class="checks" role="group" aria-labelledby={id}>
+    <div class="fr-chips pad" role="group" aria-labelledby={id}>
       {#each field.choices ?? [] as c (c)}
         {@const on = Array.isArray(value) && value.includes(c)}
-        <label><input type="checkbox" checked={on}
-          onchange={(e) => save((field.choices ?? []).filter((x) => (x === c ? e.currentTarget.checked : Array.isArray(value) && value.includes(x))))} />{choiceLabel(c)}</label>
+        <button class="fr-chip" role="checkbox" aria-checked={on} class:on
+          onclick={() => save((field.choices ?? []).filter((x) => (x === c ? !on : Array.isArray(value) && value.includes(x))))}>{choiceLabel(c)}</button>
       {/each}
     </div>
   {:else if field.kind === 'range'}
@@ -73,14 +74,14 @@
     </div>
   {:else if field.kind === 'limit'}
     <div class="row">
-      <label><input type="checkbox" checked={value !== null} onchange={(e) => save(e.currentTarget.checked ? 10 : null)} />Limit</label>
+      <span class="sw"><Switch aria="Limit" checked={value !== null} onchange={(on) => save(on ? 10 : null)} />Limit</span>
       {#if value !== null}<input type="number" min="0" max="1000" step="1" aria-labelledby={id} value={value as number}
         onchange={(e) => save(Number(e.currentTarget.value))} /> a day{/if}
     </div>
   {:else if field.kind === 'quiet'}
     {@const q = obj(value)}
     <div class="row">
-      <label><input type="checkbox" checked={value !== null} onchange={(e) => save(e.currentTarget.checked ? { from: '23:00', to: '08:00' } : null)} />Quiet hours</label>
+      <span class="sw"><Switch aria="Quiet hours" checked={value !== null} onchange={(on) => save(on ? { from: '23:00', to: '08:00' } : null)} />Quiet hours</span>
       {#if value !== null}
         <label>from <input type="time" value={q.from as string} onchange={(e) => save({ ...q, from: e.currentTarget.value })} /></label>
         <label>to <input type="time" value={q.to as string} onchange={(e) => save({ ...q, to: e.currentTarget.value })} /></label>
@@ -96,9 +97,10 @@
   .label { color: var(--ink); font-weight: 500; }
   small, .inherited { color: var(--ink-3); font-size: var(--fs-sm); }
   .link { border: 0; background: none; color: var(--accent); font: inherit; font-size: var(--fs-sm); cursor: pointer; padding: 2px 0; white-space: nowrap; }
-  .row, .checks { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; color: var(--ink-2); }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; color: var(--ink-2); }
   label { display: inline-flex; align-items: center; gap: 6px; }
-  .toggle { color: var(--ink-2); }
+  .pad { padding: 0; }
+  .sw { display: inline-flex; align-items: center; gap: 6px; }
   input[type='number'] { width: 5.5em; }
   input[type='number'], input[type='time'], select { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line);
     border-radius: var(--r-sm); padding: 5px 8px; }

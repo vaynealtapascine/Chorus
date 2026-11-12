@@ -4,9 +4,11 @@
   import type { Snippet } from 'svelte';
   import Icon from './Icon.svelte';
 
-  let { title, label, subtitle, onclose, children, footer, layer = 0 }: {
+  let { title, label, subtitle, onclose, children, footer, actions, layer = 0 }: {
     /** no title: no header (a menu of actions), and `label` names the dialog */
     title?: string; label?: string; subtitle?: string | null; onclose: () => void; children: Snippet; footer?: Snippet;
+    /** icon buttons beside Close (a search, say) */
+    actions?: Snippet;
     /** a sheet opened from a sheet lies over it */
     layer?: number;
   } = $props();
@@ -19,6 +21,7 @@
   {#if title}
     <header>
       <div class="titles"><h2>{title}</h2>{#if subtitle}<p>{subtitle}</p>{/if}</div>
+      {#if actions}{@render actions()}{/if}
       <button class="close" aria-label="Close" onclick={onclose}><Icon name="close" size={20} /></button>
     </header>
   {/if}
@@ -32,8 +35,8 @@
     border-radius: 20px 20px 0 0; box-shadow: var(--shadow-pop); padding-bottom: env(safe-area-inset-bottom); display: grid; align-content: start; }
   @media (min-width: 641px) { .sheet { inset: calc(6vh + var(--lower)) 0 auto 0; border-radius: 20px; } }
   .handle { width: 36px; height: 4px; border-radius: 2px; background: var(--line); margin: 8px auto 4px; }
-  header { display: flex; align-items: center; gap: 12px; padding: 8px 8px 12px 20px; }
-  .titles { flex: 1; min-width: 0; }
+  header { display: flex; align-items: center; gap: 4px; padding: 8px 8px 12px 20px; }
+  .titles { flex: 1; min-width: 0; padding-right: 8px; }
   h2 { margin: 0; font-size: 19px; line-height: 24px; font-weight: 600; }
   .titles p { margin: 2px 0 0; color: var(--ink-3); font-size: 13px; }
   .close { width: 44px; height: 44px; display: grid; place-items: center; border: 0; background: none; color: var(--ink-2); border-radius: 50%; cursor: pointer; }

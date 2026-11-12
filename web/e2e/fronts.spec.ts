@@ -53,7 +53,7 @@ test('fronts can be created, follow Body, be overridden and resume following', a
   const kai = sheet.locator('button.pick', { hasText: 'Kai' });
   for (let i = 0; i < 6 && !(await kai.getAttribute('aria-label'))?.includes('Quiet'); i++) await kai.click();
   await expect(kai).toHaveAttribute('aria-label', 'Kai, Quiet');
-  await sheet.locator('button.confirm').click();
+  await sheet.getByRole('button', { name: 'Switch', exact: true }).click();
   await page.reload();
   await tab(/^Headspace/).click();
   await expect(shown('Headspace')).toContainText('Quiet');
