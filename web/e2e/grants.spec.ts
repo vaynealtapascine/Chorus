@@ -17,8 +17,14 @@ test('a follower sees an additional front only once granted', async ({ browser }
     await newFront(sys.page, 'Headspace');
     const notify = sys.page.getByRole('group', { name: 'Switch notifications', exact: true });
     await sys.page.getByText('Who counts for what').click();
-    await notify.getByRole('switch', { name: 'Use the default' }).click();
-    await notify.getByRole('switch', { name: 'Fronting', exact: true }).click();
+    // a new front starts with nobody selected (so not "the default"); set the switches rather than toggle them
+    const setOn = async (name: string, on: boolean) => {
+      const sw = notify.getByRole('switch', { name, exact: true });
+      if ((await sw.getAttribute('aria-checked')) !== String(on)) await sw.click();
+      await expect(sw).toHaveAttribute('aria-checked', String(on));
+    };
+    await setOn('Use the default', false);
+    await setOn('Fronting', true);
 
     await enrol(friend.page, invite('person'), 'Robin', `robin${run}`);
     await follow(friend.page, `@grants${run}`);
@@ -29,7 +35,7 @@ test('a follower sees an additional front only once granted', async ({ browser }
     await friendRow(friend.page, 'Grant Stars').click();
     const following = friend.page.locator('.fr-card.around');
     const switchHead = async (who: string) => {
-      await go(sys.page, '');
+      await go(sys.page, 'fronting');
       await sys.page.getByRole('tablist', { name: 'Fronts' }).getByRole('tab', { name: /^Headspace/ }).click();
       await switchSheet(sys.page, [who]);
     };

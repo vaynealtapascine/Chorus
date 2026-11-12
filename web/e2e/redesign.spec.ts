@@ -18,7 +18,7 @@ test('appearance defaults to dark and explicit choices persist across responsive
     await expect(page.getByRole('navigation', { name: 'Your tools' })).toBeVisible();
     await page.getByRole('link', { name: 'Skip to content' }).focus();
     await page.keyboard.press('Enter');
-    await expect(page).toHaveURL(/#\/settings$/);
+    await expect(page).toHaveURL(/#\/settings\/appearance$/);
     await expect(page.locator('main')).toBeFocused();
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(page.getByRole('navigation', { name: 'Your tools' })).toBeHidden();
