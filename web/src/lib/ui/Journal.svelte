@@ -16,6 +16,7 @@
   import { remotePost } from '../remote-posts.svelte';
 
   import Icon from './Icon.svelte';
+  import EmptyState from './kit/EmptyState.svelte';
   let { projection, dark }: { projection: Projection; dark: boolean } = $props();
   const self = $derived(selfMember(projection));
   const people = $derived(new Map(members(projection).map((m) => [m.id, m] as [string, MemberRow])));
@@ -87,7 +88,7 @@
       <PostCard {projection} {post} quote={quoteOf(post)} {people} {dark} reactions={reactionsOf(post.id)} reactorNames={theirNames} {speaker} compactEntry
         {social} {saved} replyCount={repliesTo(post.id)} replyToNames={post.reply_to ? byId.get(post.reply_to)?.authors.map(name).join(' & ') : undefined}
         onreply={() => router.go(`/journal/post/${encodeURIComponent(post.id)}`)} onreact={(emoji, add, as) => react(post, emoji, add, as)} />
-    {:else}<p class="empty">Nothing saved yet. Save a post with its bookmark to read it later; only your system sees what you save.</p>{/each}
+    {:else}<EmptyState icon="bookmark" label="Nothing saved" />{/each}
   </div>
   {:else}
   <PostComposer {projection} initialAuthors={speaker ? [speaker] : []} />
@@ -108,7 +109,7 @@
       {:else}
         <div class="event"><span class="event-icon">⌁</span><span>Pinned in #{channelById.get(item.pin.channelId) ?? 'channel'}: {item.pin.text.slice(0, 120)}</span><time>{new Date(item.at).toLocaleString()}</time></div>
       {/if}
-    {:else}<p class="empty">{section === 'entries' ? 'No journal entries yet. Start with a few words.' : 'No posts or switches yet. Write the first note above.'}</p>{/each}
+    {:else}<EmptyState icon={section === 'entries' ? 'book' : 'journal'} label="Nothing yet" />{/each}
   </div>
   {/if}
 </section>
@@ -144,6 +145,5 @@
   .event { display: flex; gap: 12px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--line); color: var(--ink-3); font-size: var(--fs-sm); }
   .event-icon { width: 40px; flex: none; text-align: center; color: var(--accent); }
   time { margin-left: auto; color: var(--ink-3); font-size: var(--fs-xs); white-space: nowrap; }
-  .empty { margin: 0; padding: 20px 16px; color: var(--ink-3); }
   .repost-gone { margin: 0; padding: 12px 16px; border-bottom: 1px solid var(--line); color: var(--ink-3); font-size: var(--fs-sm); }
 </style>

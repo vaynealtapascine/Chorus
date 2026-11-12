@@ -14,6 +14,7 @@
   import { sync, type Projection } from '../sync/client';
   import Face from './Face.svelte';
   import Icon from './Icon.svelte';
+  import EmptyState from './kit/EmptyState.svelte';
 
   let { projection, dark, onclose, front, addTo, handover = false }: {
     projection: Projection; dark: boolean; onclose: () => void; front?: string; addTo?: string; handover?: boolean;
@@ -130,7 +131,7 @@
         <span class="nm">{w.name}</span>
         {#if l}<span class="tag">{l.name}</span>{:else}<span class="tag empty"></span>{/if}
       </button>
-    {:else}<p class="none">{query ? `No one matches “${query}”.` : 'No members yet. Add them in Members.'}</p>{/each}
+    {:else}<div class="none"><EmptyState icon="members" label={query ? 'No one matches' : 'No members yet'} /></div>{/each}
   </div>
   <div class="start">
     <button class="when" onclick={() => (options = !options)}>

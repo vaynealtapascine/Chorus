@@ -17,6 +17,7 @@
   import { shortAgo } from '../journal-presentation';
   import AvatarImage from './AvatarImage.svelte';
   import Icon from './Icon.svelte';
+  import EmptyState from './kit/EmptyState.svelte';
   import AcceptSheet from './AcceptSheet.svelte';
   import FollowBackSheet from './FollowBackSheet.svelte';
   import { friends } from '../friends-state.svelte';
@@ -178,7 +179,7 @@
           </div>
         </li>
       {:else}
-        {#if !loading}<li class="quiet">{chip === 'all' ? 'Nothing waiting. Mentions, replies and friends’ news land here.' : 'Nothing here yet.'}</li>{/if}
+        {#if !loading}<li><EmptyState icon="bell" label={chip === 'all' ? 'All caught up' : 'Nothing yet'} /></li>{/if}
       {/each}
     </ol>
   </section>

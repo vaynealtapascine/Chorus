@@ -1,0 +1,44 @@
+import { render } from 'svelte/server';
+import { expect, it } from 'vitest';
+import ConfirmSheet from './ConfirmSheet.svelte';
+import EmptyState from './EmptyState.svelte';
+import FormNote from './FormNote.svelte';
+import Segmented from './Segmented.svelte';
+import SectionLabel from './SectionLabel.svelte';
+import Switch from './Switch.svelte';
+import UnderlineTabs from './UnderlineTabs.svelte';
+import ValueRow from './ValueRow.svelte';
+
+it('draws an empty state with at most one action', () => {
+  const bare = render(EmptyState, { props: { icon: 'chat', label: 'No chats yet' } }).body;
+  expect(bare).toContain('No chats yet');
+  expect(bare).not.toContain('<button');
+  expect(render(EmptyState, { props: { icon: 'chat', label: 'No chats yet', action: 'New chat', onaction: () => {} } }).body).toMatch(/<button[^>]*>New chat<\/button>/);
+  expect(render(EmptyState, { props: { icon: 'chat', label: 'No chats yet', action: 'New chat', href: '#/chat/new' } }).body).toContain('href="#/chat/new"');
+});
+
+it('value rows show the value and become links', () => {
+  const row = render(ValueRow, { props: { label: 'Theme', value: 'Dark', href: '#/settings/appearance' } }).body;
+  expect(row).toMatch(/<a class="value-row[^"]*" href="#\/settings\/appearance"/);
+  expect(row).toContain('Dark');
+  expect(render(ValueRow, { props: { label: 'Theme', value: 'Dark', href: '#/x', disabled: true } }).body).toMatch(/<button[^>]*disabled/);
+});
+
+it('switches, tabs and segments say which is on', () => {
+  expect(render(Switch, { props: { label: 'Clear when Kai stops fronting', checked: true } }).body).toMatch(/role="switch" aria-checked="true"/);
+  expect(render(Switch, { props: { aria: 'Mute', checked: false } }).body).toMatch(/aria-checked="false" aria-label="Mute"/);
+  const tabs = render(UnderlineTabs, { props: { label: 'Members', value: 'groups', tabs: [{ id: 'members', label: 'Members', count: 4 }, { id: 'groups', label: 'Groups' }] } }).body;
+  expect(tabs).toMatch(/aria-selected="false"[^>]*>\s*Members(<!--[^>]*-->)?<span class="count[^"]*">4<\/span>/);
+  expect(tabs).toMatch(/aria-selected="true"[^>]*>\s*Groups/);
+  const seg = render(Segmented, { props: { label: 'Range', value: 'month', options: [{ id: 'week', label: 'Week' }, { id: 'month', label: 'Month' }] } }).body;
+  expect(seg).toMatch(/aria-checked="true"[^>]*>Month/);
+});
+
+it('labels, notes and confirmations', () => {
+  expect(render(SectionLabel, { props: { label: 'Friends right now', link: 'All friends', href: '#/people' } }).body).toContain('All friends');
+  expect(render(FormNote, { props: { text: 'The Junipers will see it.', warning: true } }).body).toContain('role="alert"');
+  const confirm = render(ConfirmSheet, { props: { title: 'Archive Nairon?', confirm: 'Archive', danger: true, onconfirm: () => {}, onclose: () => {} } }).body;
+  expect(confirm).toContain('Archive Nairon?');
+  expect(confirm).toMatch(/class="go[^"]*danger[^"]*"[^>]*>Archive<\/button>/);
+  expect(confirm).toContain('Cancel');
+});

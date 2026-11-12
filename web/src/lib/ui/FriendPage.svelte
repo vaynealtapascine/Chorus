@@ -22,6 +22,7 @@
   import FriendFace from './FriendFace.svelte';
   import FriendPostCard from './FriendPostCard.svelte';
   import Icon from './Icon.svelte';
+  import EmptyState from './kit/EmptyState.svelte';
   import Sheet from './Sheet.svelte';
 
   let { accountId, projection, dark }: { accountId: string; projection: Projection; dark: boolean } = $props();
@@ -136,7 +137,7 @@
       </div>
       {#if tab === 'about'}
         <div class="about">
-          {#if !about}<p class="fr-empty">Nothing more shared with you.</p>
+          {#if !about}<EmptyState icon="eye-off" label="Not shared with you" />
           {:else}
             {#if about.birthday}<div class="field"><span>Birthday</span>{about.birthday}</div>{/if}
             {#each about.fields ?? [] as f (f.id)}<div class="field"><span>{f.name}</span>{Array.isArray(f.value) ? f.value.join(', ') : typeof f.value === 'boolean' ? (f.value ? 'Yes' : 'No') : String(f.value ?? '')}</div>{/each}
@@ -147,7 +148,7 @@
         {@const list = posts?.filter((p) => (tab === 'journal') === (p.kind === 'entry'))}
         {#if !follows(r)}<p class="fr-empty">Follow {name} to see what they share with followers.</p>
         {:else if !list}<p class="fr-empty">Loading…</p>
-        {:else if !list.length}<p class="fr-empty">{tab === 'journal' ? 'No journal entries shared with you yet.' : 'No posts shared with you yet.'}</p>
+        {:else if !list.length}<EmptyState icon={tab === 'journal' ? 'book' : 'journal'} label="Nothing yet" />
         {:else}<div class="posts">{#each list as post (post.id)}<FriendPostCard {post} account={name} {projection} {speaker} {speakerName} {dark} />{/each}</div>{/if}
       {/if}
     {:else}

@@ -9,6 +9,7 @@
   import { sync, type Projection } from '../sync/client';
   import Face from './Face.svelte';
   import Icon from './Icon.svelte';
+  import Switch from './kit/Switch.svelte';
 
   let { projection, dark, front, who, since, onclose }: {
     projection: Projection; dark: boolean; front: string; who: Who; since: number | null; onclose: () => void;
@@ -94,7 +95,7 @@
       onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addWords(); } }} onblur={addWords} />{/if}
     <textarea class="own" bind:value={note} maxlength={fd.MAX_STATUS_NOTE} rows="2" placeholder="Note (optional)" aria-label="Note (optional)"></textarea>
     <p class="section">Options</p>
-    <label class="setting toggle"><span><strong>Clear when {who.name} stops fronting</strong></span><input type="checkbox" role="switch" bind:checked={clear} /></label>
+    <div class="opts"><Switch label="Clear when {who.name} stops fronting" bind:checked={clear} /></div>
     <div class="buttons">
       <button class="outline" disabled={!current} onclick={() => setState(true)}>Clear</button>
       <button class="primary grow" disabled={!ready} onclick={() => setState()}>Set state</button>
@@ -192,6 +193,7 @@
   .states button.on { background: var(--accent-soft); color: var(--accent); }
   .states button :global(.icon) { margin-right: 6px; }
   .states .add { color: var(--ink-2); }
+  .opts { padding: 0 6px; }
   .who { display: flex; align-items: center; gap: 14px; padding: 4px 20px 0; }
   .who strong { font-size: 18px; font-weight: 600; }
   .picked { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
