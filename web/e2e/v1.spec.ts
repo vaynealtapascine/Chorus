@@ -309,16 +309,17 @@ test('search finds messages and posts', async () => {
 });
 
 test('sync everything now', async () => {
-  await go(stars.page, 'data');
+  await go(stars.page, 'settings/device');
   await stars.page.getByRole('button', { name: 'Sync everything now' }).click();
   await expect(stars.page.getByText('Everything is on this device.')).toBeVisible();
   await expect(stars.page.getByText(/This app uses .* on this device/)).toBeVisible();
 });
 
 test('a full export with files', async () => {
-  await go(stars.page, 'data');
-  await stars.page.getByRole('button', { name: /Prepare a (full export|new one)/ }).click();
-  const link = stars.page.getByRole('link', { name: /Download chorus-.*\.zip/ });
+  await go(stars.page, 'settings/data');
+  const bundle = stars.page.getByLabel('Full export');
+  await bundle.getByRole('button', { name: 'Export' }).click();
+  const link = bundle.getByRole('link', { name: 'Download' });
   await expect(link).toBeVisible({ timeout: 30_000 });
   const zip = await stars.page.request.get((await link.getAttribute('href'))!);
   expect(zip.status()).toBe(200);

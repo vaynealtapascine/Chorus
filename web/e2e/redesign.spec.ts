@@ -7,11 +7,11 @@ test('appearance defaults to dark and explicit choices persist across responsive
     await page.emulateMedia({ colorScheme: 'light' });
     await enrol(page, invite('system'), 'Appearance check');
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-    await go(page, 'settings');
-    await page.getByLabel('Theme', { exact: true }).selectOption('light');
+    await go(page, 'settings/appearance');
+    await page.getByRole('radio', { name: 'Light' }).click();
     await page.reload();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
-    await page.getByLabel('Theme', { exact: true }).selectOption('system');
+    await page.getByRole('radio', { name: 'Follow device' }).click();
     await page.emulateMedia({ colorScheme: 'dark' });
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     await page.setViewportSize({ width: 1440, height: 900 });

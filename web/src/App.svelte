@@ -11,8 +11,7 @@
   import Members from './lib/ui/Members.svelte';
   import Onboarding from './lib/ui/Onboarding.svelte';
   import People from './lib/ui/People.svelte';
-  import DataPage from './lib/ui/DataPage.svelte';
-  import Settings from './lib/ui/Settings.svelte';
+  import SettingsShell from './lib/ui/SettingsShell.svelte';
   import Stage from './lib/ui/Stage.svelte';
   import Search from './lib/ui/Search.svelte';
   import Insights from './lib/ui/Insights.svelte';
@@ -37,7 +36,6 @@
   import { frontingUi } from './lib/fronting-ui.svelte';
   import { displayPrefs, front as fdFront } from './lib/fronting-display';
   import Trash from './lib/ui/Trash.svelte';
-  import ThisComputer from './lib/ui/ThisComputer.svelte';
   import UndoToast from './lib/ui/UndoToast.svelte';
   import ConnectionBanner from './lib/ui/kit/ConnectionBanner.svelte';
   import SlowDownToast from './lib/ui/kit/SlowDownToast.svelte';
@@ -255,12 +253,8 @@
         <Insights {projection} />
       {:else if router.route.name === 'stage' && router.route.id}
         <Stage {projection} {dark} channelId={router.route.id} />
-      {:else if router.route.name === 'data'}
-        <DataPage />
-      {:else if router.route.name === 'computer'}
-        <ThisComputer />
       {:else if router.route.name === 'settings'}
-        <Settings {projection} />
+        <SettingsShell {projection} page={router.route.id} />
       {:else if router.route.name === 'people' && router.route.id === 'share' && router.route.memberId}
         <FriendSharing followId={router.route.memberId} {projection} {dark} />
       {:else if router.route.name === 'people' && router.route.id === 'notify' && router.route.memberId}

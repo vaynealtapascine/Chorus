@@ -68,7 +68,7 @@
     if (item.kind === 'review' || item.kind === 'own_switch') router.go('/history');
     else if (item.postId) router.go(`/journal/post/${encodeURIComponent(item.postId)}`);
     else if (item.channelId) router.go(`/chat/${encodeURIComponent(item.channelId)}${item.messageId ? `/${encodeURIComponent(item.messageId)}` : ''}`);
-    else if (item.kind === 'export_ready') router.go('/data');
+    else if (item.kind === 'export_ready') router.go('/settings/data');
     else if (item.accountId) router.go(`/people/${encodeURIComponent(item.accountId)}`);
   }
   async function call(method: string, path: string, body?: unknown) {

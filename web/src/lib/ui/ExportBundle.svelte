@@ -1,10 +1,11 @@
 <script lang="ts">
-  // "Prepare a full export" (D-068, API.md §4): the server builds a zip of this account's
+  // "Full export" (D-068, API.md §4, Figma F9.2): the server builds a zip of this account's
   // history, tables and files in the background; this polls it every 2 s while the page is open.
   import { onMount } from 'svelte';
   import { apiBase } from '../sync/device';
   import { apiFetch } from '../http';
   import { sync } from '../sync/client';
+  import Icon from './Icon.svelte';
 
   interface Job {
     id: string; status: 'queued' | 'running' | 'done' | 'failed' | 'cancelled' | 'expired';
@@ -18,6 +19,7 @@
   let timer: ReturnType<typeof setTimeout> | null = null;
   const running = $derived(job?.status === 'queued' || job?.status === 'running');
   const mb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  const percent = $derived(job && job.total ? Math.round((job.done / job.total) * 100) : 0);
 
   async function api(path: string, init: RequestInit = {}): Promise<Response> {
     return apiFetch(`${apiBase()}${path}`, {
@@ -63,38 +65,52 @@
   }
 </script>
 
-<div class="bundle">
-  <strong>Full export with files</strong>
-  <span class="hint">Everything this account wrote — history, tables and your photos and files — in one zip, prepared on the server. It stays for a day.</span>
-  {#if running && job}
-    <span role="status">
-      {job.status === 'queued' ? 'Waiting for another export to finish…' : `${PHASE[job.phase ?? 'ops']}: ${job.done} of ${job.total} · ${mb(job.bytes)}`}
-    </span>
-    <progress max={job.total || 1} value={job.done}></progress>
-    <button class="ghost" onclick={stop}>Cancel</button>
-  {:else}
-    {#if job?.status === 'done' && job.result_url}
-      <a class="download" href={`${location.origin}${job.result_url}`} download={job.file_name ?? 'chorus-export.zip'}>
-        Download {job.file_name} ({mb(job.bytes)})
-      </a>
-      {#if job.expires_at}<span class="hint">Until {new Date(job.expires_at).toLocaleString()}.</span>{/if}
-      <button class="ghost" onclick={stop}>Delete it now</button>
-    {:else if job?.status === 'failed'}
-      <span class="error" role="alert">The export didn't finish: {job.error}</span>
+<section class="bundle" aria-label="Full export">
+  <div class="head">
+    <span class="tile"><Icon name="folder" size={20} /></span>
+    <div class="titles">
+      <strong>Full export</strong>
+      <span>Everything, with photos and files{job?.status === 'done' ? ` · ${mb(job.bytes)}` : ''}</span>
+    </div>
+    {#if running}
+      <button class="pill" onclick={stop}>Cancel</button>
+    {:else if job?.status === 'done' && job.result_url}
+      <a class="pill go" href={`${location.origin}${job.result_url}`} download={job.file_name ?? 'chorus-export.zip'}>Download</a>
+    {:else}
+      <button class="pill" onclick={start} disabled={sync.status !== 'live'}>Export</button>
     {/if}
-    <button class="ghost" onclick={start} disabled={sync.status !== 'live'}>
-      {job?.status === 'done' ? 'Prepare a new one' : 'Prepare a full export'}
-    </button>
+  </div>
+  {#if running && job}
+    <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow={percent}><span style="width: {percent}%"></span></div>
+    <div class="foot">
+      <span class="phase">{job.status === 'queued' ? 'Waiting' : `${PHASE[job.phase ?? 'ops']}… ${percent}%`}</span>
+      <span>{mb(job.bytes)}</span>
+    </div>
+  {:else if job?.status === 'done' && job.result_url}
+    <div class="foot">
+      <button class="link" onclick={stop}>Delete it now</button>
+      {#if job.expires_at}<span>Until {new Date(job.expires_at).toLocaleString()}</span>{/if}
+    </div>
+  {:else if job?.status === 'failed'}
+    <p class="error" role="alert">The export didn't finish: {job.error}</p>
   {/if}
-  {#if error}<span class="error" role="alert">{error}</span>{/if}
-</div>
+  {#if error}<p class="error" role="alert">{error}</p>{/if}
+</section>
 
 <style>
-  .bundle { display: grid; gap: var(--s-1); padding-top: var(--s-2); border-top: 1px solid var(--line); }
-  .hint { color: var(--ink-3); font-size: var(--fs-sm); margin: 0; }
-  .error { color: var(--danger); }
-  .ghost { justify-self: start; background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font: inherit; }
-  .ghost:disabled { color: var(--ink-3); cursor: default; }
-  .download { color: var(--accent); font-weight: 600; }
-  progress { width: 100%; }
+  .bundle { display: grid; gap: 10px; padding: 14px; border-radius: 16px; background: var(--surface-2); }
+  .head { display: flex; align-items: center; gap: 12px; }
+  .tile { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; background: var(--accent-soft); color: var(--accent); flex: none; }
+  .titles { flex: 1; min-width: 0; display: grid; }
+  .titles strong { font-size: 15px; }
+  .titles span { color: var(--ink-3); font-size: 13px; }
+  .pill { display: inline-flex; align-items: center; min-height: 36px; padding: 0 16px; border: 0; border-radius: 999px; background: var(--surface-3, var(--surface)); color: var(--ink); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; text-decoration: none; }
+  .pill.go { background: var(--accent); color: var(--on-accent); }
+  .pill:disabled { color: var(--ink-3); cursor: default; }
+  .bar { height: 6px; border-radius: 3px; background: var(--surface-3, var(--surface)); overflow: hidden; }
+  .bar span { display: block; height: 100%; background: var(--accent); transition: width var(--t-base) var(--ease); }
+  .foot { display: flex; justify-content: space-between; gap: 12px; color: var(--ink-3); font-size: 12px; }
+  .phase { color: var(--accent); font-weight: 600; }
+  .link { border: 0; background: none; padding: 0; color: var(--accent); font: inherit; cursor: pointer; }
+  .error { margin: 0; color: var(--danger); font-size: 13px; }
 </style>

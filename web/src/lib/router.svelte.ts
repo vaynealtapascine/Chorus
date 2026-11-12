@@ -18,8 +18,9 @@ function parse(hash: string): Route {
   if (parts[0] === 'stage-post' && parts[1]) return { name: 'post-stage', id: decodeURIComponent(parts[1]) };
   if (parts[0] === 'more') return { name: 'more' };
   if (parts[0] === 'notifications') return { name: 'notifications' };
-  if (parts[0] === 'settings') return { name: 'settings' };
-  if (parts[0] === 'computer') return { name: 'computer' };
+  if (parts[0] === 'settings') return { name: 'settings', id: parts[1] };
+  // the pages that moved into Settings keep their old addresses
+  if (parts[0] === 'computer') return { name: 'settings', id: 'computer' };
   if (parts[0] === 'history') return { name: 'history' };
   if (parts[0] === 'fronting') return { name: 'fronting' };
   if (parts[0] === 'fronts') return { name: 'fronts' };
@@ -30,11 +31,12 @@ function parse(hash: string): Route {
   if (parts[0] === 'message' && parts[1]) return { name: 'message', id: decodeURIComponent(parts[1]) };
   if (parts[0] === 'insights') return { name: 'insights' };
   if (parts[0] === 'stage' && parts[1]) return { name: 'stage', id: decodeURIComponent(parts[1]) };
-  if (parts[0] === 'data') return { name: 'data' };
+  if (parts[0] === 'data') return { name: 'settings', id: 'data' };
   // Friends' own pages (UI20): sharing with one friend, notifications from one, a bucket, Advanced sharing
   if (parts[0] === 'people' && ['share', 'notify', 'bucket', 'advanced'].includes(parts[1])) return { name: 'people', id: parts[1], memberId: parts[2] ? decodeURIComponent(parts[2]) : undefined };
   if (parts[0] === 'people' && parts[1]) return { name: 'friend', id: decodeURIComponent(parts[1]), memberId: parts[2] ? decodeURIComponent(parts[2]) : undefined };
   if (parts[0] === 'people') return { name: 'people' };
+  if (parts[0] === 'trash' && !parts[1]) return { name: 'settings', id: 'trash' };
   if (parts[0] === 'trash') return { name: 'trash', id: parts[1] ? decodeURIComponent(parts[1]) : undefined };
   return { name: 'home' };
 }

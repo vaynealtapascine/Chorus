@@ -108,8 +108,8 @@ test('named history separates inherited changes from offline editable saved entr
     await context.setOffline(false);
     offline = false;
     // Chorus, the front Body follows: its own saved entries, undone there, change Body too
-    await go(page, 'settings');
-    await page.getByLabel('Theme', { exact: true }).selectOption('light');
+    await go(page, 'settings/appearance');
+    await page.getByRole('radio', { name: 'Light' }).click();
     await go(page, 'history');
     await page.getByRole('tab', { name: 'Week' }).click();
     await pick('Chorus').click();

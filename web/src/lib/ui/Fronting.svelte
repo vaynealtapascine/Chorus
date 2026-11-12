@@ -219,8 +219,8 @@
   <details class="device-tools"><summary>Devices and data</summary><LinkDevice />
   <section class="data-links" aria-label="Data">
     <h2>Data</h2>
-    <a href="#/trash">Trash · deleted items</a>
-    <a href="#/data">API tokens · overlays</a>
+    <a href="#/settings/trash">Trash · deleted items</a>
+    <a href="#/settings/tokens">API tokens · overlays</a>
   </section></details>
 </div>
 

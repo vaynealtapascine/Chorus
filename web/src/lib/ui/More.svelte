@@ -1,9 +1,5 @@
 <script lang="ts">
-  // Chorus Home: *This computer* only shows in the browser on the PC Chorus runs on (home.ts)
   import Icon from './Icon.svelte';
-  import { homeStatus } from '../home';
-  let home = $state(false);
-  homeStatus().then((s) => (home = !!s));
 </script>
 
 <section class="more">
@@ -18,12 +14,9 @@
       { path: 'people', title: 'Friends', icon: 'friends' },
       { path: 'settings', title: 'Settings', icon: 'settings' },
       { path: 'search', title: 'Search', icon: 'search' },
-      { path: 'data', title: 'Your data', icon: 'lock' },
-      { path: 'trash', title: 'Trash', icon: 'history' },
     ] as item (item.path)}
       <a href="#/{item.path}"><span class="destination-icon"><Icon name={item.icon} /></span><span class="text"><strong>{item.title}</strong></span><Icon name="chevron" size={16} /></a>
     {/each}
-    {#if home}<a href="#/computer"><span class="destination-icon"><Icon name="settings" /></span><span class="text"><strong>This computer</strong></span><Icon name="chevron" size={16} /></a>{/if}
   </nav>
 </section>
 <style>
