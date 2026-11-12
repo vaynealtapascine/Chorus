@@ -65,14 +65,17 @@ export async function go(page: Page, hash: string): Promise<void> {
 /** Add a member from Members (the name in the search box becomes theirs); lands on their editor. */
 export async function addMember(page: Page, name: string, sigil?: string): Promise<void> {
   await go(page, 'members');
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
   await page.getByLabel('Search members').fill(name);
   await page.getByRole('button', { name: 'Add member', exact: true }).click();
-  await expect(page.getByRole('heading', { level: 1, name })).toBeVisible();
+  await expect(page.getByLabel('Name', { exact: true })).toHaveValue(name);
   if (sigil) {
-    const box = page.getByLabel(/^Sigils/);
+    await page.getByRole('button', { name: /^Sigils and proxy tags/ }).click();
+    const box = page.getByLabel('Sigils', { exact: true });
     await box.fill(sigil);
     await box.press('Tab'); // saved on change
     await expect(box).toHaveValue(sigil);
+    await page.getByRole('dialog').getByRole('button', { name: 'Done' }).click();
   }
 }
 

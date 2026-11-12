@@ -163,7 +163,7 @@
   <header class="title">
     <div><h1 class="display">Members</h1><p>{subtitle}</p></div>
     {#if current === 'members'}
-      <button class="bar-icon" aria-label="Search members" aria-pressed={searching} onclick={() => { searching = !searching; if (!searching) query = ''; }}><Icon name="search" size={22} /></button>
+      <button class="bar-icon" aria-label="Search" aria-pressed={searching} onclick={() => { searching = !searching; if (!searching) query = ''; }}><Icon name="search" size={22} /></button>
     {/if}
     <button class="bar-icon" aria-label={addLabel} onclick={add}><Icon name="plus" size={22} /></button>
   </header>
