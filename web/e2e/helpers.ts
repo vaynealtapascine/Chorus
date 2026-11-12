@@ -60,8 +60,8 @@ export async function enrol(page: Page, code: string, name?: string, handle?: st
 }
 
 export async function live(page: Page): Promise<void> {
-  // attached, not visible: the desktop chat hides the app bar that shows it (F5.21)
-  await expect(page.locator('.status[data-status=live]')).toHaveCount(1, { timeout: 30_000 });
+  // on the shell, not a visible label: the connection banner only speaks when something is wrong (F2.5)
+  await expect(page.locator('.shell[data-status=live]')).toHaveCount(1, { timeout: 30_000 });
 }
 
 /** Go to a hash route and wait for the socket to be live. */

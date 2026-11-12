@@ -174,7 +174,7 @@
 {:else if projection && setupName !== null}
   <Setup {projection} name={setupName} ondone={() => { setupOwed.done(sync.accountId); setupDone++; }} />
 {:else if projection}
-  <div class="shell" class:chat-page={router.route.name === 'chat'} class:nav-open={navOpen}>
+  <div class="shell" data-status={status} class:chat-page={router.route.name === 'chat'} class:nav-open={navOpen}>
     <a class="skip" href="#main-content" onclick={(e) => { e.preventDefault(); document.getElementById('main-content')?.focus(); }}>Skip to content</a>
     <aside class="app-nav" aria-label="App navigation">
       <a class="identity" href="#/" title={accountName}>

@@ -149,7 +149,7 @@ async function back(page: Page): Promise<void> {
 }
 
 async function offline(page: Page): Promise<void> {
-  await expect(page.locator('.status[data-status=live]')).toHaveCount(0, { timeout: 15_000 });
+  await expect(page.locator('.shell[data-status=live]')).toHaveCount(0, { timeout: 15_000 });
 }
 
 let page: Page;
