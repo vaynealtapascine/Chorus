@@ -1,15 +1,21 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { members } from '../data';
-  import { cofrontPairs, csv, frontDaily, frontWeeks, localDay, namedFrontDays, switchesPerDay, windowStart, type DailyTime } from '../insights';
+  import { cofrontPairs, csv, frontDaily, localDay, namedFrontDays, switchesPerDay, windowStart } from '../insights';
   import { sync, type Projection } from '../sync/client';
+  import { duration, insightColumns, insightStats, memberOrder, RANGES, share, switchDelta, type InsightRange } from '../insights-view';
+  import Segmented from './kit/Segmented.svelte';
+  import SectionLabel from './kit/SectionLabel.svelte';
+  import Icon from './Icon.svelte';
 
   let { projection, selectedFront = $bindable(''), selectedLayer = $bindable('front'), savedView = $bindable(false) }:
     { projection: Projection; selectedFront?: string; selectedLayer?: string; savedView?: boolean } = $props();
-  let span = $state<'week' | 'month'>('week');
+  let range = $state<InsightRange>('week');
+  let showData = $state(false);
   let now = $state(Date.now());
   onMount(() => { const timer = setInterval(() => (now = Date.now()), 60_000); return () => clearInterval(timer); });
-  const days = $derived(span === 'week' ? 7 : 28);
+  const spec = $derived(RANGES.find((r) => r.id === range)!);
+  const days = $derived(spec.days);
   const timeZone = $derived(typeof projection.rows.system?.[sync.accountId]?.fields.timezone === 'string' ? projection.rows.system[sync.accountId].fields.timezone as string : undefined);
   const from = $derived(windowStart(now, days, timeZone));
   const fold = $derived(projection.fronts[sync.accountId]);
@@ -35,7 +41,6 @@
   const people = $derived(new Map(members(projection).map((m) => [m.id, m])));
   const daily = $derived((system ? namedFrontDays(sourceIntervals, front, layer, from, now, timeZone)
     : frontDaily(fold?.intervals ?? [], from, now, timeZone)).filter((r) => r.subject_type === 'member' && r.level === layer));
-  const weekly = $derived(frontWeeks(daily, layer));
   const displayIntervals = $derived(system ? sourceIntervals.map((i) => ({ ...i, level: i.layer_id })) : fold?.intervals ?? []);
   const pairs = $derived(cofrontPairs(displayIntervals, from, now, layer));
   const changes = $derived(system ? savedView ? named?.saved.switches ?? [] :
@@ -46,24 +51,22 @@
   const color = (id: string) => people.get(id)?.color ?? '#A09184';
   const hours = (seconds: number) => (seconds / 3600).toFixed(1);
 
-  function stacks(rows: DailyTime[], fillDays = false) {
-    const byDay = new Map<string, DailyTime[]>();
-    if (fillDays) {
-      for (let i = 0; i < days; i++) {
-        const day = new Date(`${localDay(from, timeZone)}T00:00:00Z`);
-        day.setUTCDate(day.getUTCDate() + i);
-        byDay.set(day.toISOString().slice(0, 10), []);
-      }
+  const columns = $derived(insightColumns(daily, range, from, now, timeZone));
+  const maxColumn = $derived(Math.max(1, ...columns.map((c) => c.total)));
+  const order = $derived(memberOrder(daily));
+  const stats = $derived(insightStats(changes.filter((c) => !c.retracted).map((c) => c.occurred_at), displayIntervals as never, from, now, days, layer, timeZone));
+  const top = $derived(order[0]);
+  const chartTitle = $derived((system ? 'Time by ' : 'Front time by ') + (range === 'week' ? 'day' : range === 'month' ? 'week' : 'month'));
+  const patterns = $derived.by(() => {
+    const out: { title: string; line: string; icon: string }[] = [];
+    if (stats.busiestHour !== null) out.push({ title: 'Busiest hour', line: `Most switches happen ${String(stats.busiestHour).padStart(2, '0')}:00–${String((stats.busiestHour + 1) % 24).padStart(2, '0')}:00`, icon: 'clock' });
+    if (stats.longest && stats.longest.seconds >= 60) {
+      const d = new Date(stats.longest.start);
+      const on = range === 'week' ? d.toLocaleDateString(undefined, { weekday: 'long', timeZone }) : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone });
+      out.push({ title: 'Longest front', line: `${name(stats.longest.id)}, ${duration(stats.longest.seconds)} on ${on}`, icon: 'history' });
     }
-    for (const row of rows) byDay.set(row.day, [...(byDay.get(row.day) ?? []), row]);
-    return [...byDay].sort((a, b) => a[0].localeCompare(b[0])).map(([day, parts]) => ({
-      day, parts: parts.sort((a, b) => b.seconds - a.seconds), seconds: parts.reduce((sum, row) => sum + row.seconds, 0),
-    }));
-  }
-  const dailyStacks = $derived(stacks(daily, true));
-  const weeklyStacks = $derived(stacks(weekly));
-  const maxDaily = $derived(Math.max(1, ...dailyStacks.map((r) => r.seconds)));
-  const maxWeekly = $derived(Math.max(1, ...weeklyStacks.map((r) => r.seconds)));
+    return out;
+  });
   const maxPair = $derived(Math.max(1, ...pairs.map((r) => r.seconds)));
   const allSwitchDays = $derived.by(() => {
     const counts = new Map(switchDays.map((r) => [r.day, r.count]));
@@ -95,56 +98,66 @@
 <section class="insights-page">
   <header>
     <h1 class="display">Insights</h1>
-    <div class="seg" role="group" aria-label="Insight range">
-      <button aria-pressed={span === 'week'} class:on={span === 'week'} onclick={() => (span = 'week')}>7 days</button>
-      <button aria-pressed={span === 'month'} class:on={span === 'month'} onclick={() => (span = 'month')}>28 days</button>
-    </div>
+    <p class="hint">For your own reflection · only your system sees this</p>
   </header>
+  <Segmented label="Insight range" options={RANGES.map((r) => ({ id: r.id, label: r.label }))} bind:value={range} />
   {#if system}
-    <div class="scope">
-      <label>Front<select aria-label="Insight front" value={front} onchange={(e) => (selectedFront = e.currentTarget.value)}>
-        {#each Object.values(system.fronts) as f (f.id)}<option value={f.id}>{f.name}{f.deleted ? ' (deleted)' : ''}</option>{/each}
-      </select></label>
-      <label>Time layer<select aria-label="Insight time layer" bind:value={selectedLayer}>
-        {#each layers as l (l.id)}<option value={l.id}>{l.name}{l.deleted ? ' (deleted)' : ''}</option>{/each}
-      </select></label>
-      <label>History<select aria-label="Insight history" value={savedView ? 'own' : 'effective'} onchange={(e) => (savedView = e.currentTarget.value === 'own')}>
-        <option value="effective">Front history</option><option value="own">Saved entries</option>
-      </select></label>
-    </div>
+    <details class="options">
+      <summary>Options</summary>
+      <div class="scope">
+        <label>Front<select aria-label="Insight front" value={front} onchange={(e) => (selectedFront = e.currentTarget.value)}>
+          {#each Object.values(system.fronts) as f (f.id)}<option value={f.id}>{f.name}{f.deleted ? ' (deleted)' : ''}</option>{/each}
+        </select></label>
+        <label>Time layer<select aria-label="Insight time layer" bind:value={selectedLayer}>
+          {#each layers as l (l.id)}<option value={l.id}>{l.name}{l.deleted ? ' (deleted)' : ''}</option>{/each}
+        </select></label>
+        <label>History<select aria-label="Insight history" value={savedView ? 'own' : 'effective'} onchange={(e) => (savedView = e.currentTarget.value === 'own')}>
+          <option value="effective">Front history</option><option value="own">Saved entries</option>
+        </select></label>
+      </div>
+    </details>
     <p class="hint">{frontName} · {layerName} time · {savedView ? 'saved entries' : 'effective history'}</p>
   {/if}
   {#if historyRead.error}
     <div role="alert"><p>Could not load saved history.</p><button onclick={() => retry++}>Try again</button></div>
   {:else if loading}<p class="hint" role="status">Preparing insights…</p>{:else}
 
-  <section class="chart">
-    <div class="chart-head"><h2>{system ? 'Time by day' : 'Front time by day'}</h2><button onclick={() => download('front-by-day.csv', ['day', 'member_id', 'member', system ? 'layer_id' : 'level', 'seconds', 'hours'], daily.map((r) => [r.day, r.subject_id, name(r.subject_id), r.level, r.seconds, hours(r.seconds)]))}>Export CSV</button></div>
-    <div class="bars" aria-label={system ? 'Hours by day' : 'Front hours by day'}>
-      {#each dailyStacks as row (row.day)}
-        <div class="bar-row"><span class="bar-label">{row.day.slice(5)}</span><div class="bar-track"><div class="bar-stack" style:width={`${row.seconds / maxDaily * 100}%`}>
-          {#each row.parts as part (part.subject_id)}<span style:background={color(part.subject_id)} style:width={`${part.seconds / (row.seconds || 1) * 100}%`} title={`${name(part.subject_id)} · ${hours(part.seconds)} h`}></span>{/each}
-        </div></div><span class="bar-value">{hours(row.seconds)} h</span></div>
-      {/each}
-    </div>
-    <details><summary>View data</summary><table><thead><tr><th>Day</th><th>Member</th><th>Hours</th></tr></thead><tbody>
-      {#each daily as row (`${row.day}:${row.subject_id}`)}<tr><td>{row.day}</td><td>{name(row.subject_id)}</td><td>{hours(row.seconds)}</td></tr>{/each}
-    </tbody></table></details>
-  </section>
+  <div class="tiles">
+    <div class="tile"><span class="k">Switches</span><strong>{stats.switches}</strong><span class="s">{switchDelta(stats, spec.noun)}</span></div>
+    <div class="tile"><span class="k">Most time</span><strong>{top ? name(top) : '—'}</strong>{#if top}<span class="s">{share(daily, top, from, now)}% of the {spec.noun}</span>{/if}</div>
+    <div class="tile"><span class="k">Together</span><strong>{duration(stats.together, true)}</strong><span class="s">co-fronting</span></div>
+  </div>
 
   <section class="chart">
-    <div class="chart-head"><h2>{system ? 'Time by week' : 'Front time by week'}</h2><button onclick={() => download('front-by-week.csv', ['week_start', 'member_id', 'member', 'seconds', 'hours'], weekly.map((r) => [r.day, r.subject_id, name(r.subject_id), r.seconds, hours(r.seconds)]))}>Export CSV</button></div>
-    <div class="bars" aria-label={system ? 'Hours by week' : 'Front hours by week'}>
-      {#each weeklyStacks as row (row.day)}
-        <div class="bar-row"><span class="bar-label">{row.day.slice(5)}</span><div class="bar-track"><div class="bar-stack" style:width={`${row.seconds / maxWeekly * 100}%`}>
-          {#each row.parts as part (part.subject_id)}<span style:background={color(part.subject_id)} style:width={`${part.seconds / (row.seconds || 1) * 100}%`} title={`${name(part.subject_id)} · ${hours(part.seconds)} h`}></span>{/each}
-        </div></div><span class="bar-value">{hours(row.seconds)} h</span></div>
-      {:else}<p class="hint">{system ? 'No time in this range.' : 'No front time in this range.'}</p>{/each}
+    <div class="chart-head"><h2>{chartTitle}</h2><span class="hint">hours</span></div>
+    <div class="cols" class:tight={columns.length > 8} role="group" aria-label={system ? 'Hours' : 'Front hours'}>
+      {#each columns as col (col.key)}
+        <div class="col" role="img" aria-label={`${col.label}: ${hours(col.total)} h`}>
+          {#if col.total === 0}<span class="empty-col"></span>{/if}
+          {#each col.parts as part (part.id)}<span class="seg-bit" style:background={color(part.id)} style:height={`${Math.max(2, part.seconds / maxColumn * 140)}px`} title={`${name(part.id)} · ${hours(part.seconds)} h`}></span>{/each}
+        </div>
+      {/each}
     </div>
-    <details><summary>View data</summary><table><thead><tr><th>Week of</th><th>Member</th><th>Hours</th></tr></thead><tbody>
-      {#each weekly as row (`${row.day}:${row.subject_id}`)}<tr><td>{row.day}</td><td>{name(row.subject_id)}</td><td>{hours(row.seconds)}</td></tr>{/each}
-    </tbody></table></details>
+    <div class="col-labels" class:tight={columns.length > 8}>{#each columns as col (col.key)}<span>{col.label}</span>{/each}</div>
+    {#if !order.length}<p class="hint">{system ? 'No time in this range.' : 'No front time in this range.'}</p>{/if}
+    <div class="legend">{#each order as id (id)}<span><i style:background={color(id)}></i>{name(id)}</span>{/each}</div>
   </section>
+  <div class="buttons">
+    <button onclick={() => (showData = !showData)} aria-expanded={showData}><Icon name="doc" size={16} />View data</button>
+    <button onclick={() => download('front-by-day.csv', ['day', 'member_id', 'member', system ? 'layer_id' : 'level', 'seconds', 'hours'], daily.map((r) => [r.day, r.subject_id, name(r.subject_id), r.level, r.seconds, hours(r.seconds)]))}><Icon name="share" size={16} />Download CSV</button>
+  </div>
+  {#if showData}
+    <section class="chart"><table><thead><tr><th>Day</th><th>Member</th><th>Hours</th></tr></thead><tbody>
+      {#each [...daily].sort((a, b) => b.day.localeCompare(a.day) || a.subject_id.localeCompare(b.subject_id)) as row (`${row.day}:${row.subject_id}`)}<tr><td>{row.day}</td><td>{name(row.subject_id)}</td><td>{hours(row.seconds)}</td></tr>{/each}
+    </tbody></table></section>
+  {/if}
+
+  {#if patterns.length}
+    <SectionLabel label="Patterns" />
+    {#each patterns as p (p.title)}
+      <div class="pattern"><Icon name={p.icon} size={22} /><div><strong>{p.title}</strong><span>{p.line}</span></div></div>
+    {/each}
+  {/if}
 
   <section class="chart">
     <div class="chart-head"><h2>{system ? 'Time together' : 'Co-front pairs'}</h2><button onclick={() => download('cofront-pairs.csv', ['member_a_id', 'member_a', 'member_b_id', 'member_b', 'seconds', 'hours'], pairs.map((r) => [r.a, name(r.a), r.b, name(r.b), r.seconds, hours(r.seconds)]))}>Export CSV</button></div>
@@ -181,19 +194,38 @@
   h1, h2, p { margin: 0; }
   h2 { font-size: var(--fs-lg); }
   .hint { color: var(--ink-3); font-size: var(--fs-sm); }
-  .seg { display: inline-flex; padding: 2px; background: var(--surface-2); border-radius: var(--r-full); }
-  .seg button { min-height: 44px; border: 0; border-radius: var(--r-full); background: none; color: var(--ink-2); padding: var(--s-1) var(--s-3); cursor: pointer; }
-  .seg button.on { color: var(--ink); background: var(--surface); box-shadow: var(--shadow-sm); }
   .chart { display: grid; gap: var(--s-3); border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--s-4); background: var(--surface); }
   .chart-head button { min-height: 44px; border: 1px solid var(--line); background: var(--surface-2); border-radius: var(--r-sm); padding: var(--s-1) var(--s-3); color: var(--ink); cursor: pointer; white-space: nowrap; }
+  .options summary { cursor: pointer; color: var(--accent); font-size: var(--fs-sm); }
+  .options .scope { margin-top: var(--s-2); }
+  header { display: grid; gap: 2px; }
+  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .tile { display: grid; gap: 2px; align-content: start; min-width: 0; padding: 12px; border-radius: 16px; background: var(--surface); }
+  .tile .k { font-size: 11px; font-weight: 500; color: var(--ink-2); }
+  .tile strong { font-size: 20px; line-height: 24px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tile .s { font-size: 11px; line-height: 14px; color: var(--ink-3); }
+  .cols { display: flex; align-items: flex-end; gap: 10px; height: 140px; }
+  .cols.tight, .col-labels.tight { gap: 4px; }
+  .col { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column-reverse; gap: 2px; padding: 0 3px; box-sizing: border-box; }
+  .seg-bit { display: block; border-radius: 4px; }
+  .empty-col { display: block; height: 3px; border-radius: 2px; background: var(--surface-2); }
+  .col-labels { display: flex; gap: 10px; }
+  .col-labels span { flex: 1; min-width: 0; text-align: center; font-size: 11px; color: var(--ink-3); white-space: nowrap; overflow: hidden; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; color: var(--ink-2); }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .legend i { width: 8px; height: 8px; border-radius: 50%; }
+  .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .buttons button { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; border: 0; border-radius: 14px; background: var(--surface); color: var(--ink); font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
+  .pattern { display: flex; align-items: center; gap: 16px; min-height: 62px; padding: 8px 4px; color: var(--ink-2); }
+  .pattern div { display: grid; }
+  .pattern strong { font-size: 16px; font-weight: 400; color: var(--ink); }
+  .pattern span { font-size: 13px; color: var(--ink-3); }
   .bars { display: grid; gap: var(--s-1); }
   .bar-row { display: grid; grid-template-columns: minmax(3.2rem, auto) 1fr 3.8rem; gap: var(--s-2); align-items: center; font-size: var(--fs-xs); }
   .bar-label, .pair-label { color: var(--ink-2); white-space: nowrap; }
   .pair-label { min-width: 8rem; }
   .bar-track { height: 1rem; border-radius: var(--r-sm); background: var(--surface-2); overflow: hidden; }
-  .bar-stack { display: flex; height: 100%; }
-  .bar-stack span, .single-bar { display: block; height: 100%; }
-  .single-bar { background: var(--accent); border-radius: var(--r-sm); }
+  .single-bar { display: block; height: 100%; background: var(--accent); border-radius: var(--r-sm); }
   .bar-value { text-align: right; color: var(--ink-3); }
   details summary { cursor: pointer; color: var(--accent); font-size: var(--fs-sm); }
   table { width: 100%; border-collapse: collapse; margin-top: var(--s-2); font-size: var(--fs-sm); }
