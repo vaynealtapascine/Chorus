@@ -1,5 +1,6 @@
 <script lang="ts">
   // Who is in a group: tap to put someone in or take them out. One op per tap, so it works offline.
+  import Button from './kit/Button.svelte';
   import { fuzzy, groupPath, groups } from '../data';
   import { sync, type Projection } from '../sync/client';
   import { candidates, groupLine, groupMembers, membershipOp } from '../member-directory';
@@ -24,11 +25,10 @@
         <MemberPickRow member={c.member} {dark} on={c.inside} disabled={c.loops} sub={c.loops ? 'Inside them already' : null} onclick={() => toggle(c.member.id, c.inside)} />
       {/each}
     </FormCard>
-    {#snippet footer()}<button class="go" onclick={onclose}>Done</button>{/snippet}
+    {#snippet footer()}<Button variant="primary" grow class="go" onclick={onclose}>Done</Button>{/snippet}
   </Sheet>
 {/if}
 
 <style>
   .search { font: inherit; color: var(--ink); background: var(--surface-2); border: 0; border-radius: var(--r-row); padding: 10px 14px; }
-  .go { flex: 1; min-height: 44px; border: 0; border-radius: var(--r-control); background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
 </style>

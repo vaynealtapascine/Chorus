@@ -2,6 +2,7 @@
   // What pings this account and this browser (F7.13, as far as a browser can: a status card with Turn on and
   // Send a test, and a switch per kind the account can silence; `notify_chat` is account-wide, so it also
   // governs the phone).
+  import Button from '../kit/Button.svelte';
   import FormCard from '../kit/FormCard.svelte';
   import PageHeader from '../kit/PageHeader.svelte';
   import SectionLabel from '../kit/SectionLabel.svelte';
@@ -84,8 +85,8 @@
     <div class="status">
       <span class="disc" class:on={canNotify || pushOn}><Icon name={canNotify || pushOn ? 'bell' : 'bell-off'} size={22} /></span>
       <span class="text"><strong>{status[0]}</strong>{#if status[1]}<span>{status[1]}</span>{/if}</span>
-      {#if pushOn}<button class="fr-btn soft" onclick={sendTest}>Send a test</button>
-      {:else if canAsk}<button class="fr-btn soft" onclick={enableNotifications}>Turn on</button>{/if}
+      {#if pushOn}<Button size="sm" variant="soft" onclick={sendTest}>Send a test</Button>
+      {:else if canAsk}<Button size="sm" variant="soft" onclick={enableNotifications}>Turn on</Button>{/if}
     </div>
     {#if pushOn}<button class="row" onclick={async () => { await disablePush(); pushOn = false; }}>Turn off in this browser</button>{/if}
   </FormCard>

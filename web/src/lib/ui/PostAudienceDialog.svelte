@@ -1,6 +1,7 @@
 <script lang="ts">
   // Change who can read an existing post (`post.set_visibility`, queued offline like any op), as on
   // Android: widening says so before the change is written; narrowing needs no warning.
+  import Button from './kit/Button.svelte';
   import { buckets as bucketRows } from '../data';
   import { possiblyWidens, sameAudience, type Audience } from '../profile-audience';
   import { sync, type Projection } from '../sync/client';
@@ -34,8 +35,8 @@
   {#if widening}<p class="note">More people will be able to read this post.</p>{/if}
   {#if error}<p class="error" role="alert">{error}</p>{/if}
   <div class="dialog-actions">
-    <button onclick={() => dialog?.close()}>Cancel</button>
-    <button class="primary" disabled={sameAudience(choice, current)} onclick={save}>{widening ? 'Make visible' : 'Change audience'}</button>
+    <Button size="sm" variant="quiet" onclick={() => dialog?.close()}>Cancel</Button>
+    <Button size="sm" variant="primary" disabled={sameAudience(choice, current)} onclick={save}>{widening ? 'Make visible' : 'Change audience'}</Button>
   </div>
 </dialog>
 
@@ -49,7 +50,4 @@
   .note, .error { margin: 10px 0 0; font-size: var(--fs-sm); color: var(--ink-2); }
   .error { color: var(--danger); }
   .dialog-actions { display: flex; justify-content: flex-end; gap: var(--s-2); margin-top: var(--s-4); }
-  .dialog-actions button { border: 0; border-radius: var(--r-full); padding: var(--s-2) var(--s-4); background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
-  .dialog-actions .primary { background: var(--accent); color: var(--on-accent, #fff); }
-  .dialog-actions .primary:disabled { opacity: .5; cursor: default; }
 </style>

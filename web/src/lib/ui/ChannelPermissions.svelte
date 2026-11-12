@@ -2,6 +2,7 @@
   // Channel permissions (Advanced; D-047, server rule in perms.rs): overrides for everyone, a
   // role, or one account. Letting an account outside the space view a channel shares just that
   // channel with them (how one internal channel is shared with a partner).
+  import Button from './kit/Button.svelte';
   import { apiBase } from '../sync/device';
   import { apiFetch } from '../http';
   import { sync, type Projection } from '../sync/client';
@@ -118,7 +119,7 @@
       {/each}
     </div>
     {#if outsider && choices.view === 'allow'}<p class="hint">They're not in this space: this shares just this channel with them.</p>{/if}
-    <button class="primary">Save</button>
+    <Button variant="primary" round class="primary" style="justify-self: start">Save</Button>
   </form>
 </details>
 
@@ -135,5 +136,4 @@
   .grid label, form > label { display: grid; gap: 2px; color: var(--ink-2); }
   select { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 2px var(--s-1); }
   button { font: inherit; cursor: pointer; background: none; border: 0; color: var(--accent); }
-  .primary { justify-self: start; background: var(--accent); color: var(--surface); border-radius: var(--r-full); padding: var(--s-1) var(--s-3); }
 </style>

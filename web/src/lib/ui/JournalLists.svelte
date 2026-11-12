@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Button from './kit/Button.svelte';
   import { memberListItems, memberLists, members, reactions, type MemberRow } from '../data';
   import { canWriteAs, postReaction, posts, type PostRow } from '../posts';
   import { sync, type Projection } from '../sync/client';
@@ -73,7 +74,7 @@
       <form class="create" onsubmit={createList}>
         <input bind:value={name} required maxlength="80" placeholder="List name" aria-label="List name" />
         <input bind:value={description} maxlength="200" placeholder="Description" aria-label="Description" />
-        <div class="actions"><button type="button" onclick={() => (creating = false)}>Cancel</button><button class="primary">Create list</button></div>
+        <div class="actions"><button type="button" onclick={() => (creating = false)}>Cancel</button><Button variant="primary" class="primary">Create list</Button></div>
       </form>
     {:else}<button type="button" class="new" onclick={() => (creating = true)}><Icon name="plus" size={20} />New list</button>{/if}
   {:else}
@@ -98,7 +99,6 @@
   .new { display: flex; align-items: center; gap: var(--s-2); justify-self: stretch; justify-content: center; padding: 14px; border: 1px dashed var(--line); border-radius: var(--r-row); background: none; }
   .back { display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 0; background: none; transform: rotate(180deg); }
   .actions { display: flex; gap: var(--s-2); justify-content: flex-end; }
-  .primary { background: var(--accent); color: var(--on-accent); border: 0; border-radius: var(--r-sm); padding: var(--s-2) var(--s-4); }
   .list-head h2 { flex: 1; }
   .lists, .create, .timeline { display: grid; gap: var(--s-3); }
   .muted { color: var(--ink-3); font-size: var(--fs-sm); }

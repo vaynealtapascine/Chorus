@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Button from './kit/Button.svelte';
   import AudienceChip from './AudienceChip.svelte';
   import { audienceOf, type Audience } from '../profile-audience';
   import { validBucketAudience } from '../bucket-controls';
@@ -177,7 +178,7 @@
     {/if}
     {#if preview.error}<p class="error" role="alert">{preview.error}</p>{/if}
     {#if saveError}<p class="error" role="alert">{saveError}</p>{/if}
-    <div class="actions"><button class="primary" disabled={!name.trim() || !query.trim() || !!preview.error}>Save feed</button>
+    <div class="actions"><Button variant="primary" class="primary" disabled={!name.trim() || !query.trim() || !!preview.error}>Save feed</Button>
       {#if query.trim()}<button type="button" onclick={copyQuery}>{copied ? 'Query copied' : 'Copy query'}</button>{/if}
       {#if selected}<button type="button" onclick={() => { sync.create('feed.delete', sync.accountScope, selected, {}); clear(); }}>Delete feed</button>{/if}</div>
   </form>
@@ -244,7 +245,6 @@
   input, textarea { box-sizing: border-box; width: 100%; padding: var(--s-2); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); color: var(--ink); font: inherit; }
   button { color: var(--accent); cursor: pointer; }
   button:disabled { opacity: .5; cursor: default; }
-  .primary { background: var(--accent); color: var(--bg); border: 0; padding: var(--s-2) var(--s-4); border-radius: var(--r-sm); }
   .error { color: var(--danger); }
   .preview { margin-top: var(--s-3); }
   .message { display: grid; gap: var(--s-2); }

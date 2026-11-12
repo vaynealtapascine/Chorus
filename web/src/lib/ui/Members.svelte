@@ -1,6 +1,7 @@
 <script lang="ts">
   // Members (F4.1): a title row, tabs, counted chips and flat rows. The view options, folders, Select,
   // Reorder and Import sit behind one filter icon.
+  import Button from './kit/Button.svelte';
   import { core } from '../core';
   import { fieldDefs, fieldValues, fuzzy, groups, type MemberRow } from '../data';
   import { router } from '../router.svelte';
@@ -243,8 +244,8 @@
     {#if selecting}
       <div class="selbar" role="toolbar" aria-label="Selected members">
         <span>{picked.size} selected</span>
-        <button class="go" disabled={!picked.size} onclick={() => (moving = [...picked])}>Move</button>
-        <button class="quiet" onclick={endSelecting}>Cancel</button>
+        <Button variant="primary" size="sm" class="go" disabled={!picked.size} onclick={() => (moving = [...picked])}>Move</Button>
+        <Button variant="quiet" size="sm" class="quiet" onclick={endSelecting}>Cancel</Button>
       </div>
     {/if}
   {/if}
@@ -304,7 +305,7 @@
     <MenuRow label="Not in a folder" onclick={() => moveTo(null)} />
     <form class="new-folder" onsubmit={(e) => { e.preventDefault(); newFolderAndMove(); }}>
       <input bind:value={newFolder} placeholder="New folder" aria-label="New folder name" maxlength="40" />
-      <button class="go" disabled={!newFolder.trim()}>Add</button>
+      <Button variant="primary" size="sm" class="go" disabled={!newFolder.trim()}>Add</Button>
     </form>
   </MenuSheet>
 {/if}
@@ -351,10 +352,6 @@
   .tile { width: 44px; height: 44px; display: grid; place-items: center; border-radius: var(--r-row); background: var(--surface-2); color: var(--ink-2); flex: none; }
   .badge { min-width: 24px; text-align: center; border-radius: var(--r-full); background: var(--surface-2); font-size: var(--fs-xs); font-weight: 600; padding: 2px var(--s-2); }
   .selbar { position: sticky; bottom: 12px; display: flex; align-items: center; gap: 10px; padding: var(--s-2) var(--s-3) var(--s-2) 18px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-full); box-shadow: var(--shadow-pop); justify-self: center; z-index: 5; }
-  .go, .quiet { min-height: 36px; border: 0; border-radius: var(--r-full); padding: 6px var(--s-4); font: inherit; font-weight: 600; cursor: pointer; }
-  .go { background: var(--accent); color: var(--on-accent); }
-  .go:disabled { background: var(--surface-2); color: var(--ink-3); cursor: default; }
-  .quiet { background: none; color: var(--ink-2); }
   .new-folder { display: flex; gap: var(--s-2); padding: var(--s-2) var(--s-3); }
   .new-folder input { flex: 1; min-width: 0; font: inherit; color: var(--ink); background: var(--surface-2); border: 0; border-radius: var(--r-row); padding: var(--s-2) var(--s-3); }
 </style>

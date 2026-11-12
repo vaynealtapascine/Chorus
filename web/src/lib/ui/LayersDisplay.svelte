@@ -2,6 +2,7 @@
   // Layers & display (Figma F3.9; Android LayersDisplayScreen) for one front: a preset, the layers
   // inner to outer (order, look, whether Fronting shows them), clutter switches and suggested
   // speakers. Layer names and order are the system's (`front.layer`); the rest is the display pref.
+  import Button from './kit/Button.svelte';
   import { defineFront, editLayer } from '../front.svelte';
   import { frontLayers, frontList } from '../front-view';
   import * as fd from '../fronting-display';
@@ -169,7 +170,7 @@
       {#each states as [id, row] (id)}<span class="state">{String(row.fields.name ?? 'State')}<button aria-label="Remove {String(row.fields.name ?? 'state')}" onclick={() => sync.create('state.delete', sync.accountScope, id, {})}><Icon name="close" size={14} /></button></span>{/each}
     </div>
     <form class="add" onsubmit={(e) => { e.preventDefault(); const n = newState.trim(); if (n) { sync.create('state.create', sync.accountScope, sync.newId(), { name: n, icon: '?' }); newState = ''; } }}>
-      <input bind:value={newState} maxlength="40" placeholder="New state, e.g. Blurry" aria-label="New state" /><button class="fr-btn primary" disabled={!newState.trim()}>Add</button>
+      <input bind:value={newState} maxlength="40" placeholder="New state, e.g. Blurry" aria-label="New state" /><Button size="sm" variant="primary" disabled={!newState.trim()}>Add</Button>
     </form>
   </div>
 </div>

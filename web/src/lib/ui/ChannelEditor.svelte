@@ -2,6 +2,7 @@
   // Make or edit a channel or a members' chat (D-088, D-099; Android's ChannelEditor): name,
   // description, icon, colour and picture, and in our own space who it is kept to. Saving writes
   // only what changed, so another device's edit to the rest survives.
+  import Button from './kit/Button.svelte';
   import { untrack } from 'svelte';
   import { actingOpts } from '../front-view';
   import { core } from '../core';
@@ -184,9 +185,9 @@
 
   {#if error}<p class="error" role="alert">{error}</p>{/if}
   <div class="actions">
-    {#if channel && canDelete}<button class="danger" onclick={remove}>Delete</button>{/if}
+    {#if channel && canDelete}<Button variant="danger-soft" round class="danger" onclick={remove}>Delete</Button>{/if}
     <span class="why">{problem ?? ''}</span>
-    <button class="primary" disabled={!!problem || busy} onclick={save}>{channel ? 'Save' : 'Create'}</button>
+    <Button variant="primary" round class="primary" disabled={!!problem || busy} onclick={save}>{channel ? 'Save' : 'Create'}</Button>
   </div>
 </div>
 
@@ -224,7 +225,4 @@
   .error { margin: 0; color: var(--danger); font-size: var(--fs-sm); }
   .actions { display: flex; align-items: center; gap: var(--s-3); }
   .why { flex: 1; color: var(--ink-3); font-size: var(--fs-xs); }
-  .primary { border: 0; border-radius: var(--r-full); padding: 9px var(--s-5); background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
-  .primary:disabled { opacity: .5; cursor: default; }
-  .danger { border: 1px solid var(--danger); border-radius: var(--r-full); padding: var(--s-2) var(--s-4); background: none; color: var(--danger); font: inherit; cursor: pointer; }
 </style>

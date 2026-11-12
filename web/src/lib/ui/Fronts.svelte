@@ -3,6 +3,7 @@
   // Fronting shows it, its order, and new fronts from templates. Following, overrides and purpose
   // pools are resolved in core (D-080, D-085); this page writes sparse definitions and the
   // display pref (D-122). Layers live on Layers & display.
+  import Button from './kit/Button.svelte';
   import { defineFront, resumeFollowing } from '../front.svelte';
   import { frontLayers, frontList, type FrontSummary } from '../front-view';
   import * as fd from '../fronting-display';
@@ -160,7 +161,7 @@
                 </div>
               {/each}
             </details>
-            {#if !f.body}<button class="fr-btn danger" onclick={() => { defineFront(f.id, { deleted: true }); editing = null; }}>Remove {f.name}</button>{/if}
+            {#if !f.body}<Button size="sm" variant="danger-soft" style="justify-self: start" onclick={() => { defineFront(f.id, { deleted: true }); editing = null; }}>Remove {f.name}</Button>{/if}
           </div>
         {/if}
       </li>
@@ -176,7 +177,7 @@
         <form class="add" onsubmit={(e) => { e.preventDefault(); create(newName); }}>
           <!-- svelte-ignore a11y_autofocus -->
           <input bind:value={newName} placeholder="Name, e.g. Headspace" aria-label="New front name" autofocus />
-          <button class="fr-btn primary" disabled={!newName.trim()}>Add</button>
+          <Button size="sm" variant="primary" disabled={!newName.trim()}>Add</Button>
         </form>
       {/if}
     </li>
@@ -223,7 +224,6 @@
   .icons button.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
   .hint { margin: 0; color: var(--ink-3); font-size: var(--fs-xs); }
   details summary { cursor: pointer; color: var(--accent); font-weight: 600; font-size: var(--fs-sm); padding: 6px 0; }
-  .danger { justify-self: start; color: var(--danger); }
   .new { display: grid; gap: var(--s-3); padding: var(--s-4); border: 1px dashed var(--line); border-radius: 18px; }
   .new-head { display: flex; align-items: center; gap: var(--s-3); border: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; padding: 0; }
   .new-head > span:last-child { display: grid; }

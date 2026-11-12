@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Button from './kit/Button.svelte';
   import Icon from './Icon.svelte';
   import QuoteEmbed from './QuoteEmbed.svelte';
   import AudienceChip from './AudienceChip.svelte';
@@ -303,7 +304,7 @@
       <button type="button" class:on={cwOpen || !!draft.cw} aria-pressed={cwOpen || !!draft.cw} aria-label="Content warning" title="Content warning" onclick={toggleCw}><Icon name="alert" size={20} /></button>
       <button type="button" class:on={tagsOpen || !!draft.tags || !!draft.mood} aria-pressed={tagsOpen || !!draft.tags || !!draft.mood} aria-label="Tags and mood" title="Tags and mood" onclick={() => (tagsOpen = !tagsOpen)}><Icon name="hash" size={20} /></button>
       <span class="words">{words} {words === 1 ? 'word' : 'words'}</span>
-      <button class="primary" disabled={!canPost}>{busy ? 'Posting…' : replyTo ? 'Reply' : 'Post'}</button>
+      <Button variant="primary" size="sm" class="primary" style="justify-self: end" disabled={!canPost}>{busy ? 'Posting…' : replyTo ? 'Reply' : 'Post'}</Button>
     </div>
     <input bind:this={picker} class="sr-label" type="file" multiple tabindex="-1" aria-hidden="true" onchange={(e) => { if (e.currentTarget.files) addFiles(e.currentTarget.files); e.currentTarget.value = ''; }} />
     <input bind:this={camera} class="sr-label" type="file" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true" onchange={(e) => { if (e.currentTarget.files) addFiles(e.currentTarget.files); e.currentTarget.value = ''; }} />
@@ -315,7 +316,7 @@
   <Sheet title="Link" onclose={() => (linkOpen = false)}>
     <input class="link-field" bind:value={linkUrl} placeholder="https://" aria-label="Link address" inputmode="url" onkeydown={(e) => e.key === 'Enter' && (e.preventDefault(), addLink())} />
     {#if linkError}<p class="error" role="alert">{linkError}</p>{/if}
-    {#snippet footer()}<button type="button" class="primary" onclick={addLink}>Add link</button>{/snippet}
+    {#snippet footer()}<Button variant="primary" size="sm" type="button" class="primary" onclick={addLink}>Add link</Button>{/snippet}
   </Sheet>
 {/if}
 {#if emojiOpen}
@@ -341,8 +342,6 @@
   .authors label.on { background: var(--accent-soft); }
   input:not([type='checkbox']), textarea { border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); color: var(--ink); padding: var(--s-2); font: inherit; }
   textarea { width: 100%; resize: vertical; box-sizing: border-box; }
-  .primary { justify-self: end; min-height: 40px; border: 0; border-radius: var(--r-sm); background: var(--accent); color: var(--on-accent); padding: var(--s-2) var(--s-4); cursor: pointer; }
-  .primary:disabled { opacity: .5; cursor: default; }
   .error { color: var(--danger); margin: 0; }
   .restored { margin: 0; color: var(--ink-3); font-size: var(--fs-xs); }
   .borrowed { margin: -4px 0 0; color: var(--ink-3); font-size: var(--fs-xs); }
@@ -381,7 +380,7 @@
   .chip.on { background: var(--accent-soft); color: var(--accent); }
   .saved { margin-left: auto; color: var(--ink-3); font-size: var(--fs-sm); }
   .icons { gap: 0; justify-content: space-between; flex-wrap: nowrap; }
-  .icons button:not(.primary) { display: grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: var(--r-sm); background: none; color: var(--accent); cursor: pointer; flex: none; }
+  .icons button { display: grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: var(--r-sm); background: none; color: var(--accent); cursor: pointer; flex: none; }
   .icons button:disabled { opacity: .4; cursor: default; }
   .icons[role='toolbar'] button:not(.on) { color: var(--ink-2); }
   .words { margin-left: auto; margin-right: var(--s-2); color: var(--ink-3); font-size: var(--fs-sm); white-space: nowrap; }

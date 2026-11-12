@@ -1,5 +1,6 @@
 <script lang="ts">
   // Webhooks (API.md §7; Figma F9.4): signed JSON events posted to your own URL.
+  import Button from '../kit/Button.svelte';
   import Icon from '../Icon.svelte';
   import Sheet from '../Sheet.svelte';
   import ConfirmSheet from '../kit/ConfirmSheet.svelte';
@@ -86,8 +87,8 @@
       <div class="head">
         <span class="tile"><Icon name="globe" size={20} /></span>
         <strong class="url">{h.url}</strong>
-        <button class="pill" onclick={() => test(h.id)}><Icon name="send" size={16} />Test</button>
-        <button class="pill" onclick={() => (editing = h)}><Icon name="edit" size={16} />Edit</button>
+        <Button size="sm" class="pill" onclick={() => test(h.id)}><Icon name="send" size={16} />Test</Button>
+        <Button size="sm" class="pill" onclick={() => (editing = h)}><Icon name="edit" size={16} />Edit</Button>
       </div>
       <div class="chips">{#each h.events as ev (ev)}<code>{ev}</code>{/each}{#if !h.is_enabled}<code class="off">off</code>{/if}</div>
       {#if notes[h.id] || h.last_status || h.last_error}
@@ -110,7 +111,7 @@
         {/each}
       </FormCard>
     </form>
-    {#snippet footer()}<button class="primary" form="new-hook" disabled={!events.length || !url.trim()}>Add webhook</button>{/snippet}
+    {#snippet footer()}<Button variant="primary" size="lg" grow class="primary" form="new-hook" disabled={!events.length || !url.trim()}>Add webhook</Button>{/snippet}
   </Sheet>
 {/if}
 {#if editing}
@@ -118,7 +119,7 @@
     <FormCard>
       <Switch label="On" checked={editing.is_enabled} onchange={() => toggle(editing!)} />
     </FormCard>
-    {#snippet footer()}<button class="danger" onclick={() => (removing = editing)}>Remove</button>{/snippet}
+    {#snippet footer()}<Button variant="danger-soft" size="lg" grow class="danger" onclick={() => (removing = editing)}>Remove</Button>{/snippet}
   </Sheet>
 {/if}
 {#if removing}
@@ -133,7 +134,6 @@
   .head { display: flex; align-items: center; gap: 10px; }
   .tile { display: grid; place-items: center; width: 40px; height: 40px; border-radius: var(--r-row); background: var(--accent-soft); color: var(--accent); flex: none; }
   .url { flex: 1; min-width: 0; font-family: var(--font-mono); font-size: 14px; font-weight: 500; word-break: break-all; }
-  .pill { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 14px; border: 0; border-radius: var(--r-full); background: var(--surface-3, var(--surface)); color: var(--ink); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
   code { font-family: var(--font-mono); background: var(--surface-3, var(--surface)); padding: 3px 10px; border-radius: var(--r-full); font-size: var(--fs-xs); word-break: break-all; }
   code.off { color: var(--ink-3); }
@@ -142,7 +142,4 @@
   .link { border: 0; background: none; padding: 0; color: var(--accent); font: inherit; cursor: pointer; justify-self: start; }
   form { display: grid; gap: var(--s-3); }
   input { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-row); padding: var(--s-3) 14px; }
-  .primary, .danger { flex: 1; min-height: 48px; border: 0; border-radius: var(--r-control); background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
-  .danger { background: var(--surface-2); color: var(--danger); }
-  .primary:disabled { opacity: .5; cursor: default; }
 </style>

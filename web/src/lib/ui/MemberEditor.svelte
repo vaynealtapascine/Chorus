@@ -3,6 +3,7 @@
   // Description, then the More rows (Groups, Who can see, Custom fields, Handles, Banner, ...), and
   // Archive at the foot. The top fields are a draft that Save writes; the rows open their own sheets
   // or pages and save as they are used.
+  import Button from './kit/Button.svelte';
   import { onDestroy, untrack } from 'svelte';
   import { actingOpts } from '../front-view';
   import { core } from '../core';
@@ -236,7 +237,7 @@
 
     <div class="identity">
       <span class="avatar" aria-hidden="true"><AvatarImage hash={m.avatar_blob} glyph={m.sigils[0] ?? draft.name[0] ?? '?'} name={draft.name} /></span>
-      <button class="pill" onclick={() => (picture = true)}><Icon name="image" size={18} />Change picture</button>
+      <Button size="sm" class="pill" onclick={() => (picture = true)}><Icon name="image" size={18} />Change picture</Button>
     </div>
     <Swatches value={draft.color} custom onpick={(c) => (draft.color = c)} />
 
@@ -269,8 +270,8 @@
       <div class="foot">
         {#if m.archived}<button class="restore" onclick={archive}>Restore {shownName}</button>
         {:else}<button class="archive" onclick={() => (archiving = true)}>Archive {shownName}</button>{/if}
-        {#if m.deleted}<button class="quiet" onclick={() => sync.create('member.restore', sync.accountScope, id, {})}>Restore from Trash</button>
-        {:else}<button class="quiet" onclick={() => (trashing = true)}>Move to Trash</button>{/if}
+        {#if m.deleted}<Button variant="quiet" class="quiet" onclick={() => sync.create('member.restore', sync.accountScope, id, {})}>Restore from Trash</Button>
+        {:else}<Button variant="quiet" class="quiet" onclick={() => (trashing = true)}>Move to Trash</Button>{/if}
       </div>
     {/if}
 
@@ -291,7 +292,7 @@
       {#if avatarError}<p class="error" role="alert">{avatarError}</p>{/if}
       {#snippet footer()}
         {#if cropReady}<button class="save" onclick={saveAvatar}>Use this crop</button>{/if}
-        {#if m.avatar_blob}<button class="quiet" onclick={() => { set({ avatar_blob: null }); picture = false; }}>Remove</button>{/if}
+        {#if m.avatar_blob}<Button variant="quiet" class="quiet" onclick={() => { set({ avatar_blob: null }); picture = false; }}>Remove</Button>{/if}
       {/snippet}
     </Sheet>
   {/if}
@@ -301,7 +302,7 @@
       <label class="pill file"><Icon name="image" size={18} />{m.banner_blob ? 'Change' : 'Add a banner'}<input type="file" accept="image/*" onchange={chooseBanner} aria-label="Choose member banner" /></label>
       {#if bannerError}<p class="error" role="alert">{bannerError}</p>{/if}
       {#snippet footer()}
-        {#if m.banner_blob}<button class="quiet" onclick={() => set({ banner_blob: null })}>Remove</button>{/if}
+        {#if m.banner_blob}<Button variant="quiet" class="quiet" onclick={() => set({ banner_blob: null })}>Remove</Button>{/if}
         <button class="save" onclick={() => (banner = false)}>Done</button>
       {/snippet}
     </Sheet>
@@ -387,7 +388,6 @@
   .tag { border-radius: var(--r-full); background: var(--surface-2); color: var(--ink-3); font-size: var(--fs-xs); padding: 3px 10px; }
   .identity { display: flex; align-items: center; gap: var(--s-4); }
   .avatar { width: 84px; height: 84px; display: grid; place-items: center; border-radius: 50%; overflow: hidden; font-size: var(--fs-3xl); font-weight: 700; background: var(--ring); color: var(--avatar-ink); }
-  .pill { display: inline-flex; align-items: center; gap: var(--s-2); min-height: 40px; padding: 0 var(--s-4); border: 0; border-radius: var(--r-full); background: var(--surface-2); color: var(--ink); font: inherit; font-size: var(--fs-md); cursor: pointer; }
   .pill.file input { display: none; }
   .field { display: grid; gap: 2px; padding: var(--s-2) 14px; border-radius: var(--r-control); background: var(--surface-2); color: var(--ink-3); font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
   .field.strong:focus-within { box-shadow: inset 0 0 0 1.5px var(--accent); }
@@ -398,10 +398,9 @@
   .error { margin: 0; color: var(--danger); font-size: var(--fs-sm); }
   .muted { color: var(--ink-3); }
   .foot { display: grid; justify-items: center; gap: var(--s-1); }
-  .archive, .restore, .quiet { min-height: 44px; border: 0; background: none; font: inherit; font-size: var(--fs-md); font-weight: 600; cursor: pointer; }
+  .archive, .restore { min-height: 44px; border: 0; background: none; font: inherit; font-size: var(--fs-md); font-weight: 600; cursor: pointer; }
   .archive { color: var(--danger); }
   .restore { color: var(--accent); }
-  .quiet { color: var(--ink-3); font-weight: 400; font-size: 14px; }
   .savebar { position: fixed; left: 0; right: 0; bottom: 0; display: flex; justify-content: center; padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); background: var(--bg); z-index: 5; }
   .save { flex: 1; max-width: 560px; min-height: 48px; border: 0; border-radius: var(--r-control); background: var(--accent); color: var(--on-accent); font: inherit; font-size: var(--fs-base); font-weight: 600; cursor: pointer; }
   .save:disabled { background: var(--surface-2); color: var(--ink-3); cursor: default; }

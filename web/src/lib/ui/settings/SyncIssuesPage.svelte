@@ -1,6 +1,7 @@
 <script lang="ts">
   // Sync issues (Figma F10.4): what the server refused, why, and the text so nothing is lost.
   // Retry needs a core export the web build does not have yet; Copy text and Discard are here.
+  import Button from '../kit/Button.svelte';
   import Icon from '../Icon.svelte';
   import ConfirmSheet from '../kit/ConfirmSheet.svelte';
   import EmptyState from '../kit/EmptyState.svelte';
@@ -24,9 +25,9 @@
       </div>
       {#if issueText(issue)}<blockquote>{issueText(issue)}</blockquote>{/if}
       <div class="actions">
-        {#if issueText(issue)}<button class="pill" onclick={() => copy(issue)}><Icon name="copy" size={16} />Copy text</button>{/if}
+        {#if issueText(issue)}<Button size="sm" class="pill" onclick={() => copy(issue)}><Icon name="copy" size={16} />Copy text</Button>{/if}
         <span class="grow"></span>
-        <button class="pill danger" onclick={() => (discarding = issue)}>Discard</button>
+        <Button variant="danger-soft" size="sm" class="pill danger" onclick={() => (discarding = issue)}>Discard</Button>
       </div>
     </div>
   {:else}
@@ -49,6 +50,4 @@
   blockquote { margin: 0; padding: 10px var(--s-3); border-radius: var(--r-sm); border-left: 3px solid var(--accent); background: var(--surface); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 9em; overflow: hidden; }
   .actions { display: flex; gap: var(--s-2); }
   .grow { flex: 1; }
-  .pill { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 14px; border: 0; border-radius: var(--r-full); background: var(--surface); color: var(--ink); font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; }
-  .pill.danger { background: none; color: var(--danger); }
 </style>

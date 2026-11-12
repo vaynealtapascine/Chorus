@@ -1,6 +1,8 @@
 import { render } from 'svelte/server';
 import { expect, it } from 'vitest';
 import DragListHost from './DragListHost.test.svelte';
+import { createRawSnippet } from 'svelte';
+import Button from './Button.svelte';
 import ConfirmSheet from './ConfirmSheet.svelte';
 import EmptyState from './EmptyState.svelte';
 import FormNote from './FormNote.svelte';
@@ -40,7 +42,7 @@ it('labels, notes and confirmations', () => {
   expect(render(FormNote, { props: { text: 'The Junipers will see it.', warning: true } }).body).toContain('role="alert"');
   const confirm = render(ConfirmSheet, { props: { title: 'Archive Nairon?', confirm: 'Archive', danger: true, onconfirm: () => {}, onclose: () => {} } }).body;
   expect(confirm).toContain('Archive Nairon?');
-  expect(confirm).toMatch(/class="go[^"]*danger[^"]*"[^>]*>Archive<\/button>/);
+  expect(confirm).toMatch(/class="btn danger md go[^"]*"[^>]*>(<!---->)?Archive/);
   expect(confirm).toContain('Cancel');
 });
 
@@ -53,4 +55,12 @@ it('a drag list draws a grip on each row, in the given order', () => {
 it('the install card shows nothing where the browser cannot install', async () => {
   const { default: InstallCard } = await import('./InstallCard.svelte');
   expect(render(InstallCard).body).not.toContain('Install Chorus');
+});
+
+it('buttons carry their variant and size, and link when given an href', () => {
+  const children = createRawSnippet(() => ({ render: () => 'Save' }));
+  const primary = render(Button, { props: { variant: 'primary', grow: true, class: 'go', disabled: true, children } }).body;
+  expect(primary).toMatch(/<button class="btn primary md go[^"]*grow"[^>]*disabled[^>]*>Save/);
+  expect(render(Button, { props: { size: 'sm', children } }).body).toMatch(/class="btn neutral sm[ "]/);
+  expect(render(Button, { props: { href: '#/x', children } }).body).toMatch(/<a class="btn neutral md[ "][^>]*href="#\/x"/);
 });

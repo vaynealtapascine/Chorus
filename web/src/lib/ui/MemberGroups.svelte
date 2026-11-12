@@ -1,6 +1,7 @@
 <script lang="ts">
   // The Groups tab (F4.4): every group as a card that opens on its members. Any group, plain or
   // subsystem, can be filled and emptied here; edit, recolour or remove from the card.
+  import Button from './kit/Button.svelte';
   import { groupPath, groups } from '../data';
   import { actingOpts } from '../front-view';
   import { sync, type Projection } from '../sync/client';
@@ -77,7 +78,7 @@
     <input class="field" bind:value={name} aria-label="Name" maxlength="60" />
     <Swatches value={color} onpick={(c) => (color = c)} />
     <button class="remove" onclick={() => (removing = true)}><Icon name="delete" size={20} />Remove {editGroup.name}</button>
-    {#snippet footer()}<button class="go" disabled={!name.trim()} onclick={save}>Save</button>{/snippet}
+    {#snippet footer()}<Button variant="primary" grow class="go" disabled={!name.trim()} onclick={save}>Save</Button>{/snippet}
   </Sheet>
 {/if}
 {#if removing && editGroup}
@@ -104,6 +105,4 @@
   .dashed { display: flex; align-items: center; justify-content: center; gap: var(--s-2); min-height: 52px; border: 1.5px dashed var(--line); border-radius: var(--r-md); background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
   .field { font: inherit; color: var(--ink); background: var(--surface-2); border: 0; border-radius: var(--r-row); padding: var(--s-3) 14px; }
   .remove { display: flex; align-items: center; gap: var(--s-3); min-height: 48px; border: 0; background: none; color: var(--danger); font: inherit; cursor: pointer; padding: 0 var(--s-1); }
-  .go { flex: 1; min-height: 44px; border: 0; border-radius: var(--r-control); background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
-  .go:disabled { background: var(--surface-2); color: var(--ink-3); cursor: default; }
 </style>

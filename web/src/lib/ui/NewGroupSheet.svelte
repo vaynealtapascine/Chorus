@@ -1,5 +1,6 @@
 <script lang="ts">
   // A name, a colour, group or subsystem, and where a subsystem sits (F4.4 New group).
+  import Button from './kit/Button.svelte';
   import { groupPath, groups } from '../data';
   import { sync, type Projection } from '../sync/client';
   import Sheet from './Sheet.svelte';
@@ -37,7 +38,7 @@
   {#if kind === 'subsystem' && subsystems.length}
     <FormCard><ValueRow label="Where" value={parentGroup ? `Inside ${groupPath(parentGroup, gs)}` : 'Top level'} onclick={() => (choosing = true)} /></FormCard>
   {/if}
-  {#snippet footer()}<button class="go" disabled={!name.trim()} onclick={add}>Add {kind}</button>{/snippet}
+  {#snippet footer()}<Button variant="primary" grow class="go" disabled={!name.trim()} onclick={add}>Add {kind}</Button>{/snippet}
 </Sheet>
 
 {#if choosing}
@@ -51,6 +52,4 @@
 
 <style>
   .name { font: inherit; color: var(--ink); background: var(--surface-2); border: 0; border-radius: var(--r-row); padding: var(--s-3) 14px; }
-  .go { flex: 1; min-height: 44px; border: 0; border-radius: var(--r-control); background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
-  .go:disabled { background: var(--surface-2); color: var(--ink-3); cursor: default; }
 </style>

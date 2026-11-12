@@ -2,6 +2,7 @@
   // "Make X a subsystem" and "Inside X" (D-092): a member linked to a subsystem group, whose members
   // are inside them. The link is the account pref `member_subsystem:<member>`; the parts are ordinary
   // group membership. Nobody can be put inside themselves, or inside someone they hold.
+  import Button from './kit/Button.svelte';
   import { fuzzy, groupPath, groups, membership, type MemberRow } from '../data';
   import { sync, type Projection } from '../sync/client';
   import { candidates, groupLine, groupMembers, membershipOp, subsystemOf } from '../member-directory';
@@ -60,7 +61,7 @@
     <button class="stop" onclick={() => link(null)}><Icon name="close" size={20} />Stop being a subsystem</button>
   {/if}
   {#snippet footer()}
-    {#if group}<button class="go" onclick={onclose}>Done</button>{:else}<button class="go" onclick={make}>New subsystem</button>{/if}
+    {#if group}<Button variant="primary" grow class="go" onclick={onclose}>Done</Button>{:else}<Button variant="primary" grow class="go" onclick={make}>New subsystem</Button>{/if}
   {/snippet}
 </Sheet>
 
@@ -70,5 +71,4 @@
   .existing span span { color: var(--ink-3); font-size: var(--fs-xs); }
   .search { font: inherit; color: var(--ink); background: var(--surface-2); border: 0; border-radius: var(--r-row); padding: 10px 14px; }
   .stop { display: flex; align-items: center; gap: var(--s-3); min-height: 48px; border: 0; background: none; color: var(--danger); font: inherit; cursor: pointer; padding: 0 var(--s-1); }
-  .go { flex: 1; min-height: 44px; border: 0; border-radius: var(--r-control); background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
 </style>

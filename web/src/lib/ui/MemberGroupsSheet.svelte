@@ -1,5 +1,6 @@
 <script lang="ts">
   // The groups one member is in (F4.2 "Groups"): tick to put them in or take them out.
+  import Button from './kit/Button.svelte';
   import { groupPath, groups, membership, type MemberRow } from '../data';
   import { sync, type Projection } from '../sync/client';
   import { candidates, groupLine, groupMembers, membershipOp } from '../member-directory';
@@ -31,7 +32,7 @@
     </FormCard>
   {/if}
   <button class="dashed" onclick={() => (creating = true)}><Icon name="plus" size={18} />New group</button>
-  {#snippet footer()}<button class="go" onclick={onclose}>Done</button>{/snippet}
+  {#snippet footer()}<Button variant="primary" grow class="go" onclick={onclose}>Done</Button>{/snippet}
 </Sheet>
 
 {#if creating}
@@ -47,5 +48,4 @@
   .check { width: 22px; height: 22px; display: grid; place-items: center; border: 2px solid var(--line); border-radius: 50%; color: var(--on-accent); flex: none; }
   .check.on { background: var(--accent); border-color: var(--accent); }
   .dashed { display: flex; align-items: center; justify-content: center; gap: var(--s-2); min-height: 52px; border: 1.5px dashed var(--line); border-radius: var(--r-md); background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
-  .go { flex: 1; min-height: 44px; border: 0; border-radius: var(--r-control); background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
 </style>

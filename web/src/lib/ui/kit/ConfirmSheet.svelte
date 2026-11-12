@@ -4,6 +4,7 @@
   import type { Snippet } from 'svelte';
   import Icon from '../Icon.svelte';
   import Sheet from '../Sheet.svelte';
+  import Button from './Button.svelte';
 
   let { title, message, confirm, onconfirm, onclose, danger = false, cancel = 'Cancel', busy = false, disabled = false, icon, children, layer = 0 }: {
     title: string; message?: string | null; confirm: string; onconfirm: () => void; onclose: () => void; danger?: boolean;
@@ -20,8 +21,8 @@
   {#if children}{@render children()}{/if}
   {#snippet footer()}
     <div class="buttons">
-      <button class="go" class:danger disabled={disabled || busy} onclick={onconfirm}>{confirm}</button>
-      <button class="quiet" disabled={busy} onclick={onclose}>{cancel}</button>
+      <Button variant={danger ? 'danger' : 'primary'} class="go" disabled={disabled || busy} onclick={onconfirm}>{confirm}</Button>
+      <Button variant="quiet" disabled={busy} onclick={onclose}>{cancel}</Button>
     </div>
   {/snippet}
 </Sheet>
@@ -34,9 +35,4 @@
   h2 { flex: 1; margin: 0; font-size: 19px; line-height: 24px; font-weight: 600; }
   .message { margin: 0; padding: 0 var(--s-1); color: var(--ink-2); font-size: var(--fs-md); line-height: 21px; }
   .buttons { display: grid; gap: 6px; width: 100%; }
-  .go, .quiet { min-height: 44px; padding: 10px var(--s-4); border: 0; border-radius: var(--r-control); font: inherit; font-size: var(--fs-md); font-weight: 600; cursor: pointer; }
-  .go { background: var(--accent); color: var(--on-accent); }
-  .go.danger { background: var(--danger); }
-  .go:disabled { background: var(--surface-3, var(--surface-2)); color: var(--ink-3); cursor: default; }
-  .quiet { background: none; color: var(--ink-2); }
 </style>

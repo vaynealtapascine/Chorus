@@ -53,10 +53,6 @@
 .fr-link .fr-text span { color: var(--ink-3); font-size: var(--fs-sm); line-height: 18px; }
 .fr-link .fr-value { color: var(--accent); font-size: var(--fs-md); font-weight: 500; white-space: nowrap; }
 .fr-link .chev { color: var(--ink-3); }
-.fr-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; border: 0; border-radius: 18px; background: var(--surface-2); color: var(--ink); padding: var(--s-2) 14px; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; }
-.fr-btn.primary { background: var(--accent); color: var(--on-accent); }
-.fr-btn.soft { background: var(--accent-soft); color: var(--accent); }
-.fr-btn:disabled { opacity: .5; cursor: default; }
 .fr-actions { display: flex; gap: var(--s-2); flex-wrap: wrap; }
 .fr-wide { flex: 1; min-height: 44px; border: 0; border-radius: var(--r-control); background: var(--accent); color: var(--on-accent); font: inherit; font-size: var(--fs-md); font-weight: 600; cursor: pointer; padding: 10px var(--s-4); }
 .fr-wide.neutral { background: var(--surface-2); color: var(--ink); }
@@ -93,5 +89,5 @@
 .fr-empty { margin: 0; padding: var(--s-6); color: var(--ink-3); font-size: 14px; }
 .fr-error { margin: var(--s-2) var(--s-4); color: var(--danger); font-size: var(--fs-sm); }
 @media (max-width: 640px) { .fr-page { margin-top: calc(-1 * var(--s-4)); } }
-a.fr-link, a.fr-row, a.fr-new, a.fr-btn, a.fr-chip, a.fr-icon { text-decoration: none; }
+a.fr-link, a.fr-row, a.fr-new, a.fr-chip, a.fr-icon { text-decoration: none; }
 a.fr-link .fr-text strong, a.fr-row strong { color: var(--ink); }

@@ -1,5 +1,6 @@
 <script lang="ts">
   // Exports (Figma F9.2): the change log, the tables, a database copy, and the full export with files.
+  import Button from '../kit/Button.svelte';
   import ExportBundle from '../ExportBundle.svelte';
   import Icon from '../Icon.svelte';
   import FormNote from '../kit/FormNote.svelte';
@@ -44,7 +45,7 @@
       <div class="row">
         <span class="tile"><Icon name={r.icon} size={20} /></span>
         <div class="titles"><strong>{r.title}</strong><span>{r.sub}</span></div>
-        <button class="pill" onclick={r.go}>Export</button>
+        <Button size="sm" class="pill" onclick={r.go}>Export</Button>
       </div>
     {/each}
   </div>
@@ -71,6 +72,5 @@
   .titles { flex: 1; min-width: 0; display: grid; }
   .titles strong { font-size: var(--fs-md); }
   .titles span { color: var(--ink-3); font-size: var(--fs-sm); }
-  .pill { min-height: 36px; padding: 0 var(--s-4); border: 0; border-radius: var(--r-full); background: var(--surface-3, var(--surface)); color: var(--ink); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
   .error { margin: 0; color: var(--danger); }
 </style>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Button from './kit/Button.svelte';
   // Chorus Home's *This computer* page (D-071, FLOWS F2.3–F2.4): add a phone over the home wifi,
   // and the few settings a home install has, instead of editing chorus.toml.
   import { onMount } from 'svelte';
@@ -90,7 +91,7 @@
           <p class="hint">Works once, for a day. <button class="ghost" onclick={addPhone}>New code</button></p>
           <details><summary>Can't scan?</summary><code>{phoneLink}</code><p class="hint">Paste this into the app's invite box.</p></details>
         {:else}
-          <button class="primary" onclick={addPhone}>Show the code</button>
+          <Button variant="primary" class="primary" onclick={addPhone}>Show the code</Button>
         {/if}
         <p class="hint">
           Other browsers on the wifi (a laptop, an iPhone) will see a security warning and can't work offline.
@@ -118,7 +119,7 @@
       </details>
       {#if note}<p class="hint" role="status">{note}</p>{/if}
       {#if error}<p class="error" role="alert">{error}</p>{/if}
-      <button class="primary" disabled={saving}>{saving ? 'Restarting…' : 'Save'}</button>
+      <Button variant="primary" class="primary" disabled={saving}>{saving ? 'Restarting…' : 'Save'}</Button>
     </form>
 
     <article class="card facts">

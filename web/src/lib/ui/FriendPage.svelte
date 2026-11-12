@@ -3,6 +3,7 @@
   // our bucket pills, Message / Notifying / Chats (a person: Tell me about posts), who's around now
   // as they share it, the members they share, and what's between us. A person shows their posts,
   // journal and about instead of fronting. Only what the server's filtered reads allow.
+  import Button from './kit/Button.svelte';
   import '../design/friends.css';
   import { onMount } from 'svelte';
   import { BUCKET_SWATCHES } from '../bucket-controls';
@@ -114,15 +115,15 @@
     </div>
     {#if about?.description}<p class="bio">{about.description}</p>{/if}
     <div class="fr-actions buttons">
-      <button class="fr-btn primary" disabled={!follows(r) && r.follower?.status !== 'active'} onclick={message}><Icon name="message" size={16} />Message</button>
+      <Button size="sm" variant="primary" disabled={!follows(r) && r.follower?.status !== 'active'} onclick={message}><Icon name="message" size={16} />Message</Button>
       {#if isSystem(r.account) && follows(r) && r.following}
         {@const on = prefEnabled(r.following.prefs ?? {}) && mutedUntil(r.following.prefs ?? {}, now) == null}
-        <a class="fr-btn" class:soft={on} href="#/people/notify/{encodeURIComponent(r.following.id)}"><Icon name={on ? 'bell' : 'bell-off'} size={16} />{on ? 'Notifying' : 'Notifications off'}</a>
+        <Button size="sm" variant={on ? 'soft' : 'neutral'} href="#/people/notify/{encodeURIComponent(r.following.id)}"><Icon name={on ? 'bell' : 'bell-off'} size={16} />{on ? 'Notifying' : 'Notifications off'}</Button>
       {:else if follows(r) && personAlerts}
-        <button class="fr-btn" class:soft={personAlerts !== 'none'} onclick={togglePersonAlerts}><Icon name="bell" size={16} />{personAlerts === 'active' ? 'Told about posts' : personAlerts === 'requested' ? 'Asked about posts' : 'Tell me about posts'}</button>
+        <Button size="sm" variant={personAlerts !== 'none' ? 'soft' : 'neutral'} onclick={togglePersonAlerts}><Icon name="bell" size={16} />{personAlerts === 'active' ? 'Told about posts' : personAlerts === 'requested' ? 'Asked about posts' : 'Tell me about posts'}</Button>
       {/if}
-      {#if isSystem(r.account) && spaces.length}<button class="fr-btn" onclick={() => (chats = true)}><Icon name="users" size={16} />Chats</button>{/if}
-      {#if !r.following}<button class="fr-btn" onclick={followBack}><Icon name="user-plus" size={16} />Follow back</button>{/if}
+      {#if isSystem(r.account) && spaces.length}<Button size="sm" onclick={() => (chats = true)}><Icon name="users" size={16} />Chats</Button>{/if}
+      {#if !r.following}<Button size="sm" onclick={followBack}><Icon name="user-plus" size={16} />Follow back</Button>{/if}
     </div>
     {#if notice}<p class="fr-error" role="alert">{notice}</p>{/if}
     {#if !r.following && r.follower?.status === 'active'}<p class="fr-note"><Icon name="user-plus" size={16} />{name} follows you. Once you follow back and they accept, you’ll see what they share with followers, and you’re friends.</p>{/if}

@@ -1,6 +1,7 @@
 <script lang="ts">
   // Home sections (Figma F0.3): drag to reorder, switch one off to hide it; Reset goes back to
   // the default order, Done saves for whoever is reading (each member keeps their own, shared with Android).
+  import Button from './kit/Button.svelte';
   import { untrack } from 'svelte';
   import * as H from '../home-dashboard';
   import Sheet from './Sheet.svelte';
@@ -27,14 +28,11 @@
     {/snippet}
   </DragList>
   {#snippet footer()}
-    <button class="neutral" onclick={() => (draft = H.editable(H.parse(null, person)).map((s) => ({ ...s })))}>Reset</button>
-    <button class="primary" onclick={done}>Done</button>
+    <Button class="neutral" onclick={() => (draft = H.editable(H.parse(null, person)).map((s) => ({ ...s })))}>Reset</Button>
+    <Button variant="primary" grow class="primary" onclick={done}>Done</Button>
   {/snippet}
 </Sheet>
 
 <style>
   .name { flex: 1; font-size: var(--fs-md); }
-  .neutral, .primary { min-height: 44px; padding: 10px 18px; border: 0; border-radius: var(--r-control); font: inherit; font-size: var(--fs-md); font-weight: 600; cursor: pointer; }
-  .neutral { background: var(--surface-2); color: var(--ink); }
-  .primary { flex: 1; background: var(--accent); color: var(--on-accent); }
 </style>

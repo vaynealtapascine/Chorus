@@ -1,5 +1,6 @@
 <script lang="ts">
   // Server health (Figma F10.6): three tiles, then the restore window when one is open (SYNC.md §7.3).
+  import Button from '../kit/Button.svelte';
   import Icon from '../Icon.svelte';
   import ConfirmSheet from '../kit/ConfirmSheet.svelte';
   import PageHeader from '../kit/PageHeader.svelte';
@@ -48,7 +49,7 @@
 
 <section class="page">
   <PageHeader title="Server health">
-    {#snippet action()}<button class="pill" onclick={load}>Refresh</button>{/snippet}
+    {#snippet action()}<Button size="sm" class="pill" onclick={load}>Refresh</Button>{/snippet}
   </PageHeader>
   {#if error}<p class="error" role="alert">Health unavailable: {error}</p>{/if}
   {#if health}
@@ -100,7 +101,6 @@
 
 <style>
   .page { display: grid; gap: var(--s-3); max-width: 840px; align-content: start; }
-  .pill { min-height: 36px; padding: 0 var(--s-4); border: 0; border-radius: var(--r-full); background: var(--surface-2); color: var(--ink); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
   .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--s-3); }
   .tile, .card { display: grid; gap: var(--s-1); padding: 14px; border-radius: var(--r-md); background: var(--surface-2); align-content: start; }
   .card { gap: var(--s-3); }

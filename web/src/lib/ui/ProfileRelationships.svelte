@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Button from './kit/Button.svelte';
   import { buckets, members, relationshipTypes, relationships } from '../data';
   import AudienceChip from './AudienceChip.svelte';
   import { audienceOf, type Audience } from '../profile-audience';
@@ -111,7 +112,7 @@
     <label>New type <input bind:value={typeName} required maxlength="60" placeholder="Friend" /></label>
     <label><input type="checkbox" bind:checked={symmetric} /> Same in both directions</label>
     {#if !symmetric}<label>Reverse name <input bind:value={inverseName} maxlength="60" placeholder="Friend of" /></label>{/if}
-    <div class="actions"><button class="primary">Add type</button></div>
+    <div class="actions"><Button variant="primary" class="primary">Add type</Button></div>
   </form>
 {/snippet}
 
@@ -127,7 +128,7 @@
         <label>Note <input bind:value={note} maxlength="300" /></label>
         <AudienceChip label="New relationship" value={audience} own buckets={sharing} onchange={(a) => (audience = a ?? { mode: 'private' })} />
         {#if error}<p class="error" role="alert">{error}</p>{/if}
-        <div class="actions"><button type="button" class="link-btn" onclick={() => { adding = false; typesOpen = true; }}>Types</button><button class="primary" disabled={!(selectedType || types.length === 1)}>Add relationship</button></div>
+        <div class="actions"><button type="button" class="link-btn" onclick={() => { adding = false; typesOpen = true; }}>Types</button><Button variant="primary" class="primary" disabled={!(selectedType || types.length === 1)}>Add relationship</Button></div>
       </form>
     {:else}
       {@render typeForm()}
@@ -146,7 +147,7 @@
   {#if link}
     <Sheet title={relatedName(link)} onclose={() => (editLink = '')}>
       <AudienceChip label="Relationship" value={audienceOf(link.visibility)} own buckets={sharing} onchange={(a) => sync.create('relationship.set', sync.accountScope, link.id, { visibility: a ?? { mode: 'private' } })} />
-      <button type="button" class="danger" onclick={() => { sync.create('relationship.delete', sync.accountScope, link.id, {}); editLink = ''; }}>Remove</button>
+      <Button variant="danger-soft" type="button" class="danger" onclick={() => { sync.create('relationship.delete', sync.accountScope, link.id, {}); editLink = ''; }}>Remove</Button>
     </Sheet>
   {/if}
 {/if}
@@ -157,10 +158,8 @@
   .act { padding: 6px 14px; border: 1px solid var(--line); border-radius: var(--r-full); color: var(--ink); text-decoration: none; background: none; font: inherit; font-weight: 600; font-size: var(--fs-sm); }
   .more { display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; background: none; color: var(--ink-3); border-radius: 50%; }
   .add { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-3); border: 1px dashed var(--line); border-radius: var(--r-row); background: none; justify-self: stretch; justify-content: center; }
-  .primary { background: var(--accent); color: var(--on-accent); border: 0; border-radius: var(--r-sm); padding: var(--s-2) var(--s-4); }
   .actions { display: flex; justify-content: space-between; align-items: center; }
   .link-btn { border: 0; background: none; }
-  .danger { color: var(--danger); }
   .type { display: flex; justify-content: space-between; align-items: center; padding: var(--s-1) 0; }
   .relations, .editor { display: grid; gap: var(--s-3); }
   .relations ul { list-style: none; display: grid; gap: var(--s-2); margin: 0; padding: 0; }

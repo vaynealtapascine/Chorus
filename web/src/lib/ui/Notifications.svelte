@@ -3,6 +3,7 @@
   // tinted with a dot. A click marks a row read and opens it; right-click (or hold on touch)
   // offers more. Read marks belong to the member reading ("Reading as"); the side panel chooses
   // what shows here. Everything listed already reached this account elsewhere (`inbox.ts`).
+  import Button from './kit/Button.svelte';
   import { core } from '../core';
   import { members, selfMember, type MemberRow } from '../data';
   import { sync, type Projection } from '../sync/client';
@@ -178,9 +179,9 @@
             {#if item.detail}<p class="detail">{item.detail}</p>{/if}
             {#if item.quote}<p class="bubble">{item.quote}</p>{/if}
             {#if item.kind === 'follow_request' || item.kind === 'alert_ask'}
-              <div class="asks"><button class="primary" onclick={() => accept(item)}>{item.kind === 'alert_ask' ? 'Allow' : person ? 'Accept' : 'Accept…'}</button><button onclick={() => decline(item)}>Decline</button></div>
+              <div class="asks"><Button size="sm" variant="primary" onclick={() => accept(item)}>{item.kind === 'alert_ask' ? 'Allow' : person ? 'Accept' : 'Accept…'}</Button><Button size="sm" onclick={() => decline(item)}>Decline</Button></div>
             {:else if item.kind === 'review'}
-              <div class="asks"><button class="primary" onclick={() => router.go('/review')}>Review</button></div>
+              <div class="asks"><Button size="sm" variant="primary" onclick={() => router.go('/review')}>Review</Button></div>
             {/if}
           </div>
           <div class="side">
@@ -300,8 +301,6 @@
   .bubble { margin: 0; padding: var(--s-2) var(--s-3); border-radius: var(--r-row); background: var(--surface-2); color: var(--ink-2); font-size: var(--fs-sm); max-width: 100%; overflow-wrap: anywhere;
     display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }
   .asks { display: flex; gap: var(--s-2); }
-  .asks button { border: 0; border-radius: var(--r-full); background: var(--surface-2); color: var(--ink); padding: 7px 14px; font: inherit; font-size: var(--fs-sm); font-weight: 600; cursor: pointer; }
-  .asks .primary { background: var(--accent); color: var(--on-accent); }
   .side { display: grid; justify-items: end; align-content: start; gap: var(--s-2); }
   time { color: var(--ink-3); font-size: var(--fs-xs); }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }

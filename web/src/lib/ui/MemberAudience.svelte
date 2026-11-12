@@ -2,6 +2,7 @@
   // Who can see a member (F4.3): the whole profile as one choice, then each part, never wider than
   // the profile (D-101, D-126). Choices save as they are made; who hears when they front is the
   // member's notify policy (NOTIFICATIONS §2.4).
+  import Button from './kit/Button.svelte';
   import { buckets as bucketRows, fieldDefs, members, selfMember } from '../data';
   import { sync, type Projection } from '../sync/client';
   import { audienceLabel, audienceOf, effectiveAudience, isPrivate, ownAudience, sameAudience, type Audience } from '../profile-audience';
@@ -144,7 +145,7 @@
           <ValueRow label={nameOf(k)} value={audienceLabel(effective_(k), names)} onclick={() => (key = k)} />
         {/each}
       </FormCard>
-      {#snippet footer()}<button class="go" onclick={() => (each = null)}>Done</button>{/snippet}
+      {#snippet footer()}<Button variant="primary" grow class="go" onclick={() => (each = null)}>Done</Button>{/snippet}
     </Sheet>
   {/if}
   {#if key}
@@ -182,6 +183,5 @@
   .pill { display: inline-flex; align-items: center; gap: var(--s-1); border-radius: var(--r-full); background: var(--accent-soft); color: var(--accent); font-size: var(--fs-sm); font-weight: 500; padding: 5px 10px; white-space: nowrap; }
   .pill.quiet { background: var(--surface); color: var(--ink-2); }
   .part > :global(.icon) { color: var(--ink-3); }
-  .go { flex: 1; min-height: 44px; border: 0; border-radius: var(--r-control); background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
   .muted { color: var(--ink-3); }
 </style>

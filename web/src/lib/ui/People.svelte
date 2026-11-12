@@ -4,6 +4,7 @@
   // (#/people/<account>); sharing with one friend, a bucket, Advanced sharing and notifications from
   // a friend are pages of their own (#/people/share|bucket|advanced|notify/…). Everything about other
   // accounts is the server's filtered view; accepting and buckets are ordinary ops.
+  import Button from './kit/Button.svelte';
   import '../design/friends.css';
   import { onMount } from 'svelte';
   import { BUCKET_SWATCHES } from '../bucket-controls';
@@ -161,7 +162,7 @@
             {:else}<span class="fr-line quiet">In no bucket</span>{/if}
           </span>
           <span class="chev"><Icon name="chevron-right" size={18} /></span>
-        </button>{#if !r.following}<button class="fr-btn back" onclick={() => void followBack(r.account.id)}><Icon name="user-plus" size={16} />Follow back</button>{/if}</li>
+        </button>{#if !r.following}<Button size="sm" class="back" onclick={() => void followBack(r.account.id)}><Icon name="user-plus" size={16} />Follow back</Button>{/if}</li>
       {/each}
     </ul>
     <h2 class="fr-section"><span>Buckets</span><span class="fr-aside">who sees which posts</span></h2>
@@ -256,7 +257,7 @@
       {/if}
     </span>
     </a>
-    {#if !r.following}<button class="fr-btn back" onclick={() => void followBack(r.account.id)}><Icon name="user-plus" size={16} />Follow back</button>{/if}
+    {#if !r.following}<Button size="sm" class="back" onclick={() => void followBack(r.account.id)}><Icon name="user-plus" size={16} />Follow back</Button>{/if}
     {#if follows(r) || r.follower}
       <button class="fr-icon" aria-label="Message {personName(r.account)}" onclick={() => void message(r.account.id)}><Icon name="message" size={20} /></button>
     {/if}
@@ -269,7 +270,7 @@
     <span class="fr-body">
       <span class="fr-name"><strong>{personName(account)}</strong>{#if account.kind}<span class="fr-pill">{isSystem(account) ? 'System' : 'Person'}</span>{/if}</span>
       <span class="fr-line">{line}</span>
-      <span class="fr-actions">{#each buttons as [label, primary, run] (label)}<button class="fr-btn" class:primary onclick={run}>{label}</button>{/each}</span>
+      <span class="fr-actions">{#each buttons as [label, primary, run] (label)}<Button size="sm" variant={primary ? 'primary' : 'neutral'} onclick={run}>{label}</Button>{/each}</span>
     </span>
   </div>
 {/snippet}
@@ -333,12 +334,12 @@
   .split.dim .main :global(.fr-face) { opacity: .55; }
   .split > .fr-icon { margin-top: 10px; }
   /* Follow back goes under the text, so the name keeps its width on a phone */
-  .split:has(> .back) { flex-wrap: wrap; }
-  .split:has(> .back) .main { flex-basis: calc(100% - 60px); }
-  .split > .back { order: 3; margin: -4px 0 var(--s-3) 74px; }
+  .split:has(> :global(.back)) { flex-wrap: wrap; }
+  .split:has(> :global(.back)) .main { flex-basis: calc(100% - 60px); }
+  .split > :global(.back) { order: 3; margin: -4px 0 var(--s-3) 74px; }
   .follower { display: flex; flex-wrap: wrap; }
   .follower > .fr-row { flex: 1 1 100%; min-width: 0; }
-  .follower > .back { margin: -4px 0 var(--s-3) 70px; }
+  .follower > :global(.back) { margin: -4px 0 var(--s-3) 70px; }
   .request { cursor: default; }
   .request:hover { background: none; }
   .bucket { align-items: center; text-decoration: none; }

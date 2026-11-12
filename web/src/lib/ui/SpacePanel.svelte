@@ -2,6 +2,7 @@
   // The space part of chat info (D-098, D-099): a group's name and description, its people with
   // their roles, Add / Remove, Leave or Delete group; in a DM, the private chats kept to one of
   // our members; in our own space, who a channel is kept to.
+  import Button from './kit/Button.svelte';
   import { core } from '../core';
   import { actingOpts } from '../front-view';
   import { channels, members, selfMember, type ChannelRow, type MemberRow, type SpaceRow } from '../data';
@@ -120,7 +121,7 @@
         {:else}
           <p class="hint">Everyone you're connected to is already here. Follow someone in Friends to add them.</p>
         {/each}
-        <div class="row-actions"><button class="ghost" onclick={() => (adding = null)}>Cancel</button><button class="primary" disabled={!chosen.length || busy} onclick={() => void add()}>Add</button></div>
+        <div class="row-actions"><button class="ghost" onclick={() => (adding = null)}>Cancel</button><Button variant="primary" round class="primary" disabled={!chosen.length || busy} onclick={() => void add()}>Add</Button></div>
       </li>
     {/if}
     {#each info?.accounts ?? [] as a (a.id)}
@@ -162,7 +163,7 @@
       <select aria-label="Private chat as" value={privateAs || speaker || ''} onchange={(e) => (privateAs = e.currentTarget.value)}>
         {#each writers as m (m.id)}<option value={m.id}>{m.display_name ?? m.name}</option>{/each}
       </select>
-      <button class="primary" onclick={startPrivate}>Start</button>
+      <Button variant="primary" round class="primary" onclick={startPrivate}>Start</Button>
     </div>
   {/if}
 {:else if kept.length}
@@ -183,9 +184,9 @@
 {#if space.kind !== 'internal' && !info?.guest}
   <div class="leave">
     {#if space.kind === 'shared' && role === 'owner'}
-      <button class="danger" onclick={deleteGroup}>Delete group</button>
+      <Button variant="danger-soft" block class="danger" onclick={deleteGroup}>Delete group</Button>
     {:else}
-      <button class="danger" onclick={() => void leave()}>{space.kind === 'dm' ? 'Leave conversation' : 'Leave group'}</button>
+      <Button variant="danger-soft" block class="danger" onclick={() => void leave()}>{space.kind === 'dm' ? 'Leave conversation' : 'Leave group'}</Button>
     {/if}
   </div>
 {/if}
@@ -211,12 +212,8 @@
   .adding { display: grid; gap: var(--s-1); padding: var(--s-2); border-radius: var(--r-md); background: var(--surface-2); font-size: 14px; text-align: left; }
   .row-actions { display: flex; justify-content: flex-end; gap: var(--s-2); }
   .ghost { border: 0; background: none; color: var(--accent); font: inherit; cursor: pointer; }
-  .primary { border: 0; border-radius: var(--r-full); padding: 6px 14px; background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
-  .primary:disabled { opacity: .5; cursor: default; }
   .private-start { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); margin: var(--s-3) var(--s-4); font-size: var(--fs-sm); color: var(--ink-2); }
   .leave { padding: var(--s-4); border-top: 1px solid var(--line); margin-top: var(--s-3); }
-  .danger { width: 100%; border: 0; border-radius: var(--r-md); padding: 10px; background: none; color: var(--danger); font: inherit; cursor: pointer; }
-  .danger:hover { background: var(--surface-2); }
   .hint { margin: 0; color: var(--ink-3); font-size: var(--fs-sm); }
   .error { margin: var(--s-2) var(--s-4); color: var(--danger); font-size: var(--fs-sm); }
 </style>

@@ -2,6 +2,7 @@
   // A member's custom field values and birthday (F4.2 "Custom fields"). Only values live here: the
   // fields themselves (names, kinds, who sees them by default) are the Custom fields tab. Each value
   // saves when it is let go.
+  import Button from './kit/Button.svelte';
   import type { FieldDef, MemberRow } from '../data';
   import { roleColor, rolesOf } from '../member-list';
   import { sync } from '../sync/client';
@@ -92,7 +93,7 @@
     {/each}
   </FormCard>
   {#if !defs.length}<EmptyState icon="members" label="No fields yet" action="Custom fields" href="#/members/fields" />{/if}
-  {#snippet footer()}<button class="go" onclick={onclose}>Done</button>{/snippet}
+  {#snippet footer()}<Button variant="primary" grow class="go" onclick={onclose}>Done</Button>{/snippet}
 </Sheet>
 
 <style>
@@ -107,5 +108,4 @@
   .colour input { width: 48px; height: 32px; padding: 2px; }
   .link { border: 0; background: none; color: var(--accent); font: inherit; cursor: pointer; }
   .error { margin: 0; color: var(--danger); font-size: var(--fs-sm); }
-  .go { flex: 1; min-height: 44px; border: 0; border-radius: var(--r-control); background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
 </style>

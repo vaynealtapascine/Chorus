@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Button from './kit/Button.svelte';
   import { untrack } from 'svelte';
   // Switch (Figma F3.2; Android Switcher.kt). Each tap places someone on the innermost layer, the
   // next moves them one layer outward, and past the last layer they are out again. Replace front
@@ -141,7 +142,7 @@
       </div>
     {/if}
   </FormCard>
-  {#if !add && !placed.length && current.length}<button class="fr-btn out" onclick={() => commit([])}>Switch everyone out of {view.name}</button>{/if}
+  {#if !add && !placed.length && current.length}<Button size="sm" variant="danger-soft" style="justify-self: start" class="out" onclick={() => commit([])}>Switch everyone out of {view.name}</Button>{/if}
   {#if summary}<p class="sum">{summary}</p>{/if}
   {#snippet footer()}<button class="fr-wide" disabled={!canSwitch} onclick={() => commit(withPrimary(placed))}>Switch</button>{/snippet}
 </Sheet>
@@ -163,6 +164,5 @@
   .opts { display: grid; gap: 10px; padding: 10px 14px 14px; }
   .opts label, .alerts { display: grid; gap: var(--s-1); font-size: var(--fs-sm); color: var(--ink-2); }
   .opts input { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: var(--s-2) 10px; }
-  .out { justify-self: start; color: var(--danger); }
   .sum { margin: 0; color: var(--ink-3); font-size: var(--fs-xs); text-align: center; }
 </style>

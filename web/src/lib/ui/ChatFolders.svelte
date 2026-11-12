@@ -2,6 +2,7 @@
   // Chat folders (D-113, Figma F5.25; Android's ChatFoldersScreen): show, hide and order the
   // folders, make folders of our own from chosen chats and whole kinds of chat, and the list's
   // display choices. Everything saves at once as the `chat_folders` account pref.
+  import Button from './kit/Button.svelte';
   import { untrack } from 'svelte';
   import { sync } from '../sync/client';
   import { BUILT_IN, KINDS, SUGGESTIONS, fromSuggestion, holds, label, ordered, PREF, setChat, setKind, toJson, without, withCustom,
@@ -126,7 +127,7 @@
       <FormCard>
         {#each suggested as s (s.preset)}
           <div class="suggest"><Icon name="folder" size={20} /><span class="name"><strong>{s.title}</strong><small>{s.subtitle}</small></span>
-            <button class="pill" onclick={() => save(withCustom(settings, fromSuggestion(sync.newId(), s.preset, s.title, ours)))}>Add</button></div>
+            <Button size="sm" class="pill" onclick={() => save(withCustom(settings, fromSuggestion(sync.newId(), s.preset, s.title, ours)))}>Add</Button></div>
         {/each}
       </FormCard>
     {/if}
@@ -139,8 +140,8 @@
 {/if}
 
 {#snippet bar()}
-  <button class="neutral" onclick={leave}>Cancel</button>
-  <button class="primary" disabled={!draft?.name.trim()} onclick={finish}>Save</button>
+  <Button class="neutral" onclick={leave}>Cancel</Button>
+  <Button variant="primary" grow class="primary" disabled={!draft?.name.trim()} onclick={finish}>Save</Button>
 {/snippet}
 
 <style>
@@ -158,10 +159,5 @@
   .pick :global(.icon) { color: var(--accent); }
   .add { display: flex; align-items: center; gap: var(--s-2); border: 0; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; padding: var(--s-3) var(--s-1); }
   .suggest { display: flex; align-items: center; gap: var(--s-3); min-height: 56px; padding: 6px 14px; color: var(--ink-2); }
-  .pill { min-height: 34px; padding: 0 var(--s-4); border: 0; border-radius: 17px; background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
   .danger-link { justify-self: start; border: 0; background: none; color: var(--danger); font: inherit; cursor: pointer; padding: var(--s-3) var(--s-1); }
-  .neutral, .primary { min-height: 44px; padding: 10px 18px; border: 0; border-radius: var(--r-control); font: inherit; font-size: var(--fs-md); font-weight: 600; cursor: pointer; }
-  .neutral { background: var(--surface-2); color: var(--ink); }
-  .primary { flex: 1; background: var(--accent); color: var(--on-accent); }
-  .primary:disabled { background: var(--surface-2); color: var(--ink-3); cursor: default; }
 </style>

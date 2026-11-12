@@ -1,6 +1,7 @@
 <script lang="ts">
   // A journal post the way Android's JournalPostFrame reads it: avatar column, names · compact
   // time, the post, then one quiet icon row (reply, repost, heart, save, share) and a ⋯ menu.
+  import Button from './kit/Button.svelte';
   import PollCard from './PollCard.svelte';
   import { closePost, pollOf } from '../polls';
   import { sync, type Projection } from '../sync/client';
@@ -260,7 +261,7 @@
 <dialog bind:this={disclose} class="disclose" aria-labelledby="disclose-{post.id}" onclose={() => (pendingMany = null)}>
   <h2 id="disclose-{post.id}">React as {pendingMany ? `${pendingMany.add.length} ${pendingMany.add.length === 1 ? 'member' : 'members'}` : speaker ? name(speaker) : 'this member'}?</h2>
   <p>Post readers can see {pendingMany ? 'each member’s' : 'this member’s'} name with the reaction. You’ll only be asked once on this device.</p>
-  <div class="dialog-actions"><button onclick={() => disclose?.close()}>Cancel</button><button class="primary" onclick={confirmHeart}>Heart</button></div>
+  <div class="dialog-actions"><Button size="sm" variant="quiet" onclick={() => disclose?.close()}>Cancel</Button><Button size="sm" variant="primary" onclick={confirmHeart}>Heart</Button></div>
 </dialog>
 
 <style>
@@ -338,6 +339,4 @@
   .disclose h2 { margin: 0 0 var(--s-2); font-size: var(--fs-lg); }
   .disclose p { color: var(--ink-2); font-size: var(--fs-sm); line-height: 1.5; }
   .dialog-actions { display: flex; justify-content: flex-end; gap: var(--s-2); margin-top: var(--s-4); }
-  .dialog-actions button { border: 0; border-radius: var(--r-full); padding: var(--s-2) var(--s-4); background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
-  .dialog-actions .primary { background: var(--accent); color: var(--on-accent, #fff); }
 </style>

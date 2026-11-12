@@ -3,6 +3,7 @@
   // past one, Quick switch, chats waiting, friends right now, Today and new posts from friends; a
   // person gets a composer row, friends, chats and posts, and a first day of Welcome and Try. Each
   // reader chooses and orders the sections (`home.sections`, shared with Android, F0.3).
+  import Button from './kit/Button.svelte';
   import { channels, latestMessage, members, selfMember, spaces, unread, type ChannelRow, type SpaceRow } from '../data';
   import { chatPrefs, chatTime, discColor, groupsInto, previewOf, privateVisible, stillArchived } from '../chat-list';
   import { chatMembers } from '../subsystems';
@@ -202,8 +203,8 @@
       <h2>{self ? `Welcome, ${self.display_name ?? self.name}` : 'Welcome'}</h2>
       <p>Chorus is quieter with friends.</p>
       <div class="row-btns">
-        <button class="primary" onclick={() => (following = true)}><Icon name="user-plus" size={18} />Find someone</button>
-        {#if handle}<button class="neutral" onclick={share}><Icon name="share" size={18} />Share @{handle}</button>{/if}
+        <Button variant="primary" class="primary" onclick={() => (following = true)}><Icon name="user-plus" size={18} />Find someone</Button>
+        {#if handle}<Button class="neutral" onclick={share}><Icon name="share" size={18} />Share @{handle}</Button>{/if}
       </div>
     </section>
   {/if}
@@ -236,8 +237,8 @@
           </div>
         {/if}
         <div class="actions">
-          <button class="primary" onclick={() => onswitch(accountId)}><Icon name="swap" size={18} />Switch</button>
-          <button class="neutral" onclick={() => (logging = true)}><Icon name="history" size={18} />Log a past one</button>
+          <Button variant="primary" class="primary" onclick={() => onswitch(accountId)}><Icon name="swap" size={18} />Switch</Button>
+          <Button class="neutral" onclick={() => (logging = true)}><Icon name="history" size={18} />Log a past one</Button>
         </div>
       </section>
     {:else if id === 'quick_switch'}
@@ -340,7 +341,7 @@
   <Sheet title="Follow someone" onclose={() => (following = false)}>
     <form class="follow" onsubmit={follow}>
       <input bind:value={target} placeholder="@handle" autocomplete="off" aria-label="Their handle" />
-      <button class="primary" disabled={!target.trim()}>Send request</button>
+      <Button variant="primary" class="primary" disabled={!target.trim()}>Send request</Button>
     </form>
   </Sheet>
 {/if}
@@ -349,10 +350,6 @@
   .home { display: grid; gap: var(--s-1); max-width: 720px; margin-inline: auto; align-content: start; }
   .error { color: var(--danger); margin: 0 0 var(--s-2); }
   .card { display: flex; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); color: var(--ink); text-decoration: none; }
-  .primary, .neutral { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 10px 14px; border: 0; border-radius: var(--r-control); font: inherit; font-size: var(--fs-md); font-weight: 600; cursor: pointer; }
-  .primary { background: var(--accent); color: var(--on-accent); }
-  .primary:disabled { opacity: 0.5; cursor: default; }
-  .neutral { background: var(--surface-2); color: var(--ink); }
   .fronting { flex-direction: column; gap: var(--s-3); padding: 15px; border-radius: var(--r-lg); margin-top: var(--s-1); }
   .fronting header { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
   .fronting header strong { flex: 1; font-size: var(--fs-md); }

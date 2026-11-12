@@ -1,6 +1,7 @@
 <script lang="ts">
   // Personal API tokens (API.md §2.3, §3, §6; Figma F9.3): read-only or log-a-switch, limited to your
   // own account. The secret is shown once.
+  import Button from '../kit/Button.svelte';
   import Icon from '../Icon.svelte';
   import Sheet from '../Sheet.svelte';
   import ConfirmSheet from '../kit/ConfirmSheet.svelte';
@@ -110,7 +111,7 @@
         {/each}
       </FormCard>
     </form>
-    {#snippet footer()}<button class="primary" form="new-token" disabled={!chosen.length || !name.trim()}>Create token</button>{/snippet}
+    {#snippet footer()}<Button variant="primary" size="lg" grow class="primary" form="new-token" disabled={!chosen.length || !name.trim()}>Create token</Button>{/snippet}
   </Sheet>
 {/if}
 {#if revoking}
@@ -140,6 +141,4 @@
   .error { margin: 0; color: var(--danger); }
   form { display: grid; gap: var(--s-3); }
   input { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-row); padding: var(--s-3) 14px; }
-  .primary { flex: 1; min-height: 48px; border: 0; border-radius: var(--r-control); background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
-  .primary:disabled { opacity: .5; cursor: default; }
 </style>

@@ -2,6 +2,7 @@
   // Custom fields (F4.6): the fields every member's profile has, in the order they show. Drag to
   // reorder; open one to rename it, change its kind, who sees it by default, or retire it. Beside
   // the list on a wide screen, in a sheet on a narrow one. Values are edited on the member.
+  import Button from './kit/Button.svelte';
   import { buckets as bucketRows, fieldDefs, type FieldDef } from '../data';
   import { fieldKeys, nextFieldKey } from '../field-age';
   import { audienceLabel, audienceOf, isPrivate, type Audience } from '../profile-audience';
@@ -135,7 +136,7 @@
     {#if current}
       <button class="retire" onclick={() => (retiring = true)}>Retire this field</button>
     {:else}
-      <button class="go" disabled={!draft.name.trim()} onclick={() => (asking = true)}>Add field</button>
+      <Button variant="primary" class="go" disabled={!draft.name.trim()} onclick={() => (asking = true)}>Add field</Button>
     {/if}
   </div>
 {/snippet}
@@ -175,6 +176,4 @@
   .name input:focus { outline: none; }
   .error { margin: 0; color: var(--danger); font-size: var(--fs-sm); }
   .retire { justify-self: start; border: 0; background: none; color: var(--danger); font: inherit; font-weight: 600; cursor: pointer; padding: var(--s-2) 0; }
-  .go { min-height: 44px; border: 0; border-radius: var(--r-control); background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
-  .go:disabled { background: var(--surface); color: var(--ink-3); cursor: default; }
 </style>

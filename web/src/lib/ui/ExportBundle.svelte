@@ -1,6 +1,7 @@
 <script lang="ts">
   // "Full export" (D-068, API.md §4, Figma F9.2): the server builds a zip of this account's
   // history, tables and files in the background; this polls it every 2 s while the page is open.
+  import Button from './kit/Button.svelte';
   import { onMount } from 'svelte';
   import { apiBase } from '../sync/device';
   import { apiFetch } from '../http';
@@ -73,11 +74,11 @@
       <span>Everything, with photos and files{job?.status === 'done' ? ` · ${mb(job.bytes)}` : ''}</span>
     </div>
     {#if running}
-      <button class="pill" onclick={stop}>Cancel</button>
+      <Button size="sm" class="pill" onclick={stop}>Cancel</Button>
     {:else if job?.status === 'done' && job.result_url}
       <a class="pill go" href={`${location.origin}${job.result_url}`} download={job.file_name ?? 'chorus-export.zip'}>Download</a>
     {:else}
-      <button class="pill" onclick={start} disabled={sync.status !== 'live'}>Export</button>
+      <Button size="sm" class="pill" onclick={start} disabled={sync.status !== 'live'}>Export</Button>
     {/if}
   </div>
   {#if running && job}
@@ -104,9 +105,6 @@
   .titles { flex: 1; min-width: 0; display: grid; }
   .titles strong { font-size: var(--fs-md); }
   .titles span { color: var(--ink-3); font-size: var(--fs-sm); }
-  .pill { display: inline-flex; align-items: center; min-height: 36px; padding: 0 var(--s-4); border: 0; border-radius: var(--r-full); background: var(--surface-3, var(--surface)); color: var(--ink); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; text-decoration: none; }
-  .pill.go { background: var(--accent); color: var(--on-accent); }
-  .pill:disabled { color: var(--ink-3); cursor: default; }
   .bar { height: 6px; border-radius: 3px; background: var(--surface-3, var(--surface)); overflow: hidden; }
   .bar span { display: block; height: 100%; background: var(--accent); transition: width var(--t-base) var(--ease); }
   .foot { display: flex; justify-content: space-between; gap: var(--s-3); color: var(--ink-3); font-size: var(--fs-xs); }

@@ -1,6 +1,7 @@
 <script lang="ts">
   // Custom fronts (F4.1's third tab): the states that can front instead of a member, e.g. "Blurry".
   // Removing one keeps its history.
+  import Button from './kit/Button.svelte';
   import { sync, type Projection } from '../sync/client';
   import Icon from './Icon.svelte';
   import Sheet from './Sheet.svelte';
@@ -60,7 +61,7 @@
     <input class="field" bind:value={about} placeholder="Description" aria-label="Description" maxlength="200" />
     <Swatches value={color} onpick={(c) => (color = c)} />
     {#if current}<button class="remove" onclick={() => (removing = true)}><Icon name="delete" size={20} />Remove {current.name}</button>{/if}
-    {#snippet footer()}<button class="go" disabled={!name.trim()} onclick={save}>{current ? 'Save' : 'Add'}</button>{/snippet}
+    {#snippet footer()}<Button variant="primary" grow class="go" disabled={!name.trim()} onclick={save}>{current ? 'Save' : 'Add'}</Button>{/snippet}
   </Sheet>
 {/if}
 {#if removing && current}
@@ -81,6 +82,4 @@
   .dashed { display: flex; align-items: center; justify-content: center; gap: var(--s-2); min-height: 52px; margin-top: var(--s-2); border: 1.5px dashed var(--line); border-radius: var(--r-md); background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
   .field { font: inherit; color: var(--ink); background: var(--surface-2); border: 0; border-radius: var(--r-row); padding: var(--s-3) 14px; }
   .remove { display: flex; align-items: center; gap: var(--s-3); min-height: 48px; border: 0; background: none; color: var(--danger); font: inherit; cursor: pointer; padding: 0 var(--s-1); }
-  .go { flex: 1; min-height: 44px; border: 0; border-radius: var(--r-control); background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
-  .go:disabled { background: var(--surface-2); color: var(--ink-3); cursor: default; }
 </style>

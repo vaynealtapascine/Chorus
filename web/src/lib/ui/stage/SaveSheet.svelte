@@ -5,6 +5,7 @@
 <script lang="ts">
   // F8.9: name this stage and save it; the saved ones below reopen with a tap. Saving under a name
   // already used here replaces that stage.
+  import Button from '../kit/Button.svelte';
   import Icon from '../Icon.svelte';
   import Sheet from '../Sheet.svelte';
   import FormCard from '../kit/FormCard.svelte';
@@ -35,8 +36,8 @@
     </FormCard>
   {/if}
   {#snippet footer()}
-    <button class="neutral" onclick={onclose}>Cancel</button>
-    <button class="primary" disabled={!name.trim()} onclick={() => onsave(name.trim())}>Save stage</button>
+    <Button size="lg" round grow class="neutral" onclick={onclose}>Cancel</Button>
+    <Button variant="primary" size="lg" round grow class="primary" disabled={!name.trim()} onclick={() => onsave(name.trim())}>Save stage</Button>
   {/snippet}
 </Sheet>
 {#if menu}
@@ -57,8 +58,4 @@
   .text strong { font-size: var(--fs-md); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .text span { color: var(--ink-3); font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .more { width: 44px; height: 44px; display: grid; place-items: center; border: 0; background: none; color: var(--ink-3); cursor: pointer; }
-  .neutral, .primary { min-height: 48px; border: 0; border-radius: 24px; font: inherit; font-size: var(--fs-md); font-weight: 600; cursor: pointer; }
-  .neutral { flex: 1; background: var(--surface-2); color: var(--ink); }
-  .primary { flex: 2; background: var(--accent); color: var(--on-accent); }
-  .primary:disabled { background: var(--surface-3); color: var(--ink-3); cursor: default; }
 </style>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Button from './kit/Button.svelte';
   // Import from PluralKit (D-005): members, groups and switch history from `pk;export`.
   import { planPluralkit } from '../core/pkg/chorus_wasm.js';
   import { sync } from '../sync/client';
@@ -85,7 +86,7 @@
     {#if done !== null}
       <p class="ok">Imported {done} new item{done === 1 ? '' : 's'}.{done === 0 ? ' Everything was already here.' : ''}</p>
     {/if}
-    <button class="primary" onclick={() => void run()} disabled={busy}>{busy ? 'Importing avatars…' : done === null ? 'Import' : 'Import again'}</button>
+    <Button variant="primary" round class="primary" style="justify-self: start" onclick={() => void run()} disabled={busy}>{busy ? 'Importing avatars…' : done === null ? 'Import' : 'Import again'}</Button>
   {/if}
 </div>
 
@@ -127,16 +128,6 @@
   .ok {
     color: var(--ok);
     margin: 0;
-  }
-  .primary {
-    justify-self: start;
-    background: var(--accent);
-    color: var(--on-accent);
-    border: 0;
-    border-radius: var(--r-full);
-    padding: var(--s-2) var(--s-5);
-    font-weight: 600;
-    cursor: pointer;
   }
   .ghost {
     background: none;
