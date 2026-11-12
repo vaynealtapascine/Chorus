@@ -15,10 +15,9 @@
   import { setupOwed } from './lib/setup';
   import People from './lib/ui/People.svelte';
   import UpdateSheet from './lib/ui/UpdateSheet.svelte';
-  import SettingsShell from './lib/ui/SettingsShell.svelte';
-  import Stage from './lib/ui/Stage.svelte';
+  import Lazy from './lib/ui/Lazy.svelte';
+  import { screens } from './lib/lazy-screens';
   import Search from './lib/ui/Search.svelte';
-  import Insights from './lib/ui/Insights.svelte';
   import SystemBoard from './lib/ui/SystemBoard.svelte';
   import Journal from './lib/ui/Journal.svelte';
   import PostThread from './lib/ui/PostThread.svelte';
@@ -29,7 +28,6 @@
   import FriendNotify from './lib/ui/FriendNotify.svelte';
   import BucketPage from './lib/ui/BucketPage.svelte';
   import AdvancedSharing from './lib/ui/AdvancedSharing.svelte';
-  import PostStage from './lib/ui/PostStage.svelte';
   import More from './lib/ui/More.svelte';
   import Notifications from './lib/ui/Notifications.svelte';
   import { inbox, refreshInbox } from './lib/inbox-state.svelte';
@@ -245,7 +243,7 @@
       {:else if router.route.name === 'post' && router.route.id}
         <PostThread {projection} id={router.route.id} {dark} />
       {:else if router.route.name === 'post-stage' && router.route.id}
-        <PostStage {projection} {dark} id={router.route.id} />
+        <Lazy load={screens.postStage} {projection} {dark} id={router.route.id} />
       {:else if router.route.name === 'more'}
         <More {projection} />
       {:else if router.route.name === 'notifications'}
@@ -264,11 +262,11 @@
       {:else if router.route.name === 'review'}
         <FrontReview {projection} {dark} front={router.route.id || undefined} />
       {:else if router.route.name === 'insights'}
-        <Insights {projection} />
+        <Lazy load={screens.insights} {projection} />
       {:else if router.route.name === 'stage' && router.route.id}
-        <Stage {projection} {dark} channelId={router.route.id} />
+        <Lazy load={screens.stage} {projection} {dark} channelId={router.route.id} />
       {:else if router.route.name === 'settings'}
-        <SettingsShell {projection} page={router.route.id} />
+        <Lazy load={screens.settings} {projection} page={router.route.id} />
       {:else if router.route.name === 'people' && router.route.id === 'share' && router.route.memberId}
         <FriendSharing followId={router.route.memberId} {projection} {dark} />
       {:else if router.route.name === 'people' && router.route.id === 'notify' && router.route.memberId}

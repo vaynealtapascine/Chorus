@@ -92,8 +92,9 @@ perf and review write-ups, are in `git show a9c3c2e:docs/NOTES.md`.
 - Timing budgets in tests use SPEC §9's numbers on the reference machine (the owner's PC, through
   `verify.py`). `CHORUS_BUDGET_SCALE` widens them on slower hosts; CI sets 2 after a GitHub runner
   took 180 ms on the 150 ms 50k-search first screen (2026-11-07). A new timing assert should read it.
-- Budgets checked by `verify.py`: web JS ≤ 300 KB gz summed over all chunks (D-116), wasm
-  ≤ 500 KB gz (D-108). Notes or handoffs quoting 200 KB JS / 300 KB wasm predate those decisions.
+- Budgets checked by `verify.py`: the web JS that opens the app ≤ 300 KB gz (D-116; since D-156 the
+  entry script and its static imports, not every chunk; over budget, move a screen into
+  `web/src/lib/lazy-screens.ts`), wasm ≤ 500 KB gz (D-108). Notes or handoffs quoting 200 KB JS / 300 KB wasm predate those decisions.
 - Several worktrees sharing `F:\DunBuild\chorus-target` can see each other's artifacts as fresh
   (clippy: `no profiles in the root` with the module present; CLI tests running another tree's
   `debug/chorus-server.exe`; `os error 32` on a test exe). `touch` the crate's `lib.rs`, serialize

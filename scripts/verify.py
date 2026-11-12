@@ -81,18 +81,41 @@ def run(cmd, cwd=ROOT, env=None):
         sys.exit(r.returncode)
 
 
-def bundle_budgets(assets):
-    """SPEC §9: initial JS ≤ 300 KB gz (D-116; checked on all chunks, which is stricter), wasm ≤ 500 KB gz (D-108)."""
+def bundle_budgets(dist):
+    """SPEC §9: the JS that opens the app ≤ 300 KB gz (D-116, D-156), wasm ≤ 500 KB gz (D-108).
+
+    The opening JS is index.html's script and everything it imports statically, followed through the
+    chunks; screens behind `import()` (web/src/lib/lazy-screens.ts) are fetched later and only counted
+    in the total, which is printed so its growth stays visible."""
     import gzip
-    js = wasm = 0
+    import re
+    assets = os.path.join(dist, 'assets')
+    sizes, sources = {}, {}
     for name in os.listdir(assets):
         with open(os.path.join(assets, name), 'rb') as f:
-            size = len(gzip.compress(f.read(), 9))
+            data = f.read()
+        if name.endswith(('.js', '.wasm')):
+            sizes[name] = len(gzip.compress(data, 9))
         if name.endswith('.js'):
-            js += size
-        elif name.endswith('.wasm'):
-            wasm += size
-    print(f'\nbundle: JS {js / 1024:.0f} KB gz (≤ 300), wasm {wasm / 1024:.0f} KB gz (≤ 500)')
+            sources[name] = data.decode('utf-8')
+    with open(os.path.join(dist, 'index.html'), encoding='utf-8') as f:
+        todo = re.findall(r'<script[^>]+src="/assets/([^"]+\.js)"', f.read())
+    if not todo:
+        print('\n✗ failed: index.html names no script', file=sys.stderr)
+        sys.exit(1)
+    opening = set()
+    while todo:
+        name = todo.pop()
+        if name in opening or name not in sources:
+            continue
+        opening.add(name)
+        # `import … from"./x.js"` and `import"./x.js"`; a lazy `import("./x.js")` has a bracket and is left out
+        todo += re.findall(r'(?:\bfrom|\bimport)\s*["\']\./([^"\']+\.js)["\']', sources[name])
+    js = sum(sizes[name] for name in opening)
+    total = sum(size for name, size in sizes.items() if name.endswith('.js'))
+    wasm = sum(size for name, size in sizes.items() if name.endswith('.wasm'))
+    print(f'\nbundle: opening JS {js / 1024:.0f} KB gz (≤ 300) in {len(opening)} of {len(sources)} files, '
+          f'all JS {total / 1024:.0f} KB gz, wasm {wasm / 1024:.0f} KB gz (≤ 500)')
     if js > 300 * 1024 or wasm > 500 * 1024:
         print('\n✗ failed: SPEC §9 bundle budget', file=sys.stderr)
         sys.exit(1)
@@ -147,7 +170,7 @@ def main():
         run(['npm', 'run', 'check'], cwd=web)
         run(['npm', 'test'], cwd=web)
         run(['npm', 'run', 'build'], cwd=web)
-        bundle_budgets(os.path.join(web, 'dist', 'assets'))
+        bundle_budgets(os.path.join(web, 'dist'))
     elif os.path.isdir(web):
         print('\n(web: skipped — run `npm ci` in web/ first)')
 

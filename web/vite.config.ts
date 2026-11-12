@@ -17,6 +17,8 @@ export default defineConfig({
       '/api': { target: api, ws: true, changeOrigin: false },
     },
   },
-  build: { target: 'es2022' },
+  // one stylesheet: the lazy screens (lib/lazy-screens.ts) split the script, and their styles stay in the
+  // order they always had
+  build: { target: 'es2022', cssCodeSplit: false },
   test: { include: ['src/**/*.test.ts'], environment: 'node' },
 });

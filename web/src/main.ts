@@ -8,6 +8,7 @@ import { sync } from './lib/sync/client';
 import { pathTarget } from './lib/share-links';
 import { watchUpdates } from './lib/updates.svelte';
 import { warmIcons } from './lib/icons';
+import { warmScreens } from './lib/lazy-screens';
 
 // a shared link (D-109) loads the app at /post/<id> or /message/<id>: open what it points at
 const shared = pathTarget(location.pathname);
@@ -22,6 +23,7 @@ await sync.start();
 mount(App, { target: document.getElementById('app')! });
 performance.mark('chorus:mounted');
 warmIcons();
+warmScreens();
 
 // offline app shell in production builds (plugins/service-worker.ts)
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
