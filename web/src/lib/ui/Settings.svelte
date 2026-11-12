@@ -124,7 +124,7 @@
     <label><input type="checkbox" checked={kinds.poll_nudge !== false} onchange={(e) => chatKind('poll_nudge', e.currentTarget.checked)} /> Poll nudges</label>
     {#if active.length}
       <form class="quiet" onsubmit={(e) => { e.preventDefault(); void saveQuiet({ from: quietFrom, to: quietTo }); }}>
-        <span>Quiet hours for people you follow</span>
+        <span>Quiet hours</span>
         <input type="time" bind:value={quietFrom} aria-label="Quiet from" required /> to
         <input type="time" bind:value={quietTo} aria-label="Quiet until" required />
         <button>{quietOn ? 'Update' : 'Turn on'}</button>
@@ -153,16 +153,15 @@
         </select>
       </label>
       <CeilingControls {ceiling} inherited="Built-in default" omit={['share_history', 'share_stats']} onchange={(c) => savePref('follow_ceiling', c)} />
-      <p class="muted">Set buckets and each follower’s access in <a href="#/people">Friends</a>.</p>
     </section>
   {/if}
   <details class="card">
     <summary>Advanced</summary>
     <div class="advanced">
       <label><input type="checkbox" checked={pref('share_typing') === true} onchange={(e) => savePref('share_typing', e.currentTarget.checked)} /> Show when we're typing in shared chats</label>
-      {#if isSystem}<label><input type="checkbox" checked={pref('chat.hide_private') !== false} onchange={(e) => savePref('chat.hide_private', e.currentTarget.checked)} /> Show members' private chats only while they're fronting</label>{/if}
+      {#if isSystem}<label><input type="checkbox" checked={pref('chat.hide_private') !== false} onchange={(e) => savePref('chat.hide_private', e.currentTarget.checked)} /> Private chats only while their member is here</label>{/if}
       {#if isSystem}<label><input type="checkbox" checked={kinds.own_switch === true} onchange={(e) => chatKind('own_switch', e.currentTarget.checked)} /> Ping my other devices when the front changes</label>{/if}
-      {#if isSystem}<label><input type="checkbox" checked={kinds.reply_as_mentioned === true} onchange={(e) => chatKind('reply_as_mentioned', e.currentTarget.checked)} /> Replies from a notification speak as the member it mentions</label>{/if}
+      {#if isSystem}<label><input type="checkbox" checked={kinds.reply_as_mentioned === true} onchange={(e) => chatKind('reply_as_mentioned', e.currentTarget.checked)} /> Reply as the mentioned member</label>{/if}
       {#if isSystem}
         <label><input type="checkbox" checked={ceiling.share_history === true} onchange={(e) => sharingDetail('share_history', e.currentTarget.checked)} /> Followers can look back at who fronted</label>
         <label><input type="checkbox" checked={ceiling.share_stats === true} onchange={(e) => sharingDetail('share_stats', e.currentTarget.checked)} /> Followers can see fronting stats</label>

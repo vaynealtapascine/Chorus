@@ -213,13 +213,6 @@
       <AudienceChip label="{m.name}'s profile" value={profile} own buckets={buckets} onchange={(a) => set({ visibility: a ?? { mode: 'private' } })} />
     </span>
   </div>
-  <p class="hint">
-    {#if closed}
-      Only your system can see {m.name}'s profile right now. Share it with friends and each part below can be opened up or kept to yourselves.
-    {:else}
-      Friends who can open it see {m.display_name ?? m.name}'s display name, handle, colour and avatar, plus each part below that's shared with them.
-    {/if}
-  </p>
   {#if error}<p class="error" role="alert">{error}</p>{/if}
 
   <ul class="rows">
@@ -240,9 +233,6 @@
           <AudienceChip label={TEXT_LABELS[p]} value={effectiveAudience(raw.visibility, parts, p)} own={!!ownAudience(parts, p)} inherit={p === 'name' ? undefined : 'Same as profile'} {buckets} limited={closed} onchange={(a) => setPartAudience(p, a)} />
         {/if}
       </li>
-      {#if p === 'name' && m.display_name}
-        <li class="note">{effectiveAudience(raw.visibility, parts, 'name').mode === 'private' ? `Friends see ${m.display_name}, never the full name.` : `Shared on purpose: friends it reaches see the full name next to ${m.display_name}.`}</li>
-      {/if}
     {/each}
 
     <li class="row tall">
@@ -372,7 +362,7 @@
 
 <dialog bind:this={confirmAdd} aria-labelledby="add-title">
   <h3 id="add-title">Add “{newName.trim()}” to every member?</h3>
-  <p>It's a {typeLabel(newType).toLowerCase()} field. Every member gets an empty one to fill in, and it starts as <strong>{newAudience.mode === 'private' ? 'only us' : newAudience.mode === 'friends' ? 'shared with friends' : newAudience.mode === 'followers' ? 'shared with followers' : newAudience.mode === 'following' ? 'shared with who you follow' : newAudience.mode === 'server' ? 'shared with everyone here' : 'shared with chosen buckets'}</strong>; each member can change that for themselves.</p>
+  <p>Every member gets an empty one. It starts as <strong>{newAudience.mode === 'private' ? 'only us' : newAudience.mode === 'friends' ? 'shared with friends' : newAudience.mode === 'followers' ? 'shared with followers' : newAudience.mode === 'following' ? 'shared with who you follow' : newAudience.mode === 'server' ? 'shared with everyone here' : 'shared with chosen buckets'}</strong>.</p>
   <div class="actions">
     <button class="primary" onclick={add}>Add field</button>
     <button class="ghost" onclick={() => confirmAdd?.close()}>Not yet</button>
@@ -381,7 +371,6 @@
 
 <dialog bind:this={confirmRemove} aria-labelledby="remove-title" onclose={() => (removing = null)}>
   <h3 id="remove-title">Remove “{removing?.name}” from every member?</h3>
-  <p>It disappears from every profile, including any friend who could see it. Nothing is erased: it stays in your history and exports.</p>
   <div class="actions">
     <button class="primary danger" onclick={remove}>Remove field</button>
     <button class="ghost" onclick={() => confirmRemove?.close()}>Keep it</button>
@@ -398,7 +387,6 @@
   .row.tall { align-items: start; }
   .label { font-size: var(--fs-sm); color: var(--ink-2); }
   .follows { font-size: var(--fs-xs); color: var(--ink-3); padding: 0 var(--s-2); white-space: nowrap; }
-  .note { font-size: var(--fs-xs); color: var(--ink-3); padding: 0 0 var(--s-2) calc(min(160px, 30%) + var(--s-3)); }
   .field-label { display: inline-flex; align-items: center; gap: 2px; }
   .value { font: inherit; text-align: left; color: var(--ink); background: none; border: 1px solid transparent; border-radius: var(--r-sm); padding: var(--s-2); cursor: text; min-width: 0; overflow-wrap: anywhere; }
   .value:hover, .value:focus-visible { border-color: var(--line); background: var(--surface-2); }

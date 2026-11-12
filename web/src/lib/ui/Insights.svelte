@@ -112,8 +112,8 @@
         <option value="effective">Front history</option><option value="own">Saved entries</option>
       </select></label>
     </div>
-    <p class="hint">{frontName} · {layerName} time · {savedView ? 'saved entries' : 'effective history'}. Change counts cover all layers of this front. Day and week bars show member-hours; simultaneous members add together. Through {new Date(now).toLocaleString()}.</p>
-  {:else}<p class="hint">Front history on this device · through {new Date(now).toLocaleString()}. Bars show member-hours, so simultaneous fronts add together.</p>{/if}
+    <p class="hint">{frontName} · {layerName} time · {savedView ? 'saved entries' : 'effective history'}</p>
+  {/if}
   {#if historyRead.error}
     <div role="alert"><p>Could not load saved history.</p><button onclick={() => retry++}>Try again</button></div>
   {:else if loading}<p class="hint" role="status">Preparing insights…</p>{:else}

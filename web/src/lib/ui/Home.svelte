@@ -196,13 +196,6 @@
           {/each}</div>{/if}
         {/if}
       </section>
-      {#if !display.hintDismissed}
-        <aside class="hint">
-          <Icon name="layers" size={18} />
-          <div><strong>Simple view is on</strong><p>Only one layer is shown, empty layers and other fronts are hidden. Switch back to Detailed at any time.</p><a href="#/layers/{frontId}">Layers &amp; display</a></div>
-          <button class="x" aria-label="Dismiss" onclick={() => fd.save({ ...display, hintDismissed: true })}><Icon name="close" size={14} /></button>
-        </aside>
-      {/if}
     {:else}
       <section class="card" aria-label={selected?.name ?? 'Front'}>
         <header class="card-head">
@@ -373,13 +366,6 @@
   .turn.down { transform: rotate(90deg); }
   .chev { display: grid; transform: rotate(90deg); }
   .chev.up { transform: rotate(-90deg); }
-  .hint { display: flex; gap: 10px; padding: 12px; border-radius: 16px; background: var(--surface-2); }
-  .hint > :global(.icon) { color: var(--accent); flex: none; }
-  .hint div { flex: 1; display: grid; gap: 2px; }
-  .hint strong { font-size: 14px; }
-  .hint p { margin: 0; color: var(--ink-2); font-size: 12px; line-height: 16px; }
-  .hint a { color: var(--accent); font-size: 13px; font-weight: 600; text-decoration: none; padding-top: 4px; }
-  .x { width: 32px; height: 32px; display: grid; place-items: center; border: 0; background: none; color: var(--ink-3); border-radius: 50%; cursor: pointer; }
   .fab { position: fixed; right: max(16px, calc(50vw - 360px)); bottom: calc(92px + env(safe-area-inset-bottom)); z-index: 15; display: flex; align-items: center; gap: 8px; padding: 14px 20px 14px 16px; border: 0; border-radius: 999px; background: var(--accent); color: var(--on-accent); font: inherit; font-size: 15px; font-weight: 600; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35); cursor: pointer; }
   @media (min-width: 1024px) { .fab { bottom: 24px; right: 32px; } }
   .device-tools { margin-top: 16px; border-top: 1px solid var(--line); color: var(--ink-3); padding-block: 16px; }

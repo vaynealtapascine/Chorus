@@ -191,7 +191,7 @@
   {#if draft.kind === 'entry'}<input bind:value={draft.title} placeholder="Title (optional)" aria-label="Entry title" />{/if}
   <textarea bind:this={textarea} bind:value={draft.body} onpaste={pasteFiles} rows={draft.kind === 'entry' ? 9 : 2} placeholder={replyTo ? 'Reply…' : draft.quote ? 'Add a comment…' : draft.kind === 'entry' ? 'Write your entry…' : "What's on your mind?"} aria-label="Post text"></textarea>
   {#if quote}<div class="quoting"><QuoteEmbed {quote} gone={quote.post ? undefined : 'Loading the quoted post…'} /><button type="button" class="unquote" aria-label="Remove quote" onclick={() => (draft.quote = null)}><Icon name="close" size={16} /></button></div>
-    {#if quotingOther}<p class="borrowed">Only people who can also read the quoted post will see this.</p>{/if}{/if}
+    {#if quotingOther}<p class="borrowed">Visible to readers of the quoted post.</p>{/if}{/if}
   {#if pending.length}
     <div class="tray" aria-label="Attachments ready to post">
       {#each pending as item, i (item.file.name + i)}
@@ -220,8 +220,6 @@
       {/if}
       <fieldset class="alerts"><legend>Notifications</legend>
         <div class="seg">{#each [['', 'As usual'], ['delayed', 'Random delay'], ['none', 'Don’t notify']] as [id, label] (id)}<button type="button" class:on={draft.alerts === id} aria-pressed={draft.alerts === id} onclick={() => (draft.alerts = id as typeof draft.alerts)}>{label}</button>{/each}</div>
-        <small>{draft.alerts === 'delayed' ? 'Anyone told about it hears a random 5–60 minutes later.' : draft.alerts === 'none' ? 'Nobody is told about it; it still shows where they can read it.'
-          : replyTo ? 'The author you’re replying to, and friends who asked for alerts, hear right away.' : 'Friends who asked for alerts hear right away.'}</small>
       </fieldset>
     </div></details>
     <span class="audience"><AudienceChip label="This post" value={audience} own buckets={chipBuckets} onchange={setAudience}
@@ -253,7 +251,6 @@
   .alerts { display: grid; gap: 6px; flex: 1 1 100%; }
   .alerts .seg { justify-self: start; }
   .alerts .seg button { white-space: nowrap; }
-  .alerts small { color: var(--ink-3); font-size: var(--fs-xs); }
   .restored button { border: 0; background: none; padding: 0; color: var(--accent); font: inherit; cursor: pointer; }
   .author-picker { min-width: 0; position: relative; flex: 1; }
   .author-picker summary { cursor: pointer; color: var(--ink); font-size: var(--fs-sm); min-height: 40px; display: flex; align-items: center; font-weight: 600; }

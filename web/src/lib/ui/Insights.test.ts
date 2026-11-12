@@ -30,7 +30,6 @@ it('renders selected-front history and exact-layer time without stale legacy dat
     }).body;
     const source = view(insightIds.chorus, 'quiet');
     expect(source).toContain('Chorus · Close by time');
-    expect(source).toContain('Day and week bars show member-hours; simultaneous members add together.');
     expect(source).toContain('Kai'); expect(source).toContain('Moon');
     expect(source).toContain('1.5 h'); // Kai one hour + Moon half an hour.
     expect(source).toContain('Changes by day');

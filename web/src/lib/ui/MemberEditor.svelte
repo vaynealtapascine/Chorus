@@ -215,7 +215,6 @@
         </div>
         <label class="color">Colour <input type="color" value={m.color} onchange={(e) => set({ color: text(e) })} /></label>
       </div>
-      <p class="hint">Colour and avatar show wherever {m.display_name ?? m.name} does: in your chats, and to friends who can open their profile or see them in a shared chat. Friends call them by their display name; the full name stays with you unless you share it below.</p>
     </section>
 
     <section aria-labelledby="handles-heading">
@@ -286,7 +285,7 @@
       <h2>Speaking</h2>
       <div class="fields">
         <label class="wide">
-          Sigils <span class="hint">representative characters or emoji; separate alternatives with spaces. Start a message with one or more members' sigils, then a space.</span>
+          Sigils <span class="hint">representative characters or emoji; separate alternatives with spaces.</span>
           <input
             value={sigilText}
             onchange={(e) => set({ sigils: text(e).split(/\s+/).filter(Boolean) })}

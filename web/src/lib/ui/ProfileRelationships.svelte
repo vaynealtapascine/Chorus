@@ -82,7 +82,7 @@
     </div>
     <ul>{#each links as link (link.id)}<li class="link"><span><strong>{relatedType(link)}</strong> · {relatedName(link)}{#if link.note}<small>{link.note}</small>{/if}</span>
       {#if own}<AudienceChip label="Relationship" value={audienceOf(link.visibility)} own buckets={sharing} onchange={(a) => sync.create('relationship.set', sync.accountScope, link.id, { visibility: a ?? { mode: 'private' } })} /><button onclick={() => sync.create('relationship.delete', sync.accountScope, link.id, {})}>Remove</button>{/if}</li>{/each}</ul>
-  {:else}<p class="muted">No relationships yet.</p>{/if}
+  {/if}
 
   {#if own}
     <form class="editor" onsubmit={createLink}>
@@ -97,7 +97,7 @@
         <AudienceChip label="New relationship" value={audience} own buckets={sharing} onchange={(a) => (audience = a ?? { mode: 'private' })} />
         {#if error}<p class="error" role="alert">{error}</p>{/if}
         <button disabled={!(selectedType || types.length === 1)}>Add relationship</button>
-      {:else}<p class="muted">Create a relationship type first.</p>{/if}
+      {/if}
     </form>
     <form class="editor" onsubmit={createType}>
       <h3>Relationship types</h3>
@@ -125,6 +125,5 @@
   label { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-2); }
   input:not([type='checkbox']), select { min-width: 10ch; max-width: 100%; padding: var(--s-2); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); color: var(--ink); font: inherit; }
   button { justify-self: start; color: var(--accent); cursor: pointer; }
-  .muted { color: var(--ink-3); font-size: var(--fs-sm); }
   .error { color: var(--danger); }
 </style>

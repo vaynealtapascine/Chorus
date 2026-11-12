@@ -216,7 +216,6 @@
       <label class="opt"><span>Their banner behind the row</span><input type="checkbox" checked={view.banners} onchange={(e) => setView({ banners: (e.currentTarget as HTMLInputElement).checked })} /></label>
 
       <h2>Folders</h2>
-      <p class="hint">Folders only sort this list; they don’t change groups, fronting or who sees what. Drag people onto a folder, use a row’s ⋯ menu, or Select several.</p>
       <ul class="folders">
         {#each folders as f, i (f.id)}
           <li>

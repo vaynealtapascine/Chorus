@@ -105,7 +105,6 @@
   {/if}
   <h1 class="display">Welcome to Chorus</h1>
   {#if step === 'link'}
-    <p class="lead">A cozy place for plural systems and the people close to them. Paste the invite you were given to set up this browser.</p>
     <form onsubmit={look}>
       <label>
         <span>Invite link or code</span>
@@ -115,8 +114,6 @@
       <button disabled={busy || !invite.trim()}>{busy ? 'Checking…' : 'Continue'}</button>
     </form>
   {:else if step === 'device'}
-    <p class="lead">This link adds this browser to an account you already have.{#if plan === 'pick-up'} What it still
-      holds comes back with it.{/if}</p>
     <form onsubmit={submit}>
       <label>
         <span>This device</span>
@@ -137,11 +134,11 @@
           <legend>Who's joining?</legend>
           <label class="kind" class:on={kind === 'system'}>
             <input type="radio" name="kind" value="system" bind:group={kind} />
-            <span><strong>We're a system</strong>More than one of us shares this body. Chorus keeps track of members, who's fronting and front history, and lets each of us post and chat as ourselves.</span>
+            <span><strong>We're a system</strong></span>
           </label>
           <label class="kind" class:on={kind === 'person'}>
             <input type="radio" name="kind" value="person" bind:group={kind} />
-            <span><strong>Just me</strong>I'm one person (a singlet). Follow friends, including plural ones, see who's fronting when they share it, and chat and post, without the switching tools.</span>
+            <span><strong>Just me</strong></span>
           </label>
         </fieldset>
       {/if}
@@ -150,7 +147,7 @@
         <input bind:value={name} placeholder={kind === 'system' ? 'The Stars' : 'Alex'} />
       </label>
       <label>
-        <span>Handle <em>(optional; friends follow you with it)</em></span>
+        <span>Handle <em>(optional)</em></span>
         <input bind:value={handle} placeholder={kind === 'system' ? 'stars' : 'alex'} pattern="[a-z0-9_]{'{'}2,32{'}'}" />
       </label>
       <label>
@@ -162,7 +159,6 @@
       <button disabled={busy}>{busy ? 'Setting up…' : confirming ? 'Erase and join' : 'Join'}</button>
       {#if !homeSetup}
         <button type="button" class="ghost" onclick={another} disabled={busy}>Use another invite</button>
-        {#if step === 'legacy'}<p class="hint">Invites for another device of an existing account only need the link.</p>{/if}
       {/if}
     </form>
   {/if}
@@ -278,11 +274,6 @@
   }
   .error {
     color: var(--danger);
-    margin: 0;
-  }
-  .hint {
-    color: var(--ink-3);
-    font-size: var(--fs-xs);
     margin: 0;
   }
 </style>
