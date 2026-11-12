@@ -119,3 +119,5 @@ dialog[open]::backdrop { animation: chorus-fade-in var(--t-base) var(--ease); }
 }
 [popover]:not(:popover-open) { opacity: 0; transform: scale(.97); }
 @starting-style { [popover]:popover-open { opacity: 0; transform: scale(.97); } }
+/* Appearance > Member colours in chat, off: names in chat take the ink colour */
+:root[data-names='plain'] .who > *:not(.amp) { color: var(--ink) !important; }

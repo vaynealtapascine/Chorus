@@ -24,6 +24,13 @@ const vars = (o, prefix, unit = '') =>
   Object.entries(o).map(([k, v]) => `  --${prefix}${k}: ${typeof v === 'number' ? v + unit : v};`).join('\n');
 const colors = (o) => vars(o, '');
 
+// F10.2 accents on web: the same four colours per mode; teal is the base, so it has no rule
+const accentCss = Object.entries(t.accent).filter(([k]) => !k.startsWith('$') && k !== 'teal').map(([k, v]) =>
+  `:root:not([data-theme='light'])[data-accent='${k}'] {\n${colors(v.dark)}\n}\n:root[data-theme='light'][data-accent='${k}'] {\n${colors(v.light)}\n}`).join('\n');
+// F10.2 text size and density: the type and space steps scaled (Android: 1.15 and 1.3; compact 0.75)
+const scaled = (o, f, prefix) => Object.entries(o).map(([k, v]) => `  --${prefix}${k}: ${Math.round(v * f * 10) / 10}px;`).join('\n');
+const scaleCss = `:root[data-text='large'] {\n${scaled(t.size, 1.15, 'fs-')}\n}\n:root[data-text='larger'] {\n${scaled(t.size, 1.3, 'fs-')}\n}\n:root[data-density='compact'] {\n${scaled(t.space, 0.75, 's-')}\n}\n`;
+
 const css = `${header}
 :root {
 ${colors(t.color.dark)}
@@ -44,7 +51,8 @@ ${vars(t.size, 'fs-', 'px')}
 ${colors(t.color.light)}
   color-scheme: light;
 }
-`;
+${accentCss}
+${scaleCss}`;
 const cssPath = join(root, 'web/src/lib/design/tokens.css');
 emit(cssPath, css);
 

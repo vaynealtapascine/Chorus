@@ -63,7 +63,7 @@
   {#if wide || !showList}
     <div class="body">
       {#if !wide}<a class="back" href="#/settings"><Icon name="back" size={18} />Settings</a>{/if}
-      {#if current === 'appearance'}<AppearancePage />
+      {#if current === 'appearance'}<AppearancePage {projection} />
       {:else if current === 'notifications'}<NotificationsPage {projection} />
       {:else if current === 'sharing'}<SharingPage {projection} />
       {:else if current === 'advanced'}<AdvancedPage {projection} />
