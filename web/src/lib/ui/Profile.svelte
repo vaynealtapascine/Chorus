@@ -1,5 +1,6 @@
 <script lang="ts">
   import EmptyState from './kit/EmptyState.svelte';
+  import { ageOf } from '../field-age';
   import { channels, fieldDefs, fieldValues, members, messages, reactions, type MemberRow } from '../data';
   import { canWriteAs, highlightedPostIds, memberPosts, postReaction, posts, type PostRow } from '../posts';
   import { frontDaily, namedFrontDays, windowStart } from '../insights';
@@ -30,7 +31,7 @@
   const shown = $derived(tab === 'highlights' ? all.filter((post) => highlighted.has(post.id) && !post.deleted) : memberPosts(all, id, tab === 'replies').filter((post) => !post.repost_of));
   const pinned = $derived(all.find((post) => post.id === member?.pinned_post_id && !post.deleted));
   const custom = $derived(fieldDefs(projection).map((def) => ({
-    name: def.name, value: fieldValues(projection).get(id)?.get(def.id),
+    name: def.name, value: def.type === 'date' && def.options.show_age ? (ageOf(fieldValues(projection).get(id)?.get(def.id), new Date()) ?? undefined) : fieldValues(projection).get(id)?.get(def.id),
   })).filter((field) => field.value !== undefined && field.value !== null && field.value !== '' && !(Array.isArray(field.value) && !field.value.length)));
   const shownValue = (value: unknown) => Array.isArray(value) ? value.join(', ') : typeof value === 'boolean' ? (value ? 'Yes' : 'No') : String(value);
   const now = Date.now();

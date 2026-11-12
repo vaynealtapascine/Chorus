@@ -91,8 +91,8 @@
   .info { display: grid; flex: 1; min-width: 0; }
   .info strong { font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sub { color: var(--ink-3); font-size: 13px; line-height: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .chev { display: inline-flex; color: var(--ink-2); transition: transform var(--t-fast) var(--ease); }
-  .chev.up { transform: rotate(180deg); }
+  .chev { display: inline-flex; color: var(--ink-2); transform: rotate(90deg); transition: transform var(--t-fast) var(--ease); }
+  .chev.up { transform: rotate(-90deg); }
   .member { display: flex; align-items: center; padding: 4px 4px 4px 30px; }
   .member a { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; padding: 4px 0; color: var(--ink); text-decoration: none; }
   .member .info strong { font-size: 15px; }

@@ -161,7 +161,7 @@
 {:else}
 <section class="page">
   <header class="title">
-    <div><h1 class="display">Members</h1><p>{subtitle}</p></div>
+    <div><h1 class="sr">Members</h1><p>{subtitle}</p></div>
     {#if current === 'members'}
       <button class="bar-icon" aria-label="Search" aria-pressed={searching} onclick={() => { searching = !searching; if (!searching) query = ''; }}><Icon name="search" size={22} /></button>
     {/if}
@@ -313,8 +313,8 @@
   .page { display: grid; gap: 12px; align-content: start; }
   .title { display: flex; align-items: center; gap: 4px; }
   .title > div { flex: 1; min-width: 0; }
-  h1 { margin: 0; font-size: 24px; line-height: 30px; }
-  .title p { margin: 2px 0 0; color: var(--ink-3); font-size: 13px; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .title p { margin: 0; color: var(--ink-3); font-size: 14px; }
   .bar-icon { display: inline-grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: 50%; background: none; color: var(--ink); cursor: pointer; flex: none; }
   .bar-icon:hover { background: var(--surface-2); }
   .bar-icon[aria-pressed='true'] { color: var(--accent); }

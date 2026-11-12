@@ -51,7 +51,7 @@ export interface FieldDef {
   id: string;
   name: string;
   type: 'text' | 'long_text' | 'number' | 'date' | 'select' | 'multi_select' | 'boolean' | 'url' | 'color';
-  options: { choices?: string[] };
+  options: { choices?: string[]; /** a date shown as an age (F4.6) */ show_age?: boolean };
   sort_key?: string;
   /** who sees it on members who haven't chosen (D-101); private when unset */
   default_visibility?: unknown;
