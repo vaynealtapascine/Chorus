@@ -375,10 +375,10 @@
     background: var(--surface-2); color: var(--ink-2); cursor: pointer; }
   .row-wrap:hover .more, .more[aria-expanded='true'], .more:focus-visible { display: grid; }
   .row-menu { position: absolute; right: 8px; top: 40px; z-index: 5; display: grid; min-width: 160px; padding: var(--s-1); border-radius: var(--r-md);
-    background: var(--surface-2); box-shadow: 0 8px 24px rgb(0 0 0 / 0.35); }
+    background: var(--surface-2); box-shadow: var(--shadow-menu); }
   .row-menu button { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-2) 10px; border: 0; border-radius: var(--r-sm); background: none;
     color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
-  .row-menu button:hover { background: var(--surface-3, var(--surface)); }
+  .row-menu button:hover { background: var(--surface-3); }
   .row-menu .danger { color: var(--danger); }
   .here { min-width: 0; display: flex; align-items: flex-start; gap: 6px; padding: var(--s-1) var(--s-3) var(--s-3); overflow-x: auto; border-bottom: 1px solid var(--line); scrollbar-width: none; }
   .here-one { flex: none; width: 64px; display: grid; justify-items: center; gap: var(--s-1); border: 0; background: none; color: var(--ink-2); cursor: pointer; padding: 0; font: inherit; }

@@ -42,7 +42,7 @@
 
 <style>
   .audience-dialog { width: min(380px, 90vw); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); color: var(--ink); padding: var(--s-5); overflow: visible; }
-  .audience-dialog::backdrop { background: rgb(0 0 0 / .4); }
+  .audience-dialog::backdrop { background: var(--scrim); }
   h2 { margin: 0 0 var(--s-3); font-size: var(--fs-lg); }
   /* the chip sits right so its right-aligned menu floats below the dialog like a popup */
   .row { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); color: var(--ink-2); font-size: var(--fs-sm); }

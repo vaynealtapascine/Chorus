@@ -19,5 +19,5 @@
     color: var(--ink-3); font: inherit; font-size: var(--fs-md); font-weight: 500; cursor: pointer; }
   button[aria-selected='true'] { color: var(--ink); font-weight: 600; }
   button[aria-selected='true']::after { content: ''; position: absolute; left: 12px; right: 12px; bottom: 0; height: 3px; border-radius: 2px; background: var(--accent); }
-  .count { border-radius: var(--r-full); background: var(--surface-3, var(--surface-2)); color: var(--ink); font-size: 11px; font-weight: 600; padding: 1px 6px; }
+  .count { border-radius: var(--r-full); background: var(--surface-3); color: var(--ink); font-size: 11px; font-weight: 600; padding: 1px 6px; }
 </style>

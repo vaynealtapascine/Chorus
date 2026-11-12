@@ -105,7 +105,7 @@
   .titles { flex: 1; min-width: 0; display: grid; }
   .titles strong { font-size: var(--fs-md); }
   .titles span { color: var(--ink-3); font-size: var(--fs-sm); }
-  .bar { height: 6px; border-radius: 3px; background: var(--surface-3, var(--surface)); overflow: hidden; }
+  .bar { height: 6px; border-radius: 3px; background: var(--surface-3); overflow: hidden; }
   .bar span { display: block; height: 100%; background: var(--accent); transition: width var(--t-base) var(--ease); }
   .foot { display: flex; justify-content: space-between; gap: var(--s-3); color: var(--ink-3); font-size: var(--fs-xs); }
   .phase { color: var(--accent); font-weight: 600; }

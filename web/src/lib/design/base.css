@@ -80,7 +80,7 @@ input[type='checkbox'][role='switch'] {
   height: 24px;
   margin: 0;
   border-radius: var(--r-row);
-  background: var(--surface-3, var(--line));
+  background: var(--surface-3);
   cursor: pointer;
   transition: background var(--t-fast, 120ms) ease;
 }

@@ -136,7 +136,7 @@
   .tile { display: grid; place-items: center; width: 40px; height: 40px; border-radius: var(--r-row); background: var(--accent-soft); color: var(--accent); flex: none; }
   .url { flex: 1; min-width: 0; font-family: var(--font-mono); font-size: 14px; font-weight: 500; word-break: break-all; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-  code { font-family: var(--font-mono); background: var(--surface-3, var(--surface)); padding: 3px 10px; border-radius: var(--r-full); font-size: var(--fs-xs); word-break: break-all; }
+  code { font-family: var(--font-mono); background: var(--surface-3); padding: 3px 10px; border-radius: var(--r-full); font-size: var(--fs-xs); word-break: break-all; }
   code.off { color: var(--ink-3); }
   .hint { color: var(--ink-3); font-size: var(--fs-sm); }
   .error { color: var(--danger); font-size: var(--fs-sm); margin: 0; }

@@ -201,7 +201,7 @@
   .person, .add { display: flex; align-items: center; gap: 10px; padding: 6px var(--s-2); border-radius: var(--r-sm); color: var(--ink); text-decoration: none; text-align: left; }
   .add { width: 100%; border: 0; background: none; font: inherit; color: var(--accent); cursor: pointer; }
   .add:hover, .link-row:hover, .link-row.on { background: var(--surface-2); }
-  .face { width: 34px; height: 34px; flex: none; border-radius: 50%; display: grid; place-items: center; overflow: hidden; background: var(--surface-3, var(--surface-2)); color: var(--ink-2); font-weight: 700; font-size: 14px; }
+  .face { width: 34px; height: 34px; flex: none; border-radius: 50%; display: grid; place-items: center; overflow: hidden; background: var(--surface-3); color: var(--ink-2); font-weight: 700; font-size: 14px; }
   .face.plus { background: var(--accent-soft); color: var(--accent); }
   .who { flex: 1; min-width: 0; display: grid; font-size: 14px; overflow-wrap: anywhere; }
   .who small { color: var(--ink-3); font-size: var(--fs-xs); }

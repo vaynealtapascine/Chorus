@@ -45,6 +45,8 @@ ${vars(t.size, 'fs-', 'px')}
   --t-slow: ${t.motion.slow}ms;
   --ease: ${t.motion.ease};
   --shadow-pop: ${t.shadow.pop};
+  --shadow-menu: ${t.shadow.menu};
+  --scrim: ${t.shadow.scrim};
   color-scheme: dark;
 }
 :root[data-theme='light'] {

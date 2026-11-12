@@ -179,7 +179,7 @@
   .radio.on { border: 6px solid var(--accent); }
   .text { flex: 1; font-size: var(--fs-base); }
   .text.on { font-weight: 600; }
-  .tile { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 8px; background: var(--surface-3, var(--surface)); color: var(--ink-2); flex: none; }
+  .tile { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 8px; background: var(--surface-3); color: var(--ink-2); flex: none; }
   .title { flex: 1; font-size: var(--fs-base); }
   .part > :global(.icon) { color: var(--ink-3); }
   .muted { color: var(--ink-3); }

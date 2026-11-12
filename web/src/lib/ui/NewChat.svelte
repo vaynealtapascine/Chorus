@@ -288,7 +288,7 @@
   .row.action { min-height: 60px; }
   .disc { width: 40px; height: 40px; flex: none; display: grid; place-items: center; border-radius: 50%; background: var(--accent-soft); color: var(--accent); }
   .label { color: var(--accent); font-size: var(--fs-md); font-weight: 500; }
-  .avatar { width: 40px; height: 40px; flex: none; border-radius: 50%; display: grid; place-items: center; overflow: hidden; background: var(--surface-3, var(--surface-2)); color: var(--ink-2); font-weight: 700; }
+  .avatar { width: 40px; height: 40px; flex: none; border-radius: 50%; display: grid; place-items: center; overflow: hidden; background: var(--surface-3); color: var(--ink-2); font-weight: 700; }
   .avatar :global(img) { width: 100%; height: 100%; object-fit: cover; }
   .avatar.sm { width: 32px; height: 32px; font-size: 14px; }
   .avatar.xs { width: 26px; height: 26px; font-size: var(--fs-xs); }
@@ -303,10 +303,10 @@
   .lock:hover:not(:disabled) { background: var(--surface-2); color: var(--ink); }
   .next { position: absolute; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); width: 56px; height: 56px; display: grid; place-items: center; border: 0; border-radius: 50%;
     background: var(--accent); color: var(--on-accent); box-shadow: var(--shadow-pop); cursor: pointer; }
-  .next:disabled { background: var(--surface-3, var(--surface-2)); color: var(--ink-3); box-shadow: none; cursor: default; }
+  .next:disabled { background: var(--surface-3); color: var(--ink-3); box-shadow: none; cursor: default; }
   .senders { display: grid; }
   .error { margin: var(--s-2) var(--s-4); color: var(--danger); font-size: 14px; }
   .name { font: inherit; font-size: var(--fs-base); color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-row); padding: var(--s-3) 14px; }
   .create { width: 100%; min-height: 44px; border: 0; border-radius: var(--r-control); background: var(--accent); color: var(--on-accent); font: inherit; font-size: var(--fs-md); font-weight: 600; cursor: pointer; }
-  .create:disabled { background: var(--surface-3, var(--surface-2)); color: var(--ink-3); cursor: default; }
+  .create:disabled { background: var(--surface-3); color: var(--ink-3); cursor: default; }
 </style>

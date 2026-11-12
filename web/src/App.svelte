@@ -348,7 +348,7 @@
     .chat-page .app-nav { position: fixed; inset: 0 auto 0 0; z-index: 30; width: 280px; transform: translateX(-100%); visibility: hidden;
       transition: transform var(--t-base) var(--ease), visibility 0s linear var(--t-base); }
     .chat-page.nav-open .app-nav { transform: none; visibility: visible; transition: transform var(--t-base) var(--ease); box-shadow: var(--shadow-pop); }
-    .chat-page .scrim { display: block; position: fixed; inset: 0; z-index: 29; border: 0; background: rgb(0 0 0 / .4); }
+    .chat-page .scrim { display: block; position: fixed; inset: 0; z-index: 29; border: 0; background: var(--scrim); }
     .chat-page .app-bar { display: none; }
   }
   @media (max-width: 1023px) {

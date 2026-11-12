@@ -97,5 +97,5 @@
   .comment:focus { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent) 60%, transparent); }
   .go { flex: none; width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 50%; background: var(--accent); color: var(--on-accent); cursor: pointer; }
   .go.wide { width: 100%; border-radius: var(--r-control); font: inherit; font-size: var(--fs-md); font-weight: 600; }
-  .go:disabled { background: var(--surface-3, var(--surface-2)); color: var(--ink-3); cursor: default; }
+  .go:disabled { background: var(--surface-3); color: var(--ink-3); cursor: default; }
 </style>

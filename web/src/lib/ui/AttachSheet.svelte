@@ -84,5 +84,5 @@
   .eye { background: none; color: var(--ink-2); }
   .eye.on { background: var(--surface-2); color: var(--accent); }
   .go { background: var(--accent); color: var(--on-accent); }
-  .go:disabled { background: var(--surface-3, var(--surface-2)); color: var(--ink-3); cursor: default; }
+  .go:disabled { background: var(--surface-3); color: var(--ink-3); cursor: default; }
 </style>

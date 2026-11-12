@@ -109,7 +109,7 @@
   .usage { display: grid; gap: var(--s-2); padding: 14px; border-radius: var(--r-md); background: var(--surface-2); }
   .head { display: flex; justify-content: space-between; gap: var(--s-3); }
   .head span { color: var(--ink-3); font-size: var(--fs-sm); }
-  .bar { display: flex; height: 8px; border-radius: 4px; background: var(--surface-3, var(--surface)); overflow: hidden; }
+  .bar { display: flex; height: 8px; border-radius: 4px; background: var(--surface-3); overflow: hidden; }
   .msg { background: var(--accent); }
   .files { background: var(--sun); }
 </style>

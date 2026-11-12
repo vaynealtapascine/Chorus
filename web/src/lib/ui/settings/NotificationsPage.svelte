@@ -125,7 +125,7 @@
   input[type='time'] { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 6px 10px; }
   .row { display: block; width: 100%; min-height: 46px; padding: 10px 14px; border: 0; background: none; color: var(--ink); font: inherit; font-size: var(--fs-md); text-align: left; cursor: pointer; margin: 0; }
   .status { display: flex; align-items: center; gap: 14px; padding: var(--s-3) 14px; }
-  .disc { width: 40px; height: 40px; flex: none; display: grid; place-items: center; border-radius: 50%; background: var(--surface-3, var(--surface)); color: var(--ink-3); }
+  .disc { width: 40px; height: 40px; flex: none; display: grid; place-items: center; border-radius: 50%; background: var(--surface-3); color: var(--ink-3); }
   .disc.on { background: var(--accent-soft); color: var(--accent); }
   .text { flex: 1; min-width: 0; display: grid; }
   .text strong { font-size: var(--fs-md); font-weight: 600; }

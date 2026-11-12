@@ -192,7 +192,7 @@
 </div>
 
 <style>
-  .scrim { position: fixed; inset: 0; background: rgb(0 0 0 / 0.45); z-index: 30; }
+  .scrim { position: fixed; inset: 0; background: var(--scrim); z-index: 30; }
   .sheet { position: fixed; z-index: 31; inset: auto 0 0 0; max-height: 90vh; overflow: auto; margin: 0 auto; max-width: 520px;
     background: var(--surface); color: var(--ink); border-radius: var(--r-lg) var(--r-lg) 0 0; box-shadow: var(--shadow-pop);
     padding: 20px 20px calc(20px + env(safe-area-inset-bottom)); display: grid; gap: 14px; animation: rise var(--t-med, 220ms) var(--ease); }

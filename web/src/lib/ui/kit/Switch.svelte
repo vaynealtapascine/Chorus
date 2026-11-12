@@ -25,7 +25,7 @@
   .text strong { font-size: var(--fs-md); font-weight: 400; line-height: 20px; }
   .text span { color: var(--ink-3); font-size: var(--fs-sm); line-height: 17px; }
   .bare { display: inline-grid; place-items: center; min-width: 44px; min-height: 44px; padding: 0; border: 0; background: none; cursor: pointer; }
-  .track { position: relative; width: 40px; height: 24px; flex: none; border-radius: var(--r-row); background: var(--surface-3, var(--surface-2));
+  .track { position: relative; width: 40px; height: 24px; flex: none; border-radius: var(--r-row); background: var(--surface-3);
     transition: background var(--t-fast) var(--ease); }
   .track::after { content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: var(--ink-3);
     transition: transform var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }

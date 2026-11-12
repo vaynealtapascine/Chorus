@@ -30,7 +30,7 @@
 </div>
 
 <style>
-  .scrim { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); }
+  .scrim { position: fixed; inset: 0; background: var(--scrim); }
   .sheet { position: fixed; inset: auto 0 0 0; margin: 0 auto; max-width: 560px; max-height: calc(92vh - var(--lower)); overflow: auto; background: var(--surface);
     border-radius: 20px 20px 0 0; box-shadow: var(--shadow-pop); padding-bottom: env(safe-area-inset-bottom); display: grid; align-content: start; }
   @media (min-width: 641px) { .sheet { inset: calc(6vh + var(--lower)) 0 auto 0; border-radius: 20px; } }

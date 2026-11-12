@@ -83,7 +83,7 @@
   .bucket { display: flex; align-items: center; gap: var(--s-3); padding: 10px 14px; border: 0; border-radius: var(--r-md); background: var(--surface-2); color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
   .bucket .text span { font-size: var(--fs-xs); }
   .bucket .text strong { font-weight: 600; }
-  .tile { width: 36px; height: 36px; border-radius: 9px; background: var(--surface-3, var(--bg)); color: var(--ink-3); }
+  .tile { width: 36px; height: 36px; border-radius: 9px; background: var(--surface-3); color: var(--ink-3); }
   .down { color: var(--ink-3); transform: rotate(90deg); display: grid; }
   .decline { flex: .4; }
   .options { display: grid; gap: 2px; }

@@ -75,7 +75,7 @@
   .drag-list { position: relative; display: grid; }
   .item { position: relative; display: flex; align-items: center; }
   .item + .item { border-top: 1px solid var(--line); }
-  .item.held { z-index: 2; background: var(--surface-3, var(--surface)); box-shadow: var(--shadow-pop); border-radius: var(--r-row); }
+  .item.held { z-index: 2; background: var(--surface-3); box-shadow: var(--shadow-pop); border-radius: var(--r-row); }
   .grip { flex: none; display: grid; place-items: center; width: 40px; align-self: stretch; min-height: 44px; border: 0; background: none; color: var(--ink-3);
     cursor: grab; touch-action: none; }
   .grip:active { cursor: grabbing; }

@@ -112,7 +112,7 @@
   .head { display: flex; align-items: center; gap: 10px; }
   h2 { margin: 0; font-size: var(--fs-base); flex: 1; }
   .count { color: var(--accent); font-size: var(--fs-sm); font-weight: 600; }
-  .bar { height: 6px; border-radius: 3px; background: var(--surface-3, var(--surface)); overflow: hidden; }
+  .bar { height: 6px; border-radius: 3px; background: var(--surface-3); overflow: hidden; }
   .bar span { display: block; height: 100%; background: var(--accent); }
   ul { list-style: none; margin: 0; padding: var(--s-3) 14px; display: grid; gap: var(--s-3); border-radius: var(--r-row); background: var(--surface); }
   li { display: flex; align-items: center; gap: 10px; }

@@ -334,7 +334,7 @@
   .menu button:hover:not(:disabled), .menu a:hover { background: var(--surface-2); }
   .menu button:disabled { color: var(--ink-3); cursor: default; }
   .disclose { max-width: 360px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); color: var(--ink); padding: var(--s-5); }
-  .disclose::backdrop { background: rgb(0 0 0 / .4); }
+  .disclose::backdrop { background: var(--scrim); }
   .disclose h2 { margin: 0 0 var(--s-2); font-size: var(--fs-lg); }
   .disclose p { color: var(--ink-2); font-size: var(--fs-sm); line-height: 1.5; }
   .dialog-actions { display: flex; justify-content: flex-end; gap: var(--s-2); margin-top: var(--s-4); }

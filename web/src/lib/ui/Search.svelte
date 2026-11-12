@@ -266,7 +266,7 @@
   .field:focus-within { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent) 60%, transparent); }
   .chips { display: flex; gap: var(--s-2); overflow-x: auto; padding: var(--s-1) 0; scrollbar-width: none; }
   .chips button { flex: none; min-height: 34px; padding: 0 14px; border: 1px solid var(--line); border-radius: 17px; background: none; color: var(--ink-2); font: inherit; font-size: 14px; cursor: pointer; }
-  .chips button.on { border-color: var(--accent); background: var(--accent-soft, var(--surface-2)); color: var(--accent); }
+  .chips button.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
   .count, .where { margin: 0; color: var(--ink-3); font-size: var(--fs-sm); }
   .match { display: grid; gap: 6px; padding: 10px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
   .match:hover { background: color-mix(in srgb, var(--ink) 3%, transparent); }

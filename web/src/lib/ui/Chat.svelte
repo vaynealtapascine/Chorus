@@ -1812,10 +1812,10 @@
   .mention-suggestions button:hover, .mention-suggestions button.active { background: var(--surface-2); }
   .mention-suggestions strong { flex: 1; min-width: 0; font-size: var(--fs-md); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mention-suggestions small { color: var(--ink-3); font-size: var(--fs-xs); white-space: nowrap; }
-  .m-face { width: 32px; height: 32px; flex: none; display: grid; place-items: center; overflow: hidden; border-radius: 50%; background: var(--surface-3, var(--surface-2)); color: var(--ink-2); font-weight: 600; font-size: 14px; }
+  .m-face { width: 32px; height: 32px; flex: none; display: grid; place-items: center; overflow: hidden; border-radius: 50%; background: var(--surface-3); color: var(--ink-2); font-weight: 600; font-size: 14px; }
   .m-face.front { background: var(--accent-soft); color: var(--accent); }
   .m-face :global(img) { width: 100%; height: 100%; object-fit: cover; }
-  .reading-as { display: flex; align-items: center; gap: var(--s-2); padding: 0 var(--s-1) 0 var(--s-3); background: var(--accent-soft, var(--surface-2)); color: var(--ink-2); font-size: var(--fs-xs); line-height: 16px; }
+  .reading-as { display: flex; align-items: center; gap: var(--s-2); padding: 0 var(--s-1) 0 var(--s-3); background: var(--accent-soft); color: var(--ink-2); font-size: var(--fs-xs); line-height: 16px; }
   .reading-as .who { width: 24px; height: 24px; flex: none; display: grid; place-items: center; overflow: hidden; border-radius: 50%; font-weight: 700; }
   .reading-as .says { flex: 1; min-width: 0; }
   .reading-as button { min-height: 36px; padding: 0 10px; border: 0; background: none; color: var(--accent); font: inherit; cursor: pointer; }
@@ -1843,7 +1843,7 @@
   .pending-file strong { max-width: 20ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pending-file input:not([type='checkbox']) { min-width: 10ch; flex: 1; }
   .pending-file button { border: 0; background: none; color: var(--accent); cursor: pointer; }
-  .upload-error { color: var(--danger, #b33); font-size: var(--fs-sm); }
+  .upload-error { color: var(--danger); font-size: var(--fs-sm); }
   .speaker-chips { display: flex; gap: 6px; overflow-x: auto; padding: 6px var(--s-3) 0; scrollbar-width: none; }
   .speaker-chips button { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 3px; border: 1px solid var(--line); border-radius: var(--r-full);
     background: none; color: var(--ink-2); font: inherit; font-size: var(--fs-sm); cursor: pointer; transition: background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease); }

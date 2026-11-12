@@ -132,8 +132,8 @@
   .titles strong { font-size: var(--fs-md); }
   .titles span { color: var(--ink-3); font-size: var(--fs-sm); }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: var(--s-1); }
-  code { font-family: var(--font-mono); background: var(--surface-3, var(--surface)); padding: 2px var(--s-2); border-radius: 8px; font-size: var(--fs-xs); word-break: break-all; }
-  .secret { display: flex; align-items: center; gap: 10px; padding: 10px var(--s-3); border-radius: var(--r-row); background: var(--surface-3, var(--surface)); }
+  code { font-family: var(--font-mono); background: var(--surface-3); padding: 2px var(--s-2); border-radius: 8px; font-size: var(--fs-xs); word-break: break-all; }
+  .secret { display: flex; align-items: center; gap: 10px; padding: 10px var(--s-3); border-radius: var(--r-row); background: var(--surface-3); }
   .secret code { flex: 1; background: none; padding: 0; font-size: var(--fs-sm); }
   .copy { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; color: var(--ink); font: inherit; font-size: 14px; cursor: pointer; }
   .revoke, .link { border: 0; background: none; color: var(--danger); font: inherit; font-size: 14px; cursor: pointer; padding: 6px var(--s-2); }

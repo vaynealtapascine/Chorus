@@ -271,7 +271,7 @@
   .menu-wrap { position: relative; }
   .menu { position: absolute; right: 0; top: 100%; z-index: 5; display: grid; min-width: 190px; padding: 6px; background: var(--surface-2); border-radius: var(--r-row); box-shadow: var(--shadow-pop); }
   .menu > * { text-align: left; background: none; border: 0; padding: 10px var(--s-3); border-radius: 8px; color: var(--ink); font: inherit; font-size: 14px; text-decoration: none; cursor: pointer; }
-  .menu > *:hover { background: var(--surface-3, var(--surface)); }
+  .menu > *:hover { background: var(--surface-3); }
   .icon-btn { width: 32px; height: 32px; flex: none; display: grid; place-items: center; background: none; border: 0; border-radius: 50%; color: var(--ink-3); cursor: pointer; }
   .icon-btn.add { color: var(--l-label); }
   .layer { border: 1.5px var(--l-dash) var(--l-border); background: var(--l-fill); border-radius: var(--r, 18px); padding-bottom: 10px; display: grid; gap: 6px; }
