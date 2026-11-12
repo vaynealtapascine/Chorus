@@ -17,19 +17,21 @@
   import { flushUploads, imageThumbnail, stageBlob } from '../sync/uploads';
   import Message from './Message.svelte';
   import PollCard from './PollCard.svelte';
-  import { closeMessage, pollOf, pollPayload } from '../polls';
+  import { closedAt, closeMessage, pollOf, pollPayload, tallyOf } from '../polls';
   import AvatarImage from './AvatarImage.svelte';
   import EmojiImage from './EmojiImage.svelte';
   import ChatFolderRail from './ChatFolderRail.svelte';
   import ChatList from './ChatList.svelte';
   import { chatPrefs, dayLabel, discColor, dmFace, folderOf, frontEvents, FOLDERS, jumpBack, pushJump } from '../chat-list';
-  import { contains, folderPrefs, label as folderLabel, mutedChat, visible as visibleFolders } from '../chat-folders';
+  import { contains, folderPrefs, holds, label as folderLabel, mutedChat, PREF as FOLDERS_PREF, setChat, toJson, visible as visibleFolders, withCustom } from '../chat-folders';
   import AttachmentView from './AttachmentView.svelte';
   import AttachSheet from './AttachSheet.svelte';
   import { linkTo } from '../share-links';
   import { expandFront } from '../subsystems';
   import Icon from './Icon.svelte';
   import EmptyState from './kit/EmptyState.svelte';
+  import UnderlineTabs from './kit/UnderlineTabs.svelte';
+  import Sheet from './Sheet.svelte';
   import { accountName, authorCards, listSpaces, openDm, spaceTitle, type SpaceInfo } from '../spaces';
   import { accountsLabel, frontingLine } from '../friends';
   import { frontOf, refreshFront } from '../friend-fronts.svelte';
@@ -951,11 +953,33 @@
   });
   const roomMedia = $derived(visibleMsgs.filter((m) => !m.deleted && !m.cw).flatMap((m) => m.attachments.filter((a) => a.mime.startsWith('image/') && !a.is_spoiler)).reverse());
   const roomFiles = $derived(visibleMsgs.filter((m) => !m.deleted && !m.cw).flatMap((m) => m.attachments.filter((a) => !a.mime.startsWith('image/') && !a.is_spoiler)).reverse());
+  const roomPolls = $derived(visibleMsgs.filter((m) => !m.deleted && pollOf(projection, m.id)).reverse().map((m) => {
+    const poll = pollOf(projection, m.id)!;
+    return { id: m.id, title: poll.question || m.text.replace(/\s+/g, ' ').slice(0, 80) || poll.options.map((o) => o.text).join(' · ').slice(0, 80),
+      votes: tallyOf(projection, m.id)?.voters ?? 0, closed: closedAt(projection, m.id, poll) != null };
+  }));
+  type InfoTab = 'members' | 'media' | 'files' | 'links' | 'polls';
+  let infoTab = $state<InfoTab>('media');
+  // the chat's folders, from its info
+  let folderSheet = $state(false);
+  const chatFolder = $derived(current ? folderOf(current, spaces(projection).find((x) => x.id === current.space_id)) : 'internal');
+  function toggleFolder(id: string) {
+    const folder = folderSettings.custom.find((c) => c.id === id);
+    if (!folder || !current) return;
+    const next = withCustom(folderSettings, setChat(folder, current.id, chatFolder, !holds(folder, current.id, chatFolder)));
+    sync.create('pref.set', sync.accountScope, null, { device: '', key: FOLDERS_PREF, value: toJson(next) });
+  }
   const roomLinks = $derived(visibleMsgs.filter((m) => !m.deleted && !m.cw).flatMap((m) => m.entities.flatMap((e) => {
     if (!['url', 'text_link'].includes(e.type) || m.entities.some((s) => s.type === 'spoiler' && s.offset < e.offset + e.length && s.offset + s.length > e.offset)) return [];
     const url = e.type === 'url' ? m.text.slice(e.offset, e.offset + e.length) : String(e.url ?? '');
     return /^https?:\/\//i.test(url) ? [{ id: `${m.id}:${e.offset}`, url, label: m.text.slice(e.offset, e.offset + e.length) }] : [];
   })).reverse());
+
+  const infoTabs = $derived<{ id: InfoTab; label: string; count: number }[]>([
+    ...(space?.kind === 'internal' ? [{ id: 'members' as const, label: 'Members', count: byLayer.length }] : []),
+    { id: 'media', label: 'Media', count: roomMedia.length }, { id: 'files', label: 'Files', count: roomFiles.length },
+    { id: 'links', label: 'Links', count: roomLinks.length }, { id: 'polls', label: 'Polls', count: roomPolls.length }]);
+  const infoShown = $derived(infoTabs.some((t) => t.id === infoTab) ? infoTab : infoTabs[0].id);
 
   const grouped = $derived(
     visibleMsgs.map((m, j) => {
@@ -1673,6 +1697,7 @@
           <Icon name={notifyLevel === 'none' ? 'muted' : 'muted'} size={20} />{notifyLevel === 'none' ? 'Unmute' : 'Mute'}</button>
         <button onclick={() => { searchHere = true; showInfo = false; }}><Icon name="search" size={20} />Search this chat</button>
         <button onclick={() => { showPins = !showPins; if (window.innerWidth < 1280) showInfo = false; }}><Icon name="pin" size={20} />Pinned{pinned.length ? ` · ${pinned.length}` : ''}</button>
+        <button onclick={() => (folderSheet = true)}><Icon name="folder" size={20} />Folder</button>
         {#if groupEditable && spaceChannels.length <= 1}<button onclick={() => (editingGroup = true)}><Icon name="edit" size={20} />Edit</button>
         {:else if canEditChannel}<button onclick={() => (editingChannel = true)}><Icon name="edit" size={20} />Edit</button>{/if}
       </div>
@@ -1681,8 +1706,8 @@
           onchanged={() => dirTick++} oneditgroup={() => (editingGroup = true)}
           oneditchannel={canEditChannel && !(groupEditable && spaceChannels.length <= 1) ? () => (editingChannel = true) : undefined} />
       {/if}
-      {#if space?.kind === 'internal'}
-        <h3>Members{shownFront.entries.length ? ' · by layer' : ''}</h3>
+      <div class="info-tabs"><UnderlineTabs tabs={infoTabs} bind:value={infoTab} label="Chat info" /></div>
+      {#if infoShown === 'members'}
         <div class="info-members">
           {#each byLayer.slice(0, 30) as { m, layer, unread: behind } (m.id)}
             {@const c = core.adaptColor(m.color, dark)}
@@ -1694,24 +1719,34 @@
           {/each}
           {#if byLayer.length > 30}<a class="see-all" href="#/members">See all {byLayer.length} members</a>{/if}
         </div>
-      {/if}
-      {#if roomMedia.length}
-        <h3>Media · {roomMedia.length}</h3>
-        <div class="info-media">
-          {#each roomMedia.slice(0, 9) as a (a.id)}<div class="media-tile"><AttachmentView attachment={a} /></div>{/each}
-        </div>
-      {/if}
-      {#if roomFiles.length}
-        <h3>Files · {roomFiles.length}</h3>
-        {#each roomFiles.slice(0, 30) as attachment (attachment.id)}<AttachmentView {attachment} />{/each}
-      {/if}
-      {#if roomLinks.length}
-        <h3>Links · {roomLinks.length}</h3>
-        {#each roomLinks.slice(0, 30) as link (link.id)}<a class="info-link" href={link.url} target="_blank" rel="noopener noreferrer">{link.label}</a>{/each}
+      {:else if infoShown === 'media'}
+        {#if roomMedia.length}
+          <div class="info-media">
+            {#each roomMedia.slice(0, 30) as a (a.id)}<div class="media-tile"><AttachmentView attachment={a} /></div>{/each}
+          </div>
+        {:else}<EmptyState icon="image" label="No media" />{/if}
+      {:else if infoShown === 'files'}
+        {#each roomFiles.slice(0, 30) as attachment (attachment.id)}<AttachmentView {attachment} />{:else}<EmptyState icon="doc" label="No files" />{/each}
+      {:else if infoShown === 'links'}
+        {#each roomLinks.slice(0, 30) as link (link.id)}<a class="info-link" href={link.url} target="_blank" rel="noopener noreferrer">{link.label}</a>{:else}<EmptyState icon="link" label="No links" />{/each}
+      {:else}
+        {#each roomPolls.slice(0, 30) as poll (poll.id)}
+          <a class="info-poll" href="#/chat/{current?.id}/{poll.id}" onclick={() => { if (window.innerWidth < 1280) showInfo = false; }}>
+            <Icon name="poll" size={18} /><span class="info-name">{poll.title}<small>{poll.closed ? 'Closed' : 'Open'} · {poll.votes} {poll.votes === 1 ? 'vote' : 'votes'}</small></span></a>
+        {:else}<EmptyState icon="poll" label="No polls" />{/each}
       {/if}
     </aside>
   {/if}
 </div>
+{#if folderSheet && current}
+  <Sheet title="Folder" onclose={() => (folderSheet = false)}>
+    {#each folderSettings.custom as f (f.id)}
+      <button class="folder-row" role="menuitemcheckbox" aria-checked={holds(f, current.id, chatFolder)} onclick={() => toggleFolder(f.id)}>
+        <Icon name="folder" size={20} /><span>{f.name || 'Folder'}</span>{#if holds(f, current.id, chatFolder)}<Icon name="check" size={18} />{/if}</button>
+    {/each}
+    <button class="folder-row" onclick={() => { folderSheet = false; foldersAt = `new:${current?.id}`; }}><Icon name="plus" size={20} /><span>New folder…</span></button>
+  </Sheet>
+{/if}
 {#if attaching && !lockedOut}
   <AttachSheet bind:pending bind:draft {pollOn} {canSend} journal={ownPosts} onphotos={() => photoInput?.click()} onfiles={() => fileInput?.click()}
     onpoll={() => { optionsOpen = true; pollOn = true; }} onlink={(id) => { draft = draft + (draft && !/\s$/.test(draft) ? ' ' : '') + linkTo(location.origin, { kind: 'post', id }); }}
@@ -1979,7 +2014,6 @@
   .info-kind, .info-topic { font-size: var(--fs-xs); color: var(--ink-3); overflow-wrap: anywhere; }
   .info-actions { display: flex; gap: 8px; margin-block: 20px; }
   .info-actions button { display: flex; flex: 1; align-items: center; justify-content: center; flex-direction: column; gap: 6px; padding: 12px; border-radius: 12px; background: var(--surface-2); color: var(--accent); border: 0; font-size: var(--fs-xs); text-decoration: none; cursor: pointer; }
-  .room-info h3 { font-size: var(--fs-xs); color: var(--accent); text-align: left; border-top: 1px solid var(--line); padding-top: 16px; }
   .info-members { display: grid; gap: 12px; padding-block: 16px; text-align: left; }
   .info-members a { display: flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; font-size: var(--fs-sm); min-height: 40px; }
   .info-avatar { display: grid; place-items: center; flex: none; width: 36px; height: 36px; border-radius: 50%; border: 2px solid var(--ring); overflow: hidden; }
@@ -2066,7 +2100,12 @@
   .info-actions { gap: 8px; margin: 0; padding: 0 16px 13px; border-bottom: 1px solid var(--line); }
   .info-actions button { gap: 4px; padding: 8px 4px; min-height: 54px; font-size: 11px; color: var(--accent); }
   .info-actions button[aria-pressed='true'] { color: var(--ink-2); }
-  .room-info h3 { margin: 0; padding: 12px 16px 4px; border: 0; font-size: 12px; font-weight: 600; }
+  .info-tabs { position: sticky; top: 0; z-index: 1; background: var(--surface); }
+  .info-poll { display: flex; align-items: center; gap: 10px; padding: 8px 16px; min-height: 56px; color: var(--ink); text-decoration: none; }
+  .info-poll:hover { background: var(--surface-2); }
+  .folder-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 46px; padding: 8px 20px; border: 0; background: none; color: var(--ink); font: inherit; font-size: 15px; text-align: left; cursor: pointer; }
+  .folder-row span { flex: 1; }
+  .folder-row :global(.icon:last-child:not(:first-child)) { color: var(--accent); }
   .info-members { gap: 0; padding: 0 0 8px; }
   .info-members a { gap: 10px; padding: 8px 16px; min-height: 56px; }
   .info-members a:hover { background: var(--surface-2); }
