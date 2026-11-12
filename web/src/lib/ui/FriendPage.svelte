@@ -65,7 +65,8 @@
     if (!r || isSystem(r.account) || (!follows(r) && r.follower?.status !== 'active')) return;
     const id = accountId;
     void api(`/posts?account=${encodeURIComponent(id)}&limit=50`).then((j) => (posts = (j.items as FriendPost[]).filter((p) => !p.reply_to && !(p as { repost_of?: string | null }).repost_of)), () => (posts = []));
-    void api(`/accounts/${encodeURIComponent(id)}/alerts`).then((j) => (personAlerts = j.post_alerts), () => {});
+    // the server answers 404 unless we follow them (someone who only follows us has no alerts to set)
+    if (follows(r)) void api(`/accounts/${encodeURIComponent(id)}/alerts`).then((j) => (personAlerts = j.post_alerts), () => {});
   });
   $effect(() => {
     const self = r && !isSystem(r.account) ? shared?.[0] : null;
