@@ -3,12 +3,13 @@ import { defineConfig } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { serviceWorker } from './plugins/service-worker';
 import { iconNames } from './plugins/icon-names';
+import { whatsNew } from './plugins/whats-new';
 
 // Dev: Vite on 5252, API/sync on 5251 (docs/OPS.md §8).
 const api = `http://127.0.0.1:${process.env.CHORUS_PORT ?? 5251}`;
 
 export default defineConfig({
-  plugins: [svelte(), serviceWorker(), iconNames()],
+  plugins: [svelte(), serviceWorker(), iconNames(), whatsNew()],
   server: {
     port: 5252,
     strictPort: true,

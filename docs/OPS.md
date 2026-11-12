@@ -148,6 +148,9 @@ chorus-server migrate                   # run pending schema migrations (also au
   publishes the APK for in-app updates; `-AndroidOnly` publishes only the APK and leaves the running
   server and web app untouched (for Android-only changes). `adb install -r` of the published APK
   updates a connected phone in place.
+- The web build writes `whats-new.txt` into `web/dist` from `android/whats-new.txt` (its `#` lines
+  dropped; `web/plugins/whats-new.ts`), so the web update sheet's "What's new" needs no separate
+  step: rewrite the Android file for the deploy and build the web app as usual.
 - Migrations are forward-only, run automatically on start after the pre-migration backup.
 - Android releases: signed APK built locally (`scripts/android-release.ps1`); served for friends
   at `https://chorus.vayne.garden/download/android` with an in-app "Update available" check
