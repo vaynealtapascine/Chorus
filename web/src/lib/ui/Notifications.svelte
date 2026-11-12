@@ -9,7 +9,8 @@
   import { apiFetch } from '../http';
   import { apiBase } from '../sync/device';
   import { router } from '../router.svelte';
-  import { bodyAuthors } from '../front-view';
+  import { bodyAuthors, frontLayers, frontView } from '../front-view';
+  import * as fd from '../fronting-display';
   import { canWriteAs } from '../posts';
   import { longPress } from '../long-press';
   import { inbox, refreshInbox } from '../inbox-state.svelte';
@@ -18,6 +19,8 @@
   import AvatarImage from './AvatarImage.svelte';
   import Icon from './Icon.svelte';
   import EmptyState from './kit/EmptyState.svelte';
+  import MenuSheet from './kit/MenuSheet.svelte';
+  import MenuRow from './kit/MenuRow.svelte';
   import AcceptSheet from './AcceptSheet.svelte';
   import FollowBackSheet from './FollowBackSheet.svelte';
   import { friends } from '../friends-state.svelte';
@@ -40,7 +43,9 @@
   let loading = $state(false);
   let error = $state('');
   let notice = $state('');
-  let menu = $state<{ item: InboxItem; x: number; y: number } | null>(null);
+  let menu = $state<InboxItem | null>(null);
+  // the friend a row is about, with how we follow them (for Quiet and the notify page)
+  let menuFollow = $state<{ id: string; prefs?: Record<string, unknown>; account: { id: string } } | null>(null);
   let readAs = $state(false);
   let panelOpen = $state(false);
   let accepting = $state<InboxItem | null>(null);
@@ -67,6 +72,8 @@
     if (!item.needsYou) save(mark(read, item));
     if (item.kind === 'review') router.go('/review');
     else if (item.kind === 'own_switch') router.go('/history');
+    // a request waits for Allow here; the answer opens whose it was
+    else if (item.kind === 'alert_request' || item.kind === 'alert_ask' || item.kind === 'follow_request') return;
     else if (item.postId) router.go(`/journal/post/${encodeURIComponent(item.postId)}`);
     else if (item.channelId) router.go(`/chat/${encodeURIComponent(item.channelId)}${item.messageId ? `/${encodeURIComponent(item.messageId)}` : ''}`);
     else if (item.kind === 'export_ready') router.go('/settings/data');
@@ -93,18 +100,24 @@
     if (item.kind === 'alert_ask') return act('Couldn’t decline. Try again.', () => call('DELETE', `/alerts/${item.memberId}/${item.accountId}`));
     return act('Couldn’t decline. Try again.', () => sync.create('follow.end', sync.accountScope, item.followId!, {}));
   }
-  async function quietHour(item: InboxItem) {
+  const friendOf = (item: InboxItem) => item.category === 'friends' && !!item.accountId && item.kind !== 'alert_ask' && item.kind !== 'follow_request';
+  async function quietHour() {
+    const f = menuFollow;
     menu = null;
     await act('Couldn’t quiet them. Try again.', async () => {
-      const follows = (await call('GET', '/follows')) as { following: { id: string; status: string; prefs?: Record<string, unknown>; account: { id: string } }[] };
-      const f = follows.following.find((x) => x.account.id === item.accountId && x.status === 'active');
       if (!f) throw new Error('not following');
       await call('PUT', `/follows/${f.id}/prefs`, { ...(f.prefs ?? {}), mute_until: Date.now() + 60 * 60 * 1000 });
     });
   }
-  function openMenu(item: InboxItem, x: number, y: number) {
-    menu = { item, x: Math.min(x, innerWidth - 300), y: Math.min(y, innerHeight - 320) };
+  function openMenu(item: InboxItem) {
+    menu = item; menuFollow = null;
+    if (!friendOf(item)) return;
+    void (call('GET', '/follows') as Promise<{ following: { id: string; status: string; prefs?: Record<string, unknown>; account: { id: string } }[] }>).then((r) => {
+      if (menu?.id === item.id) menuFollow = r.following.find((x) => x.account.id === item.accountId && x.status === 'active') ?? null;
+    }, () => {});
   }
+  // the kind it is ("Friends’ switches", F11.3), else its chip's name
+  const kindOf = (item: InboxItem) => SHOWS.find(([k]) => k === item.shows)?.[1] ?? chipList.find(([id]) => id === item.category)?.[1] ?? '';
   const BADGE: Record<string, [string, string]> = {
     mention: ['@', 'accent'], reply: ['reply', 'accent'], post_reply: ['reply', 'accent'], poll_nudge: ['bell', 'accent'], dm: ['chat', 'accent'], message: ['chat', 'accent'],
     member_dm: ['chat', 'accent'], switch: ['swap', 'accent'], own_switch: ['swap', 'accent'], reaction: ['heart', 'danger'],
@@ -113,6 +126,15 @@
   };
   const look = (item: InboxItem) => core.adaptColor(item.color ?? '#A09184', dark);
   const lead = (item: InboxItem) => item.actor && item.title.startsWith(item.actor) ? item.actor : null;
+  // who is here comes first, in the order Fronting shows them, with their layer under the name (F11.4)
+  const layerOf = $derived.by(() => {
+    const out = new Map<string, string>();
+    const view = frontView(projection, sync.accountId);
+    const scene = fd.scene(frontLayers(projection, sync.accountId), view.entries, fd.displayPrefs(projection.rows.pref, sync.accountId), sync.accountId, []);
+    for (const l of scene.all) for (const e of l.entries) if (e.subject_type === 'member' && !out.has(e.subject_id)) out.set(e.subject_id, l.name.toLowerCase());
+    return out;
+  });
+  const readOrder = $derived.by(() => { const order = [...layerOf.keys()]; return [...own].sort((x, y) => (order.indexOf(x.id) + 1 || Infinity) - (order.indexOf(y.id) + 1 || Infinity)); });
   const shownShows = $derived(SHOWS.filter(([k]) => !person || k !== 'own_switches'));
 </script>
 
@@ -127,18 +149,6 @@
       <button class="mark-all" onclick={markAll} disabled={unread(items, read, pref) === 0}><Icon name="read" size={18} />Mark all read</button>
       <button class="panel-toggle icon-only" aria-label="What shows here" aria-expanded={panelOpen} onclick={() => (panelOpen = !panelOpen)}><Icon name="sliders" size={20} /></button>
     </header>
-    {#if readAs}
-      <div class="read-as" role="dialog" aria-label="Read as">
-        {#each own as m (m.id)}
-          {@const n = unread(items, marks.get(m.id) ?? { until: 0, ids: [] }, pref)}
-          {@const c = core.adaptColor(m.color, dark)}
-          <button class:on={m.id === reader?.id} onclick={() => { chosen = m.id; readAs = false; }}>
-            <span class="mini" style="--bg: {c.ring}; --ink: {c.avatar_ink}"><AvatarImage hash={m.avatar_blob} glyph={m.sigils[0] ?? m.name[0]} name={m.name} /></span>
-            <span class="who">{m.display_name ?? m.name}</span><span class="count" class:none={!n}>{n ? `${n} unread` : 'caught up'}</span>
-          </button>
-        {/each}
-      </div>
-    {/if}
     <div class="chips" role="tablist" aria-label="Show">
       {#each chipList as [id, label] (id)}
         <button role="tab" aria-selected={chip === id} class:on={chip === id} onclick={() => (chip = id)}>{label} <span>{unread(items, read, pref, id)}</span></button>
@@ -150,17 +160,18 @@
     <ol class="rows">
       {#each shown as item, i (item.id)}
         {@const s = section(item, startOfToday)}
-        {#if i === 0 || section(shown[i - 1], startOfToday) !== s}<li class="section">{s}</li>{/if}
+        {#if i === 0 || section(shown[i - 1], startOfToday) !== s}<li class="section" class:block={s === 'Needs you'}>{s}</li>{/if}
         {@const unreadRow = !isRead(read, item)}
         {@const [badge, tone] = BADGE[item.kind] ?? ['bell', 'ink-2']}
         {@const c = look(item)}
         <!-- the row is a button for keyboards; right-click or a long press opens its menu -->
-        <li class="row" class:unread={unreadRow} data-kind={item.kind}
-          oncontextmenu={(e) => { e.preventDefault(); openMenu(item, e.clientX, e.clientY); }}
-          use:longPress={{ enabled: true, skip: 'button, a', onpress: ({ x, y }) => openMenu(item, x, y) }}>
+        <li class="row" class:unread={unreadRow} class:block={item.needsYou} data-kind={item.kind}
+          oncontextmenu={(e) => { e.preventDefault(); openMenu(item); }}
+          use:longPress={{ enabled: true, skip: 'button, a', onpress: () => openMenu(item) }}>
           <span class="badge tone-{tone}" aria-hidden="true">{#if badge.length === 1}{badge}{:else}<Icon name={badge} size={20} />{/if}</span>
           <div class="body">
-            {#if item.actor}<span class="face" style="--bg: {c.ring}; --ink: {c.avatar_ink}"><AvatarImage hash={item.avatarBlob} glyph={item.actor[0]?.toUpperCase() ?? '?'} name={item.actor} /></span>{/if}
+            {#if item.faces && item.faces.length > 1}<span class="stack">{#each item.faces.slice(0, 3) as n (n)}<span class="face ringed" style="--bg: {c.ring}; --ink: {c.avatar_ink}"><AvatarImage glyph={n[0]?.toUpperCase() ?? '?'} name={n} /></span>{/each}</span>
+            {:else if item.actor}<span class="face" style="--bg: {c.ring}; --ink: {c.avatar_ink}"><AvatarImage hash={item.avatarBlob} glyph={item.actor[0]?.toUpperCase() ?? '?'} name={item.actor} /></span>{/if}
             <button class="open" onclick={() => open(item)}>
               {#if lead(item)}<strong>{lead(item)}</strong>{item.title.slice(lead(item)!.length)}{:else}<strong>{item.title}</strong>{/if}
             </button>
@@ -175,7 +186,7 @@
           <div class="side">
             {#if !item.untimed}<time datetime={new Date(item.at).toISOString()}>{shortAgo(item.at)}</time>{/if}
             {#if unreadRow}<span class="dot" aria-label="Unread"></span>{/if}
-            <button class="more icon-only" aria-label="More options" onclick={(e) => openMenu(item, e.clientX, e.clientY)}><Icon name="more" size={16} /></button>
+            <button class="more icon-only" aria-label="More options" onclick={() => openMenu(item)}><Icon name="more" size={16} /></button>
           </div>
         </li>
       {:else}
@@ -198,26 +209,36 @@
   </aside>
 </div>
 
+{#if readAs}
+  <MenuSheet title="Read as" onclose={() => (readAs = false)}>
+    {#each readOrder as m (m.id)}
+      {@const count = unread(items, marks.get(m.id) ?? { until: 0, ids: [] }, pref)}
+      {@const c = core.adaptColor(m.color, dark)}
+      <button class="read-row" class:on={m.id === reader?.id} role="menuitemradio" aria-checked={m.id === reader?.id} onclick={() => { chosen = m.id; readAs = false; }}>
+        <span class="mini" style="--bg: {c.ring}; --ink: {c.avatar_ink}"><AvatarImage hash={m.avatar_blob} glyph={m.sigils[0] ?? m.name[0]} name={m.name} /></span>
+        <span class="who"><strong>{m.display_name ?? m.name}</strong>{#if layerOf.get(m.id)}<small>{layerOf.get(m.id)}</small>{/if}</span>
+        <span class="count" class:none={!count}>{count ? `${count} unread` : 'caught up'}</span>
+        {#if m.id === reader?.id}<Icon name="check" size={20} />{/if}
+      </button>
+    {/each}
+  </MenuSheet>
+{/if}
+
 {#if menu}
-  {@const item = menu.item}
-  {@const isFriend = item.category === 'friends' && !!item.accountId && item.kind !== 'alert_ask' && item.kind !== 'follow_request'}
-  <button class="scrim" aria-label="Close menu" onclick={() => (menu = null)}></button>
-  <div class="menu" role="menu" style="left: {menu.x}px; top: {menu.y}px">
-    <p class="menu-title">{item.title}</p>
-    {#if !item.needsYou}
-      {@const was = isRead(read, item)}
-      <button role="menuitem" onclick={() => { save(was ? unmark(read, item, items) : mark(read, item)); menu = null; }}><Icon name="check" size={18} />{was ? 'Mark as unread' : 'Mark as read'}</button>
-    {/if}
-    <button role="menuitem" onclick={() => { menu = null; open(item); }}><Icon name="chevron-right" size={18} />{item.postId ? 'Open post' : item.channelId ? 'Open chat' : item.actor && item.accountId ? `Open ${item.actor}` : 'Open'}</button>
-    {#if isFriend}
-      <button role="menuitem" onclick={() => quietHour(item)}><Icon name="muted" size={18} /><span>Quiet {item.actor} for an hour<small>Their switches wait an hour</small></span></button>
-      <button role="menuitem" onclick={() => { menu = null; router.go(`/people/${encodeURIComponent(item.accountId!)}`); }}><Icon name="bell" size={18} /><span>Notifications from {item.actor}</span></button>
+  {@const item = menu}
+  {@const was = isRead(read, item)}
+  <MenuSheet title={item.title} subtitle={[kindOf(item), item.untimed ? '' : shortAgo(item.at)].filter(Boolean).join(' · ')} onclose={() => (menu = null)}>
+    {#if !item.needsYou}<MenuRow icon="check" label={was ? 'Mark as unread' : 'Mark as read'} onclick={() => { save(was ? unmark(read, item, items) : mark(read, item)); menu = null; }} />{/if}
+    <MenuRow icon="chevron-right" label={item.postId ? 'Open post' : item.channelId ? 'Open chat' : item.actor && item.accountId ? `Open ${item.actor}` : 'Open'} onclick={() => { menu = null; open(item); }} />
+    {#if menuFollow}
+      <MenuRow icon="muted" label="Quiet {item.actor} for an hour" sub="Their switches wait until {new Date(Date.now() + 3_600_000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}" onclick={quietHour} />
+      <MenuRow icon="bell" label="Notifications from {item.actor}" onclick={() => { const f = menuFollow; menu = null; if (f) router.go(`/people/notify/${encodeURIComponent(f.id)}`); }} />
     {/if}
     {#if item.shows}
       {@const label = SHOWS.find(([k]) => k === item.shows)?.[1] ?? ''}
-      <button role="menuitem" onclick={() => { setShows(item.shows!, false); menu = null; }}><Icon name="eye-off" size={18} /><span>Hide {label.toLowerCase()} here<small>They still reach your devices as set in settings</small></span></button>
+      <MenuRow icon="eye-off" label="Hide {label.toLowerCase()} here" onclick={() => { setShows(item.shows!, false); menu = null; }} />
     {/if}
-  </div>
+  </MenuSheet>
 {/if}
 
 {#if friends.followBack}<FollowBackSheet />{/if}
@@ -245,18 +266,25 @@
   .chips button span { color: var(--ink-3); font-weight: 500; margin-left: 2px; }
   .chips button.on { background: var(--accent); color: var(--on-accent); }
   .chips button.on span { color: inherit; opacity: .8; }
-  .read-as { margin: 0 20px 8px; padding: 8px; border-radius: var(--r-md); background: var(--surface); display: grid; gap: 2px; animation: chorus-fade-in var(--t-fast) var(--ease); }
-  .read-as button { display: flex; align-items: center; gap: 12px; border: 0; border-radius: 12px; background: none; color: var(--ink); padding: 8px; font: inherit; cursor: pointer; text-align: left; }
-  .read-as button.on { background: var(--accent-soft); }
-  .read-as .who { flex: 1; font-weight: 600; }
-  .read-as .count { color: var(--accent); font-size: var(--fs-sm); }
-  .read-as .count.none { color: var(--ink-3); }
+  .read-row { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 56px; padding: 8px 12px; border: 0; border-radius: 12px; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+  .read-row.on { background: var(--accent-soft); }
+  .read-row.on strong { color: var(--accent); font-weight: 600; }
+  .read-row .who { flex: 1; min-width: 0; display: grid; }
+  .read-row strong { font-size: 16px; font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .read-row small { color: var(--ink-3); font-size: 13px; }
+  .read-row .count { color: var(--accent); font-size: 14px; font-weight: 600; }
+  .read-row .count.none { color: var(--ink-3); font-weight: 400; }
+  .read-row > :global(.icon) { color: var(--accent); }
   .mini, .face { display: inline-grid; place-items: center; border-radius: 50%; overflow: hidden; background: var(--bg); color: var(--ink); font-weight: 700; flex: none; }
-  .mini { width: 32px; height: 32px; }
+  .mini { width: 40px; height: 40px; }
   .face { width: 24px; height: 24px; font-size: 12px; }
+  .stack { display: inline-flex; }
+  .stack > .face + .face { margin-left: -6px; }
+  .face.ringed { box-shadow: 0 0 0 1.5px var(--bg); }
   .rows { list-style: none; margin: 0; padding: 0; }
   .section { padding: 16px 20px 8px; color: var(--accent); font-size: var(--fs-sm); font-weight: 600; }
   .row { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 12px; padding: 12px 20px; animation: chorus-fade-in var(--t-fast) var(--ease); }
+  .section.block, .row.block { background: color-mix(in srgb, var(--accent-soft) 45%, var(--bg)); }
   .row.unread { background: color-mix(in srgb, var(--accent-soft) 70%, var(--bg)); }
   .row:hover { background: color-mix(in srgb, var(--surface) 70%, var(--bg)); }
   .badge { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 17px; }
@@ -290,14 +318,6 @@
   .toggle span { flex: 1; }
   .quiet-line { display: flex; gap: 10px; align-items: center; margin: 0; color: var(--ink-3); font-size: var(--fs-sm); }
   .footnote { margin: 0; color: var(--ink-3); font-size: var(--fs-xs); line-height: 1.5; }
-  .scrim { position: fixed; inset: 0; z-index: 40; border: 0; background: rgb(0 0 0 / .25); }
-  .menu { position: fixed; z-index: 41; width: 300px; display: grid; gap: 2px; padding: 8px; border-radius: var(--r-md); background: var(--surface); box-shadow: var(--shadow-pop); animation: chorus-fade-in var(--t-fast) var(--ease); }
-  .menu.center { left: 50%; top: 30%; transform: translateX(-50%); }
-  .menu-title { margin: 4px 8px 8px; font-weight: 600; font-size: var(--fs-sm); color: var(--ink); }
-  .menu button { display: flex; align-items: center; gap: 12px; border: 0; border-radius: 10px; background: none; color: var(--ink); padding: 10px 8px; font: inherit; font-size: var(--fs-md); text-align: left; cursor: pointer; }
-  .menu button:hover { background: var(--surface-2); }
-  .menu button span { display: grid; gap: 2px; }
-  .menu small { color: var(--ink-3); font-size: var(--fs-xs); }
   @media (max-width: 1279px) {
     .notifications-layout { grid-template-columns: minmax(0, 1fr); }
     .inbox { border-right: 0; }

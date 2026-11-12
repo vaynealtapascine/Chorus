@@ -101,3 +101,12 @@ describe('needs-you rows carry their time when it is known', () => {
     expect(rows[2].detail).toBeNull();
   });
 });
+
+it('a grouped heart names everyone for stacked faces', () => {
+  const target = { id: 'p', kind: 'note', title: 'Tea', text: '', cw: null };
+  const rows = fromActivity({ items: [
+    { kind: 'reaction', at: 1, emoji: '💜', member_id: 'kit', member_name: 'Kit', target },
+    { kind: 'reaction', at: 2, emoji: '💜', member_id: 'jun', member_name: 'Juniper', target },
+  ], reply_counts: {}, reactions: {} });
+  expect(rows[0].faces).toEqual(['Kit', 'Juniper']);
+});

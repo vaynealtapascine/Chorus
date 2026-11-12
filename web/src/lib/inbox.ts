@@ -28,6 +28,8 @@ export interface InboxItem {
   needsYou?: boolean;
   /** `at` is only when it was read, not when it happened: no time is shown */
   untimed?: boolean;
+  /** everyone a grouped row names ("Kit and Juniper"), first names first, for stacked faces */
+  faces?: string[];
 }
 
 export interface InboxRead { until: number; ids: string[] }
@@ -161,7 +163,8 @@ export function fromActivity(activity: JournalActivity | null | undefined): Inbo
     const first = group[0];
     const verb = first.emoji === '💜' ? 'liked' : `reacted ${first.emoji} to`;
     out.push({ id: `react:${key}:${group.map((g) => g.member_id ?? '').sort().join(',')}`, kind: 'reaction', category: 'friends', shows: 'likes',
-      at: Math.max(...group.map((g) => g.at)), actor: label, title: `${label} ${verb} ${about(first.target)}`, postId: first.target?.id });
+      at: Math.max(...group.map((g) => g.at)), actor: label, title: `${label} ${verb} ${about(first.target)}`, postId: first.target?.id,
+      faces: [...new Set(group.map((g) => g.member_name).filter((n): n is string => !!n))] });
   }
   for (const a of activity.items) {
     if ((a.kind !== 'quote' && a.kind !== 'repost') || !a.post) continue;
