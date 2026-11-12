@@ -19,6 +19,7 @@
   import Stage from './lib/ui/Stage.svelte';
   import Search from './lib/ui/Search.svelte';
   import Insights from './lib/ui/Insights.svelte';
+  import SystemBoard from './lib/ui/SystemBoard.svelte';
   import Journal from './lib/ui/Journal.svelte';
   import PostThread from './lib/ui/PostThread.svelte';
   import Profile from './lib/ui/Profile.svelte';
@@ -138,7 +139,7 @@
     const read = (reader && readMarks(projection.rows.pref, sync.accountId).get(reader)) || { until: 0, ids: [] };
     return unreadCount(inbox.items, read, showsPref(projection.rows.pref, sync.accountId));
   });
-  const active = $derived(['member', 'profile'].includes(router.route.name) ? 'members' : router.route.name === 'post' ? 'journal' :
+  const active = $derived(['member', 'profile'].includes(router.route.name) ? 'members' : ['post', 'board'].includes(router.route.name) ? 'journal' :
     router.route.name === 'stage' ? 'chat' : router.route.name === 'friend' ? 'people' : ['history', 'fronts', 'layers', 'review'].includes(router.route.name) ? 'fronting' :
     ['insights', 'data', 'trash', 'settings', 'computer', 'search', 'post-stage'].includes(router.route.name) ? 'more' : router.route.name);
   const account = $derived(projection?.rows.account?.[sync.accountId]?.fields);
@@ -162,7 +163,7 @@
     }
     return current.filter((e) => e.layer_id === 'front').map((e) => subjects.get(e.subject_id)?.name).filter(Boolean).join(' & ') || 'No one fronting';
   });
-  const routeTitle = $derived(({ home: 'Home', fronting: 'Fronting', notifications: 'Notifications', members: 'Members', member: 'Edit member', profile: 'Profile', journal: 'Journal', post: 'Post', chat: 'Chat', people: 'Friends', friend: 'Friends', history: 'Front history', review: 'Review', fronts: 'Fronts', layers: 'Layers & display', insights: 'Insights', data: 'Your data', settings: 'Settings', search: 'Search', trash: 'Trash', more: 'More', computer: 'This computer' } as Record<string, string>)[router.route.name] ?? 'Chorus');
+  const routeTitle = $derived(({ home: 'Home', fronting: 'Fronting', notifications: 'Notifications', members: 'Members', member: 'Edit member', profile: 'Profile', journal: 'Journal', board: 'System board', post: 'Post', chat: 'Chat', people: 'Friends', friend: 'Friends', history: 'Front history', review: 'Review', fronts: 'Fronts', layers: 'Layers & display', insights: 'Insights', data: 'Your data', settings: 'Settings', search: 'Search', trash: 'Trash', more: 'More', computer: 'This computer' } as Record<string, string>)[router.route.name] ?? 'Chorus');
 </script>
 
 <svelte:document onclick={openOwnLink} />
@@ -239,6 +240,8 @@
         <Profile {projection} id={router.route.id} {dark} />
       {:else if router.route.name === 'journal'}
         <Journal {projection} {dark} />
+      {:else if router.route.name === 'board'}
+        <SystemBoard {projection} {dark} />
       {:else if router.route.name === 'post' && router.route.id}
         <PostThread {projection} id={router.route.id} {dark} />
       {:else if router.route.name === 'post-stage' && router.route.id}

@@ -79,7 +79,7 @@
 <div class="journal-layout"><section class="journal">
   <header><h1 class="display">Journal</h1>{#if self}<a href="#/profile/{self.id}">My profile</a>{:else}<label>React as <select bind:value={actingAs} aria-label="React as member"><option value="">Current front</option>{#each active as person (person.id)}<option value={person.id}>{person.display_name ?? person.name}</option>{/each}</select></label>{/if}</header>
   <a href="#/search/saved">Search saved posts</a>
-  <nav aria-label="Journal sections">{#each SECTIONS as [id, label] (id)}<button class:on={section === id} aria-current={section === id ? 'page' : undefined} onclick={() => (section = id)}>{label}</button>{/each}</nav>
+  <nav aria-label="Journal sections">{#each SECTIONS as [id, label] (id)}<button class:on={section === id} aria-current={section === id ? 'page' : undefined} onclick={() => (section = id)}>{label}</button>{/each}{#if !self}<a class="tab-link" href="#/journal/board">Board</a>{/if}</nav>
   {#if section === 'lists'}<JournalLists {projection} {dark} />{:else if section === 'feeds'}<JournalFeeds {projection} {dark} />
   {:else if section === 'friends'}<JournalFriends {projection} {speaker} speakerName={speaker ? name(speaker) : ''} {dark} />
   {:else if section === 'saved'}
@@ -137,6 +137,7 @@
   .timeline { animation: chorus-fade-in var(--t-fast) var(--ease); }
   nav { display: flex; gap: var(--s-2); border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
   nav button { flex: none; border: 0; background: none; padding: var(--s-2) var(--s-3); cursor: pointer; color: var(--ink-3); white-space: nowrap; }
+  .tab-link { flex: none; padding: var(--s-2) var(--s-3); color: var(--ink-3); text-decoration: none; white-space: nowrap; }
   nav button.on { border-bottom: 2px solid var(--accent); font-weight: 600; color: var(--ink); }
   header label { color: var(--ink-3); font-size: var(--fs-sm); }
   select { border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--ink); padding: var(--s-2); }
