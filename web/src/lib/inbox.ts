@@ -26,6 +26,8 @@ export interface InboxItem {
   memberId?: string | null;
   followId?: string | null;
   needsYou?: boolean;
+  /** `at` is only when it was read, not when it happened: no time is shown */
+  untimed?: boolean;
 }
 
 export interface InboxRead { until: number; ids: string[] }
@@ -173,16 +175,16 @@ export function fromActivity(activity: JournalActivity | null | undefined): Inbo
   return out;
 }
 
-export interface FollowRow { id: string; status: string; account: { id: string; handle: string | null; display_name: string | null } }
+export interface FollowRow { id: string; status: string; created_at?: number; account: { id: string; handle: string | null; display_name: string | null } }
 
 /** What waits on us: follow requests, alert requests and front reviews. Always unread. */
 export function needsYou(followers: FollowRow[], alerts: Json[], reviews: { id: string }[], person: boolean,
-  memberName: (id: string) => string | undefined, now: number): InboxItem[] {
+  memberName: (id: string) => string | undefined, now: number, review: (r: { id: string }) => [string, number] | null = () => null): InboxItem[] {
   const out: InboxItem[] = [];
   for (const f of followers.filter((f) => f.status === 'requested')) {
     const who = f.account.display_name || (f.account.handle ? `@${f.account.handle}` : 'Someone');
-    out.push({ id: `follow:${f.id}`, kind: 'follow_request', category: 'friends', shows: null, at: now, actor: who,
-      title: `${who} wants to follow ${person ? 'you' : 'your system'}`, accountId: f.account.id, followId: f.id, needsYou: true });
+    out.push({ id: `follow:${f.id}`, kind: 'follow_request', category: 'friends', shows: null, at: f.created_at && f.created_at > 0 ? f.created_at : now, actor: who,
+      title: `${who} wants to follow ${person ? 'you' : 'your system'}`, accountId: f.account.id, followId: f.id, needsYou: true, untimed: !(f.created_at && f.created_at > 0) });
   }
   for (const a of alerts.filter((a) => a.status === 'requested')) {
     const account = a.account as Json | undefined;
@@ -190,10 +192,13 @@ export function needsYou(followers: FollowRow[], alerts: Json[], reviews: { id: 
     const member = String(a.member_id ?? '');
     out.push({ id: `alert:${member}:${text(account, 'id')}`, kind: 'alert_ask', category: 'friends', shows: null,
       at: Number(a.created_at ?? now), actor: who, title: `${who} wants to hear when ${memberName(member) ?? 'a member'} posts`,
-      memberId: member, accountId: text(account, 'id'), needsYou: true });
+      memberId: member, accountId: text(account, 'id'), needsYou: true, untimed: !(Number(a.created_at) > 0) });
   }
-  for (const r of reviews) out.push({ id: `review:${r.id}`, kind: 'review', category: 'system', shows: null, at: now, actor: null,
-    title: 'Two devices switched within a minute', detail: 'Check which one is right', needsYou: true });
+  for (const r of reviews) {
+    const said = review(r);
+    out.push({ id: `review:${r.id}`, kind: 'review', category: 'system', shows: null, at: said?.[1] ?? now, actor: null,
+      title: 'Two devices switched within a minute', detail: said?.[0] ?? null, needsYou: true, untimed: !said });
+  }
   return out;
 }
 

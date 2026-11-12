@@ -12,6 +12,7 @@
   import LinkDevice from './LinkDevice.svelte';
   import Icon from './Icon.svelte';
   import Face from './Face.svelte';
+  import ReviewRow from './ReviewRow.svelte';
   import PlaceSheet from './PlaceSheet.svelte';
   import MemberState from './MemberState.svelte';
   import MenuSheet from './kit/MenuSheet.svelte';
@@ -51,8 +52,12 @@
   let now = $state(Date.now());
   $effect(() => { const t = setInterval(() => (now = Date.now()), 30_000); return () => clearInterval(t); });
   const time = (t: number) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  // an unconfigured account's review cards (F3.6) are answered on Front history
-  const reviews = $derived(configured ? 0 : (projection.reviews?.[sync.accountId] ?? []).filter((r) => !projection.rows.front_review?.[r.id]?.fields?.resolution).length);
+  // two devices that switched together (F3.6) are answered on the Review page
+  const reviews = $derived.by(() => {
+    void projection.front_systems;
+    const open = configured ? sync.frontHistory(frontId)?.reviews ?? [] : projection.reviews?.[sync.accountId] ?? [];
+    return open.filter((r) => !projection.rows.front_review?.[r.id]?.fields?.resolution).length;
+  });
   const showEmpty = $derived(!view.hideEmpty || view.preset === 'complete');
   const rings = $derived(scene.nested.filter((l, i) => i === 0 || showEmpty || l.entries.length));
   let awayOpen = $state<boolean | null>(null);
@@ -121,9 +126,7 @@
       </div>
     {/if}
 
-    {#if reviews}
-      <a class="review-row" href="#/history"><Icon name="history" size={18} /><span>{reviews === 1 ? 'Two devices switched together · review' : `${reviews} switches to review`}</span><Icon name="chevron-right" size={18} /></a>
-    {/if}
+    <ReviewRow count={reviews} front={configured ? frontId : ''} />
 
     {#if view.preset === 'simple'}
       {@const inner = scene.nested[0] ?? scene.all.find((l) => !l.separate)}
@@ -303,9 +306,6 @@
   .stack { display: flex; }
   .stack > :global(*) + :global(*) { margin-left: -6px; }
   .mute-face { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; background: var(--line); color: var(--ink-2); font-size: 11px; font-weight: 700; }
-  .review-row { display: flex; align-items: center; gap: 10px; padding: 12px; border-radius: 12px; background: var(--surface); color: var(--ink); font-size: 14px; text-decoration: none; }
-  .review-row span { flex: 1; }
-  .review-row :global(.icon:first-child) { color: var(--warn); }
   .away, .other { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px 10px 14px; border: 0; border-radius: 16px; background: var(--surface); color: var(--ink-3); font: inherit; cursor: pointer; text-align: left; }
   .away .info { font-size: 14px; font-weight: 500; }
   .other { gap: 12px; padding: 10px 12px; color: var(--ink); }

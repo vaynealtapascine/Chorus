@@ -8,7 +8,7 @@
   import { frontingUi } from '../fronting-ui.svelte';
   import { whoKey, whoMap } from '../fronting-subjects';
   import { sync, type Projection } from '../sync/client';
-  import Reviews from './Reviews.svelte';
+  import ReviewRow from './ReviewRow.svelte';
   import LogPastSwitch from './LogPastSwitch.svelte';
   import Face from './Face.svelte';
   import Icon from './Icon.svelte';
@@ -116,7 +116,7 @@
   {#if configured && fronts.length > 1}
     <div class="fronts">{#each fronts as f (f.id)}<button class:on={f.id === front} aria-pressed={f.id === front} onclick={() => { frontingUi.front = f.id; shown = 200; }}>{f.name}</button>{/each}</div>
   {/if}
-  {#if configured && named}<Reviews {projection} {front} {named} />{:else if !configured}<Reviews {projection} />{/if}
+  <ReviewRow count={(configured ? named?.reviews ?? [] : projection.reviews?.[sync.accountId] ?? []).filter((r) => !projection.rows.front_review?.[r.id]?.fields?.resolution).length} front={configured ? front : ''} />
 
   <div class="timeline" aria-label="Who was present" aria-busy={loading}>
     <div class="axis">

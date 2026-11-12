@@ -1,6 +1,6 @@
 // A tiny hash router: #/, #/members, #/members/<id>. Keeps URLs shareable between devices.
 export interface Route {
-  name: 'home' | 'fronting' | 'notifications' | 'members' | 'member' | 'history' | 'chat' | 'trash' | 'people' | 'stage' | 'data' | 'search' | 'insights' | 'journal' | 'profile' | 'post-stage' | 'post' | 'more' | 'settings' | 'computer' | 'fronts' | 'layers' | 'friend' | 'message';
+  name: 'home' | 'fronting' | 'notifications' | 'members' | 'member' | 'history' | 'chat' | 'trash' | 'people' | 'stage' | 'data' | 'search' | 'insights' | 'journal' | 'profile' | 'post-stage' | 'post' | 'more' | 'settings' | 'computer' | 'fronts' | 'layers' | 'friend' | 'message' | 'review';
   id?: string;
   messageId?: string;
   /** a friend's member (friend route, D-101) */
@@ -24,6 +24,7 @@ function parse(hash: string): Route {
   // the pages that moved into Settings keep their old addresses
   if (parts[0] === 'computer') return { name: 'settings', id: 'computer' };
   if (parts[0] === 'history') return { name: 'history' };
+  if (parts[0] === 'review') return { name: 'review', id: parts[1] ? decodeURIComponent(parts[1]) : undefined };
   if (parts[0] === 'fronting') return { name: 'fronting' };
   if (parts[0] === 'fronts') return { name: 'fronts' };
   if (parts[0] === 'layers') return { name: 'layers', id: parts[1] ? decodeURIComponent(parts[1]) : undefined };

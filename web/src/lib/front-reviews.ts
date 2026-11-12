@@ -19,3 +19,33 @@ export function namedReviewMerge(rows: FrontHistoryRow[], review: { switch_a: st
     { action: 'retract', target_op_id: b.id },
   ];
 }
+
+/** The words of the Review page (F3.6); Android's `FrontReviews`. */
+export const THIS_DEVICE = 'This device';
+export const OTHER_DEVICE = 'Another device';
+
+/** "Keep Pixel 8’s", "Keep this device’s". */
+export const keepLabel = (device: string): string =>
+  device === THIS_DEVICE ? 'Keep this device’s' : device === OTHER_DEVICE ? 'Keep the other device’s' : `Keep ${device}’s`;
+
+/** What "Both are right" means, in names. */
+export const together = (a: string, b: string): string => (a === b ? `${a} fronted` : `${a} and ${b} fronted together`);
+
+/** "Phone says Foxglove, laptop says Amarynthe" (F11.1): what each device recorded. */
+export function disagree(aDevice: string, aWho: string, bDevice: string, bWho: string): string {
+  const quiet = (d: string) => (d === THIS_DEVICE || d === OTHER_DEVICE ? d.toLowerCase() : d);
+  return `${aDevice} says ${aWho}, ${quiet(bDevice)} says ${bWho}`;
+}
+
+/** A device by its saved name; this one, or another one, when it has none. */
+export const deviceName = (names: ReadonlyMap<string, string>, id: string | null | undefined, me: string | undefined): string =>
+  (id ? names.get(id) || (id === me ? THIS_DEVICE : null) : null) ?? OTHER_DEVICE;
+
+export interface ReviewSide { id: string; occurred_at: number; device_id?: string | null; entries: { subject_type: string; subject_id: string }[] }
+
+/** The Needs-you row's detail and time for a review, from the two switches it is about; null while either is unknown. */
+export function summary(a: ReviewSide | undefined, b: ReviewSide | undefined, who: (type: string, id: string) => string, device: (s: ReviewSide) => string): [string, number] | null {
+  if (!a || !b) return null;
+  const names = (s: ReviewSide) => s.entries.map((e) => who(e.subject_type, e.subject_id)).join(' & ') || 'No one';
+  return [disagree(device(a), names(a), device(b), names(b)), Math.max(a.occurred_at, b.occurred_at)];
+}

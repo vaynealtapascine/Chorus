@@ -91,3 +91,13 @@ describe('inbox', () => {
     expect(marks.has('amy') || marks.has('kit')).toBe(false);
   });
 });
+
+describe('needs-you rows carry their time when it is known', () => {
+  it('uses a request\'s own time and what each device recorded', () => {
+    const rows = needsYou([{ id: 'f', status: 'requested', created_at: 500, account: { id: 'mb', handle: 'mossbank', display_name: 'Mossbank' } }], [], [{ id: 'r' }, { id: 'q' }], false, () => undefined, 9000,
+      (r) => (r.id === 'r' ? ['Phone says Foxglove, laptop says Amarynthe', 700] : null));
+    expect(rows.map((r) => [r.at, !!r.untimed])).toEqual([[500, false], [700, false], [9000, true]]);
+    expect(rows[1].detail).toBe('Phone says Foxglove, laptop says Amarynthe');
+    expect(rows[2].detail).toBeNull();
+  });
+});

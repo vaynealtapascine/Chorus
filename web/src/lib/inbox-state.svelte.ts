@@ -4,6 +4,8 @@ import { apiFetch } from './http';
 import { apiBase } from './sync/device';
 import { sync, type Projection } from './sync/client';
 import { selfMember, members } from './data';
+import { deviceName, summary } from './front-reviews';
+import { whoKey, whoMap } from './fronting-subjects';
 import { fromActivity, fromNotifications, needsYou, withReactors, type FollowRow, type InboxItem, type JournalActivity } from './inbox';
 
 export const inbox = $state<{ account: string; items: InboxItem[]; activity: JournalActivity | null; loaded: boolean }>({
@@ -48,9 +50,14 @@ async function readAll(projection: Projection): Promise<void> {
   const alerts = await soft(async () => ((await get('/alerts')) as { items: Record<string, unknown>[] }).items);
   if (notes === null && activity === null && follows === null) return;
   const names = new Map(members(projection).map((m) => [m.id, m.display_name ?? m.name]));
-  const reviews = projection.reviews?.[sync.accountId] ?? [];
+  const reviews = (projection.reviews?.[sync.accountId] ?? []).filter((r) => !projection.rows.front_review?.[r.id]?.fields?.resolution);
+  const who = whoMap(projection);
+  const devices = new Map(Object.entries(projection.rows.device ?? {}).map(([id, row]) => [id, String(row.fields.name ?? '')]));
+  const switches = new Map((projection.fronts[sync.accountId]?.switches ?? []).map((s) => [s.id, { ...s, entries: s.resulting_front }]));
+  const said = (r: { switch_a: string; switch_b: string }) => summary(switches.get(r.switch_a), switches.get(r.switch_b), (t, id) => who.get(whoKey(t, id))?.name ?? 'Someone',
+    (s) => deviceName(devices, s.device_id, sync.device?.device_id));
   inbox.items = [...fromNotifications(notes), ...fromActivity(activity),
-    ...needsYou(follows ?? [], alerts ?? [], reviews, !!selfMember(projection), (id) => names.get(id), Date.now())];
+    ...needsYou(follows ?? [], alerts ?? [], reviews, !!selfMember(projection), (id) => names.get(id), Date.now(), (r) => said(r as never))];
   inbox.account = sync.accountId;
   inbox.loaded = true;
 }

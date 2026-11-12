@@ -65,7 +65,8 @@
   }
   function open(item: InboxItem) {
     if (!item.needsYou) save(mark(read, item));
-    if (item.kind === 'review' || item.kind === 'own_switch') router.go('/history');
+    if (item.kind === 'review') router.go('/review');
+    else if (item.kind === 'own_switch') router.go('/history');
     else if (item.postId) router.go(`/journal/post/${encodeURIComponent(item.postId)}`);
     else if (item.channelId) router.go(`/chat/${encodeURIComponent(item.channelId)}${item.messageId ? `/${encodeURIComponent(item.messageId)}` : ''}`);
     else if (item.kind === 'export_ready') router.go('/settings/data');
@@ -168,11 +169,11 @@
             {#if item.kind === 'follow_request' || item.kind === 'alert_ask'}
               <div class="asks"><button class="primary" onclick={() => accept(item)}>{item.kind === 'alert_ask' ? 'Allow' : person ? 'Accept' : 'Accept…'}</button><button onclick={() => decline(item)}>Decline</button></div>
             {:else if item.kind === 'review'}
-              <div class="asks"><button class="primary" onclick={() => router.go('/history')}>Review</button></div>
+              <div class="asks"><button class="primary" onclick={() => router.go('/review')}>Review</button></div>
             {/if}
           </div>
           <div class="side">
-            {#if !item.needsYou}<time datetime={new Date(item.at).toISOString()}>{shortAgo(item.at)}</time>{/if}
+            {#if !item.untimed}<time datetime={new Date(item.at).toISOString()}>{shortAgo(item.at)}</time>{/if}
             {#if unreadRow}<span class="dot" aria-label="Unread"></span>{/if}
             <button class="more icon-only" aria-label="More options" onclick={(e) => openMenu(item, e.clientX, e.clientY)}><Icon name="more" size={16} /></button>
           </div>

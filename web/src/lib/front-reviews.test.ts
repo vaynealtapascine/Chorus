@@ -52,3 +52,22 @@ for (const legacy of [false, true]) for (const state of ['following', 'override'
     } finally { replica.free(); }
   });
 }
+
+it('words what each device recorded, and what keeping one means', async () => {
+  const { keepLabel, together, disagree, deviceName, summary } = await import('./front-reviews');
+  expect(keepLabel('Pixel 8')).toBe('Keep Pixel 8’s');
+  expect(keepLabel('This device')).toBe('Keep this device’s');
+  expect(keepLabel('Another device')).toBe('Keep the other device’s');
+  expect(together('Foxglove', 'Foxglove')).toBe('Foxglove fronted');
+  expect(together('Foxglove', 'Amarynthe')).toBe('Foxglove and Amarynthe fronted together');
+  expect(disagree('Phone', 'Foxglove', 'Laptop', 'Amarynthe')).toBe('Phone says Foxglove, Laptop says Amarynthe');
+  expect(disagree('This device', 'Foxglove', 'Another device', 'Amarynthe')).toBe('This device says Foxglove, another device says Amarynthe');
+  const names = new Map([['d1', 'Phone']]);
+  expect(deviceName(names, 'd1', 'd2')).toBe('Phone');
+  expect(deviceName(names, 'd2', 'd2')).toBe('This device');
+  expect(deviceName(names, null, 'd2')).toBe('Another device');
+  const side = (id: string, at: number, who: string[], d: string) => ({ id, occurred_at: at, device_id: d, entries: who.map((w) => ({ subject_type: 'member', subject_id: w })) });
+  expect(summary(side('a', 5, ['f'], 'd1'), side('b', 9, ['a', 'b'], 'd2'), (_t, id) => id.toUpperCase(), (s) => deviceName(names, s.device_id, 'd2')))
+    .toEqual(['Phone says F, this device says A & B', 9]);
+  expect(summary(undefined, side('b', 9, [], 'd2'), () => '', () => '')).toBeNull();
+});

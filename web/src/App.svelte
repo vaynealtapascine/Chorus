@@ -4,6 +4,7 @@
   import { sync, type Projection, type Status } from './lib/sync/client';
   import Chat from './lib/ui/Chat.svelte';
   import History from './lib/ui/History.svelte';
+  import FrontReview from './lib/ui/FrontReview.svelte';
   import HomeDashboard from './lib/ui/HomeDashboard.svelte';
   import Fronting from './lib/ui/Fronting.svelte';
   import { homeUi } from './lib/home-ui.svelte';
@@ -138,7 +139,7 @@
     return unreadCount(inbox.items, read, showsPref(projection.rows.pref, sync.accountId));
   });
   const active = $derived(['member', 'profile'].includes(router.route.name) ? 'members' : router.route.name === 'post' ? 'journal' :
-    router.route.name === 'stage' ? 'chat' : router.route.name === 'friend' ? 'people' : ['history', 'fronts', 'layers'].includes(router.route.name) ? 'fronting' :
+    router.route.name === 'stage' ? 'chat' : router.route.name === 'friend' ? 'people' : ['history', 'fronts', 'layers', 'review'].includes(router.route.name) ? 'fronting' :
     ['insights', 'data', 'trash', 'settings', 'computer', 'search', 'post-stage'].includes(router.route.name) ? 'more' : router.route.name);
   const account = $derived(projection?.rows.account?.[sync.accountId]?.fields);
   const system = $derived(projection?.rows.system?.[sync.accountId]?.fields);
@@ -161,7 +162,7 @@
     }
     return current.filter((e) => e.layer_id === 'front').map((e) => subjects.get(e.subject_id)?.name).filter(Boolean).join(' & ') || 'No one fronting';
   });
-  const routeTitle = $derived(({ home: 'Home', fronting: 'Fronting', notifications: 'Notifications', members: 'Members', member: 'Edit member', profile: 'Profile', journal: 'Journal', post: 'Post', chat: 'Chat', people: 'Friends', friend: 'Friends', history: 'Front history', fronts: 'Fronts', layers: 'Layers & display', insights: 'Insights', data: 'Your data', settings: 'Settings', search: 'Search', trash: 'Trash', more: 'More', computer: 'This computer' } as Record<string, string>)[router.route.name] ?? 'Chorus');
+  const routeTitle = $derived(({ home: 'Home', fronting: 'Fronting', notifications: 'Notifications', members: 'Members', member: 'Edit member', profile: 'Profile', journal: 'Journal', post: 'Post', chat: 'Chat', people: 'Friends', friend: 'Friends', history: 'Front history', review: 'Review', fronts: 'Fronts', layers: 'Layers & display', insights: 'Insights', data: 'Your data', settings: 'Settings', search: 'Search', trash: 'Trash', more: 'More', computer: 'This computer' } as Record<string, string>)[router.route.name] ?? 'Chorus');
 </script>
 
 <svelte:document onclick={openOwnLink} />
@@ -202,7 +203,7 @@
     {#if navOpen}<button class="scrim" aria-label="Close navigation" onclick={() => (navOpen = false)}></button>{/if}
     <div class="workspace">
       <!-- Fronting's subpages carry their own back-arrow bars (Figma F3.4, F3.5, F3.7, F3.9), as Friends' pages do (F7) -->
-      <header class="app-bar" class:subpage={(['fronts', 'layers', 'history'].includes(router.route.name) && !person) || router.route.name === 'friend' || router.route.name === 'people'}>
+      <header class="app-bar" class:subpage={(['fronts', 'layers', 'history', 'review'].includes(router.route.name) && !person) || router.route.name === 'friend' || router.route.name === 'people'}>
         <div><strong>{routeTitle}</strong><span class="account-subtitle">{accountName}{#if router.route.name === 'fronting' && !person}{' · '}{homeSimple ? 'simple view' : `${current.length} here now`}{:else if router.route.name === 'home'}{' · '}{new Date().toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' })}{/if}</span></div>
         {#if router.route.name === 'home'}
           <button class="sections-pill" onclick={() => (homeUi.sections = true)}><Icon name="sliders" size={18} />Sections</button>
@@ -224,7 +225,7 @@
       </p>
     {/if}
     <main id="main-content" tabindex="-1">
-      {#if person && ['fronting', 'members', 'history', 'fronts', 'layers'].includes(router.route.name)}
+      {#if person && ['fronting', 'members', 'history', 'fronts', 'layers', 'review'].includes(router.route.name)}
         <HomeDashboard {projection} {dark} onswitch={() => {}} />
       {:else if router.route.name === 'members'}
         <Members {projection} {dark} tab={router.route.id} />
@@ -257,6 +258,8 @@
           <LayersDisplay {projection} front={router.route.id ?? sync.accountId} />
         {:else if router.route.name === 'history'}
         <History {projection} {dark} />
+      {:else if router.route.name === 'review'}
+        <FrontReview {projection} {dark} front={router.route.id || undefined} />
       {:else if router.route.name === 'insights'}
         <Insights {projection} />
       {:else if router.route.name === 'stage' && router.route.id}
