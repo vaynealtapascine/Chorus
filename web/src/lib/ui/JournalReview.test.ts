@@ -39,7 +39,7 @@ it('defaults every timeline card to 300 Unicode characters and leaves detail com
   }
   for (const html of [
     render(Profile, { props: { projection, id: 'kai', dark: true } }).body,
-    render(JournalLists, { props: { projection, dark: true } }).body,
+    render(JournalLists, { props: { projection, dark: true, open: 'list' } }).body,
   ]) {
     expect(html).toContain('data-post-id="post"');
     expect(html).toContain('Show more');
