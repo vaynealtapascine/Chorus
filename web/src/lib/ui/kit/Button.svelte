@@ -6,7 +6,7 @@
   import type { HTMLButtonAttributes } from 'svelte/elements';
 
   let { variant = 'neutral', size = 'md', round = false, grow = false, block = false, href, class: cls = '', children, ...rest }: Omit<HTMLButtonAttributes, 'class' | 'children'> & {
-    variant?: 'primary' | 'neutral' | 'quiet' | 'soft' | 'danger' | 'danger-soft'; size?: 'sm' | 'md' | 'lg'; round?: boolean; grow?: boolean; block?: boolean; href?: string; class?: string; children?: Snippet;
+    variant?: 'primary' | 'neutral' | 'quiet' | 'soft' | 'danger' | 'danger-soft'; size?: 'sm' | 'md' | 'lg'; round?: boolean; grow?: boolean; block?: boolean; href?: string; download?: string; class?: string; children?: Snippet;
   } = $props();
 </script>
 

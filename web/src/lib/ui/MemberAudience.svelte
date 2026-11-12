@@ -2,6 +2,7 @@
   // Who can see a member (F4.3): the whole profile as one choice, then each part, never wider than
   // the profile (D-101, D-126). Choices save as they are made; who hears when they front is the
   // member's notify policy (NOTIFICATIONS §2.4).
+  import Pill from './kit/Pill.svelte';
   import Button from './kit/Button.svelte';
   import { buckets as bucketRows, fieldDefs, members, selfMember } from '../data';
   import { sync, type Projection } from '../sync/client';
@@ -113,14 +114,14 @@
         {@const r = rowFor(g)}
         <button class="part" onclick={() => (r.keys.length > 1 ? (each = g) : (choosing = g))}>
           <span class="title">{g.title}</span>
-          <span class="pill" class:quiet={r.quiet}>{#if r.quiet}<Icon name="lock" size={13} />{/if}{r.text}</span>
+          <Pill tone={r.quiet ? 'quiet' : 'accent'}>{#if r.quiet}<Icon name="lock" size={13} />{/if}{r.text}</Pill>
           <Icon name="chevron-right" size={18} />
         </button>
       {/each}
       {#if !person}
         <button class="part" onclick={() => (announcing = true)}>
           <span class="title">Fronting status</span>
-          <span class="pill" class:quiet={announce === 'nobody'}>{#if announce === 'nobody'}<Icon name="lock" size={13} />{/if}{announceText}</span>
+          <Pill tone={announce === 'nobody' ? 'quiet' : 'accent'}>{#if announce === 'nobody'}<Icon name="lock" size={13} />{/if}{announceText}</Pill>
           <Icon name="chevron-right" size={18} />
         </button>
       {/if}
@@ -180,8 +181,6 @@
   .text.on { font-weight: 600; }
   .tile { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 8px; background: var(--surface-3, var(--surface)); color: var(--ink-2); flex: none; }
   .title { flex: 1; font-size: var(--fs-base); }
-  .pill { display: inline-flex; align-items: center; gap: var(--s-1); border-radius: var(--r-full); background: var(--accent-soft); color: var(--accent); font-size: var(--fs-sm); font-weight: 500; padding: 5px 10px; white-space: nowrap; }
-  .pill.quiet { background: var(--surface); color: var(--ink-2); }
   .part > :global(.icon) { color: var(--ink-3); }
   .muted { color: var(--ink-3); }
 </style>

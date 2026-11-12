@@ -27,7 +27,7 @@
   import StageText from './stage/StageText.svelte';
   import Stepper from './stage/Stepper.svelte';
   import StyleTab from './stage/StyleTab.svelte';
-  import Chip from './stage/Chip.svelte';
+  import Chip from './kit/Chip.svelte';
   import Segmented from './kit/Segmented.svelte';
   import FormCard from './kit/FormCard.svelte';
   import Switch from './kit/Switch.svelte';

@@ -3,6 +3,7 @@
   // our bucket pills, Message / Notifying / Chats (a person: Tell me about posts), who's around now
   // as they share it, the members they share, and what's between us. A person shows their posts,
   // journal and about instead of fronting. Only what the server's filtered reads allow.
+  import Pill from './kit/Pill.svelte';
   import Button from './kit/Button.svelte';
   import '../design/friends.css';
   import { onMount } from 'svelte';
@@ -109,8 +110,8 @@
         {#if r.account.handle || shared?.length || self?.pronouns}
           <span class="meta">{[r.account.handle ? `@${r.account.handle}` : null, isSystem(r.account) ? (shared?.length ? `${shared.length} ${shared.length === 1 ? 'member' : 'members'} visible` : null) : self?.pronouns].filter(Boolean).join(' · ')}</span>
         {/if}
-        <span class="pills"><span class="fr-pill">{isSystem(r.account) ? 'System' : 'Person'}</span>
-          {#each theirBuckets as b (b.id)}<span class="fr-pill accent"><BucketGlyph icon={b.icon} color={b.color} size={13} />{b.name}</span>{/each}</span>
+        <span class="pills"><Pill>{isSystem(r.account) ? 'System' : 'Person'}</Pill>
+          {#each theirBuckets as b (b.id)}<Pill tone="accent"><BucketGlyph icon={b.icon} color={b.color} size={13} />{b.name}</Pill>{/each}</span>
       </div>
     </div>
     {#if about?.description}<p class="bio">{about.description}</p>{/if}

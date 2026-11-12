@@ -64,3 +64,13 @@ it('buttons carry their variant and size, and link when given an href', () => {
   expect(render(Button, { props: { size: 'sm', children } }).body).toMatch(/class="btn neutral sm[ "]/);
   expect(render(Button, { props: { href: '#/x', children } }).body).toMatch(/<a class="btn neutral md[ "][^>]*href="#\/x"/);
 });
+
+it('chips toggle and link, pills only label', async () => {
+  const { default: Chip } = await import('./Chip.svelte');
+  const { default: Pill } = await import('./Pill.svelte');
+  expect(render(Chip, { props: { label: 'Kai', on: true } }).body).toMatch(/role="checkbox" aria-checked="true"/);
+  expect(render(Chip, { props: { label: 'Kai', role: 'radio', 'aria-checked': false, on: false } }).body).toMatch(/role="radio"/);
+  expect(render(Chip, { props: { label: 'Bucket', href: '#/people/bucket/b', on: true } }).body).toMatch(/<a class="chip[^"]* on[^"]*" href="#\/people\/bucket\/b"/);
+  const pill = render(Pill, { props: { tone: 'accent', children: createRawSnippet(() => ({ render: () => 'System' })) } }).body;
+  expect(pill).toMatch(/<span class="pill accent[^"]*"[^>]*>System/);
+});

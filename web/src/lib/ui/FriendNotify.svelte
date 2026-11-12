@@ -2,6 +2,7 @@
   // F7.12: what we hear from one friend, our own prefs (NOTIFICATIONS §4) that can only make it
   // quieter than they allow: their switches (who, which layers, switch-outs), how they arrive, quiet
   // hours, a mute, and post alerts per member (D-106). Each change saves as it's made.
+  import Chip from './kit/Chip.svelte';
   import '../design/friends.css';
   import { onMount } from 'svelte';
   import { api, friends } from '../friends-state.svelte';
@@ -80,7 +81,7 @@
           {#each members as m (m.id)}
             {@const picked = subjects(prefs)}
             {@const chosen = !picked || picked.has(m.id)}
-            <button class="fr-chip" aria-pressed={chosen} disabled={!on} onclick={() => save(withSubject(prefs, m.id, members.map((x) => x.id)))}>{#if chosen}<Icon name="check" size={14} />{/if}{shown(m)}</button>
+            <Chip aria-pressed={chosen} disabled={!on} onclick={() => save(withSubject(prefs, m.id, members.map((x) => x.id)))}>{#if chosen}<Icon name="check" size={14} />{/if}{shown(m)}</Chip>
           {/each}
         </div>
       {/if}
@@ -88,7 +89,7 @@
       <div class="fr-chips">
         {#each [['front', 'Front'], ['cocon', 'Co-conscious'], ['present', 'Present']] as [id, label] (id)}
           {@const chosen = prefLevels(prefs).has(id)}
-          <button class="fr-chip" aria-pressed={chosen} disabled={!on} onclick={() => save(withLevel(prefs, id))}>{#if chosen}<Icon name="check" size={14} />{/if}{label}</button>
+          <Chip aria-pressed={chosen} disabled={!on} onclick={() => save(withLevel(prefs, id))}>{#if chosen}<Icon name="check" size={14} />{/if}{label}</Chip>
         {/each}
       </div>
       <button class="fr-toggle" role="switch" aria-checked={switchOuts(prefs)} disabled={!on} onclick={() => save({ ...prefs, switch_outs: !switchOuts(prefs) })}>

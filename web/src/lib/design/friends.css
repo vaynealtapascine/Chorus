@@ -34,8 +34,6 @@
 .fr-name { display: flex; align-items: center; gap: var(--s-2); min-width: 0; }
 .fr-name strong { font-size: var(--fs-base); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fr-row.dim .fr-name strong { color: var(--ink-2); }
-.fr-pill { flex: none; border-radius: 8px; background: var(--surface-2); color: var(--ink-2); font-size: var(--fs-xs); line-height: 16px; padding: 2px var(--s-2); }
-.fr-pill.accent { background: var(--accent-soft); color: var(--accent); display: inline-flex; align-items: center; gap: var(--s-1); }
 .fr-line { color: var(--ink-2); font-size: 14px; line-height: 19px; }
 .fr-line.ink { color: var(--ink); }
 .fr-line.quiet { color: var(--ink-3); }
@@ -72,9 +70,6 @@
 .fr-toggle[aria-checked='true'] .fr-switch { background: var(--accent); }
 .fr-toggle[aria-checked='true'] .fr-switch::after { transform: translateX(16px); background: var(--bg); }
 .fr-chips { display: flex; flex-wrap: wrap; gap: var(--s-2); padding: 0 var(--s-4); }
-.fr-chip { display: inline-flex; align-items: center; gap: 5px; border: 0; border-radius: var(--r-md); background: var(--surface-2); color: var(--ink-2); padding: 7px var(--s-3); font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; }
-.fr-chip[aria-pressed='true'], .fr-chip.on { background: var(--accent-soft); color: var(--accent); }
-.fr-chip:disabled { color: var(--ink-3); cursor: default; }
 .fr-label { margin: 0; padding: 10px var(--s-4) 6px; color: var(--ink-3); font-size: var(--fs-sm); }
 .fr-card { margin: 0 var(--s-4); border-radius: var(--r-md); background: var(--surface); padding: 14px; display: grid; gap: var(--s-3); }
 .fr-card.accent { background: var(--accent-soft); }
@@ -89,5 +84,5 @@
 .fr-empty { margin: 0; padding: var(--s-6); color: var(--ink-3); font-size: 14px; }
 .fr-error { margin: var(--s-2) var(--s-4); color: var(--danger); font-size: var(--fs-sm); }
 @media (max-width: 640px) { .fr-page { margin-top: calc(-1 * var(--s-4)); } }
-a.fr-link, a.fr-row, a.fr-new, a.fr-chip, a.fr-icon { text-decoration: none; }
+a.fr-link, a.fr-row, a.fr-new, a.fr-icon { text-decoration: none; }
 a.fr-link .fr-text strong, a.fr-row strong { color: var(--ink); }

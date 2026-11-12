@@ -1,6 +1,7 @@
 <script lang="ts">
   // A journal post the way Android's JournalPostFrame reads it: avatar column, names · compact
   // time, the post, then one quiet icon row (reply, repost, heart, save, share) and a ⋯ menu.
+  import Pill from './kit/Pill.svelte';
   import Button from './kit/Button.svelte';
   import PollCard from './PollCard.svelte';
   import { closePost, pollOf } from '../polls';
@@ -183,7 +184,7 @@
         <span class="authors">{#each post.authors as id, i (id)}{#if i} &amp; {/if}<a href="#/profile/{id}">{name(id)}</a>{/each}</span>
         {#if handle}<span class="handle">@{handle}</span>{/if}
         <span class="when">· <a href={threadHref} title={fullTimestamp(post.occurred_at)}><time datetime={new Date(post.occurred_at).toISOString()}>{shortAgo(post.occurred_at)}</time></a>{#if post.edited} · edited{/if}</span>
-        {#if full}<span class="aud-pill">{audienceLabel}</span>{/if}
+        {#if full}<Pill style="margin-left: auto">{audienceLabel}</Pill>{/if}
         {#if post.visibility.mode !== 'server' && post.visibility.mode !== 'buckets'}<span class="lock" title={audienceLabel} role="img" aria-label={audienceLabel}><Icon name="lock" size={14} /></span>
         {:else if post.visibility.mode === 'buckets'}{@const b = projection ? buckets(projection).find((x) => post.visibility.bucket_ids?.includes(x.id)) : undefined}<span class="audience"><BucketGlyph icon={b?.icon} color={b?.color} size={14} />{audienceLabel}</span>{/if}
     </div>
@@ -197,7 +198,7 @@
           {#if compactEntry && post.kind === 'entry' && !bodyExpanded}<a class="expand" href={threadHref}>Show more</a>
           {:else}<button class="expand" aria-expanded={bodyExpanded} onclick={() => (bodyExpanded = !bodyExpanded)}>{bodyExpanded ? 'Show less' : 'Show more'}</button>{/if}
         {/if}
-        {#if post.kind === 'entry' && full}<p class="chips"><span class="chip">{audienceLabel}</span><span class="chip">{readTime(post.text)}</span></p>
+        {#if post.kind === 'entry' && full}<p class="chips"><Pill>{audienceLabel}</Pill><Pill>{readTime(post.text)}</Pill></p>
         {:else if post.kind === 'entry'}<p class="meta-line">{entryMeta(post.text, post.tags)}</p>{/if}
         {#if post.mood}<p class="mood">{post.mood}</p>{/if}
         {#if post.kind !== 'entry' && post.tags.length}<p class="tags">{#each post.tags as tag (tag)}<span>#{tag}</span>{/each}</p>{/if}
@@ -288,8 +289,6 @@
   .stat:hover { text-decoration: underline; }
   .full .lock { display: none; }
   .chips { display: flex; flex-wrap: wrap; gap: var(--s-2); }
-  .chip, .aud-pill { padding: 3px 10px; border-radius: var(--r-full); background: var(--surface-2); color: var(--ink-2); font-size: var(--fs-xs); font-weight: 500; white-space: nowrap; }
-  .aud-pill { margin-left: auto; }
   .actions.large { position: sticky; bottom: 0; z-index: 2; background: var(--bg); margin: 0; padding: var(--s-1) 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
   .actions.large .act { min-height: 44px; }
   .avatar { display: inline-grid; width: 40px; height: 40px; border-radius: 50%; overflow: hidden; background: var(--avatar-bg); color: var(--avatar-ink); place-items: center; font-weight: 700; text-decoration: none; }

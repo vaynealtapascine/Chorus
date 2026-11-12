@@ -76,7 +76,7 @@
     {#if running}
       <Button size="sm" class="pill" onclick={stop}>Cancel</Button>
     {:else if job?.status === 'done' && job.result_url}
-      <a class="pill go" href={`${location.origin}${job.result_url}`} download={job.file_name ?? 'chorus-export.zip'}>Download</a>
+      <Button variant="primary" size="sm" href={`${location.origin}${job.result_url}`} download={job.file_name ?? 'chorus-export.zip'}>Download</Button>
     {:else}
       <Button size="sm" class="pill" onclick={start} disabled={sync.status !== 'live'}>Export</Button>
     {/if}

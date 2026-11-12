@@ -23,7 +23,7 @@
   import FormCard from './kit/FormCard.svelte';
   import Switch from './kit/Switch.svelte';
   import Check from './stage/Check.svelte';
-  import Chip from './stage/Chip.svelte';
+  import Chip from './kit/Chip.svelte';
   import Label from './stage/Label.svelte';
   import MemberChips from './stage/MemberChips.svelte';
   import NamesTab from './stage/NamesTab.svelte';

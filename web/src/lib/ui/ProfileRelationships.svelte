@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Pill from './kit/Pill.svelte';
   import Button from './kit/Button.svelte';
   import { buckets, members, relationshipTypes, relationships } from '../data';
   import AudienceChip from './AudienceChip.svelte';
@@ -97,7 +98,7 @@
     {#each tab === 'inside' ? inside : outside as link (link.id)}
       {@const other = otherId(link)}
       <li class="link">
-        <span class="who"><strong>{relatedName(link)}</strong><span class="pill">{relatedType(link)}</span>{#if link.note}<small>{link.note}</small>{/if}</span>
+        <span class="who"><strong>{relatedName(link)}</strong><Pill tone="accent">{relatedType(link)}</Pill>{#if link.note}<small>{link.note}</small>{/if}</span>
         {#if tab === 'inside' && other && own}<button type="button" class="act" onclick={() => openMemberDm(projection, id, other)}>Message</button>
         {:else if tab === 'friends' && viewHref(link)}<a class="act" href={viewHref(link)}>View</a>{/if}
         {#if own}<button type="button" class="more" aria-label="Edit {relatedName(link)}" onclick={() => (editLink = link.id)}><Icon name="more" size={18} /></button>{/if}
@@ -154,7 +155,6 @@
 
 <style>
   .who { flex: 1; min-width: 0; display: grid; gap: 2px; }
-  .pill { justify-self: start; padding: 1px 10px; border-radius: var(--r-full); background: var(--accent-soft); color: var(--accent); font-size: var(--fs-xs); font-weight: 500; }
   .act { padding: 6px 14px; border: 1px solid var(--line); border-radius: var(--r-full); color: var(--ink); text-decoration: none; background: none; font: inherit; font-weight: 600; font-size: var(--fs-sm); }
   .more { display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; background: none; color: var(--ink-3); border-radius: 50%; }
   .add { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-3); border: 1px dashed var(--line); border-radius: var(--r-row); background: none; justify-self: stretch; justify-content: center; }

@@ -3,6 +3,7 @@
   // Fronting shows it, its order, and new fronts from templates. Following, overrides and purpose
   // pools are resolved in core (D-080, D-085); this page writes sparse definitions and the
   // display pref (D-122). Layers live on Layers & display.
+  import Chip from './kit/Chip.svelte';
   import Button from './kit/Button.svelte';
   import { defineFront, resumeFollowing } from '../front.svelte';
   import { frontLayers, frontList, type FrontSummary } from '../front-view';
@@ -170,8 +171,8 @@
       <button class="new-head" onclick={() => (naming = true)}><span class="plus"><Icon name="plus" size={20} /></span><span><strong>New front</strong><span>Start from a template or build your own</span></span></button>
       <div class="templates">
         <!-- a template already in use isn't offered twice -->
-        {#each fd.TEMPLATES.filter((t) => !live.some((f) => f.name.toLowerCase() === t.name.toLowerCase())) as t (t.name)}<button class="fr-chip" onclick={() => create(t.name, t)}>{t.name}</button>{/each}
-        <button class="fr-chip" onclick={() => (naming = true)}>Custom</button>
+        {#each fd.TEMPLATES.filter((t) => !live.some((f) => f.name.toLowerCase() === t.name.toLowerCase())) as t (t.name)}<Chip onclick={() => create(t.name, t)}>{t.name}</Chip>{/each}
+        <Chip onclick={() => (naming = true)}>Custom</Chip>
       </div>
       {#if naming}
         <form class="add" onsubmit={(e) => { e.preventDefault(); create(newName); }}>

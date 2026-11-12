@@ -1,6 +1,7 @@
 <script lang="ts">
   // One Advanced notification detail (UI11c, D-115): inherited until customized, then a typed
   // control. Delays are entered in minutes and stored in seconds; nothing invalid is saved.
+  import Chip from './kit/Chip.svelte';
   import Switch from './kit/Switch.svelte';
   import { choiceLabel, validCeilingValue, type CeilingField } from '../bucket-controls';
 
@@ -39,14 +40,14 @@
     <Switch aria={field.label} checked={value === true} onchange={(on) => save(on)} />
   {:else if field.kind === 'enum'}
     <div class="fr-chips pad" role="radiogroup" aria-labelledby={id}>
-      {#each field.choices ?? [] as c (c)}<button class="fr-chip" role="radio" aria-checked={value === c} class:on={value === c} onclick={() => save(c)}>{choiceLabel(c)}</button>{/each}
+      {#each field.choices ?? [] as c (c)}<Chip role="radio" aria-checked={value === c} on={value === c} onclick={() => save(c)}>{choiceLabel(c)}</Chip>{/each}
     </div>
   {:else if field.kind === 'levels'}
     <div class="fr-chips pad" role="group" aria-labelledby={id}>
       {#each field.choices ?? [] as c (c)}
         {@const on = Array.isArray(value) && value.includes(c)}
-        <button class="fr-chip" role="checkbox" aria-checked={on} class:on
-          onclick={() => save((field.choices ?? []).filter((x) => (x === c ? !on : Array.isArray(value) && value.includes(x))))}>{choiceLabel(c)}</button>
+        <Chip role="checkbox" aria-checked={on} {on}
+          onclick={() => save((field.choices ?? []).filter((x) => (x === c ? !on : Array.isArray(value) && value.includes(x))))}>{choiceLabel(c)}</Chip>
       {/each}
     </div>
   {:else if field.kind === 'range'}

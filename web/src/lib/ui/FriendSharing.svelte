@@ -2,6 +2,7 @@
   // F7.9: what one follower sees of us right now (their own view, GET /follows/{id}/view), how much
   // they hear (the follow override), their buckets, what else we share with them, who they hear
   // about (each member's announce list) and the rest just for them. Every change saves as it's made.
+  import Chip from './kit/Chip.svelte';
   import '../design/friends.css';
   import { onMount } from 'svelte';
   import { bucketAssignments, buckets, members, selfMember } from '../data';
@@ -84,8 +85,8 @@
     {/if}
     <h2 class="fr-section"><span>Buckets</span></h2>
     <div class="fr-chips">
-      {#each theirs as b (b.id)}<a class="fr-chip on" href="#/people/bucket/{encodeURIComponent(b.id)}"><BucketGlyph icon={b.icon} color={b.color} size={15} />{b.name}</a>{/each}
-      {#if buckets(projection).some((b) => !theirs.includes(b))}<button class="fr-chip" onclick={() => (adding = true)}><Icon name="plus" size={14} />Add</button>{/if}
+      {#each theirs as b (b.id)}<Chip on href="#/people/bucket/{encodeURIComponent(b.id)}"><BucketGlyph icon={b.icon} color={b.color} size={15} />{b.name}</Chip>{/each}
+      {#if buckets(projection).some((b) => !theirs.includes(b))}<Chip onclick={() => (adding = true)}><Icon name="plus" size={14} />Add</Chip>{/if}
       {#if !buckets(projection).length}<span class="fr-line quiet">No buckets yet. Make one under Sharing.</span>{/if}
     </div>
     {#if !person}
@@ -153,7 +154,6 @@
   .seen p { margin: 0; }
   .who { display: flex; align-items: center; gap: 10px; }
   .chev { color: var(--ink-3); display: grid; }
-  a.fr-chip { text-decoration: none; }
   .menu { display: grid; gap: 2px; }
   .menu button { display: flex; align-items: center; gap: 14px; padding: var(--s-3); border: 0; border-radius: var(--r-row); background: none; color: var(--ink); font: inherit; font-size: var(--fs-base); text-align: left; cursor: pointer; }
   .menu button:hover { background: var(--surface-2); }

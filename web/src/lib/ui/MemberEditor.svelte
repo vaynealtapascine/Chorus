@@ -3,6 +3,7 @@
   // Description, then the More rows (Groups, Who can see, Custom fields, Handles, Banner, ...), and
   // Archive at the foot. The top fields are a draft that Save writes; the rows open their own sheets
   // or pages and save as they are used.
+  import Pill from './kit/Pill.svelte';
   import Button from './kit/Button.svelte';
   import { onDestroy, untrack } from 'svelte';
   import { actingOpts } from '../front-view';
@@ -231,7 +232,7 @@
     <header>
       <a class="back" href={person ? '#/settings' : '#/members'} aria-label="Back">‹</a>
       <div><h1>Edit member</h1><p>{shownName}</p></div>
-      {#if m.deleted}<span class="tag">In Trash</span>{/if}
+      {#if m.deleted}<Pill>In Trash</Pill>{/if}
       <button class="check" aria-label="Save" disabled={!dirty} onclick={saveAndClose}><Icon name="check" size={22} /></button>
     </header>
 
@@ -385,9 +386,9 @@
   .back { display: grid; place-items: center; width: 40px; height: 40px; font-size: var(--fs-2xl); color: var(--ink); text-decoration: none; }
   .check { display: grid; place-items: center; width: 40px; height: 40px; border: 0; background: none; color: var(--accent); cursor: pointer; }
   .check:disabled { color: var(--ink-3); cursor: default; }
-  .tag { border-radius: var(--r-full); background: var(--surface-2); color: var(--ink-3); font-size: var(--fs-xs); padding: 3px 10px; }
   .identity { display: flex; align-items: center; gap: var(--s-4); }
   .avatar { width: 84px; height: 84px; display: grid; place-items: center; border-radius: 50%; overflow: hidden; font-size: var(--fs-3xl); font-weight: 700; background: var(--ring); color: var(--avatar-ink); }
+  .pill { display: inline-flex; align-items: center; gap: var(--s-2); min-height: 36px; padding: 0 var(--s-4); border-radius: var(--r-full); background: var(--surface-2); color: var(--ink); font-size: var(--fs-md); font-weight: 600; cursor: pointer; }
   .pill.file input { display: none; }
   .field { display: grid; gap: 2px; padding: var(--s-2) 14px; border-radius: var(--r-control); background: var(--surface-2); color: var(--ink-3); font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
   .field.strong:focus-within { box-shadow: inset 0 0 0 1.5px var(--accent); }

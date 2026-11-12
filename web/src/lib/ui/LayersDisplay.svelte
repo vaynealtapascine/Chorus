@@ -2,6 +2,7 @@
   // Layers & display (Figma F3.9; Android LayersDisplayScreen) for one front: a preset, the layers
   // inner to outer (order, look, whether Fronting shows them), clutter switches and suggested
   // speakers. Layer names and order are the system's (`front.layer`); the rest is the display pref.
+  import Chip from './kit/Chip.svelte';
   import Button from './kit/Button.svelte';
   import { defineFront, editLayer } from '../front.svelte';
   import { frontLayers, frontList } from '../front-view';
@@ -130,12 +131,12 @@
       <label class="field">Description <input bind:value={draft.about} maxlength="80" placeholder="e.g. In control · counts as fronting" /></label>
       <SectionLabel label="Look" />
       <div class="fr-chips pad" role="radiogroup" aria-label="Look">
-        <button type="button" class="fr-chip" role="radio" aria-checked={draft.style === null} class:on={draft.style === null} onclick={() => (draft.style = null)}>Automatic</button>
-        {#each fd.STYLES as st (st)}<button type="button" class="fr-chip" role="radio" aria-checked={draft.style === st} class:on={draft.style === st} onclick={() => (draft.style = st)}>{st[0].toUpperCase() + st.slice(1)}</button>{/each}
+        <Chip type="button" role="radio" aria-checked={draft.style === null} on={draft.style === null} onclick={() => (draft.style = null)}>Automatic</Chip>
+        {#each fd.STYLES as st (st)}<Chip type="button" role="radio" aria-checked={draft.style === st} on={draft.style === st} onclick={() => (draft.style = st)}>{st[0].toUpperCase() + st.slice(1)}</Chip>{/each}
       </div>
       <SectionLabel label="Colour" />
       <div class="colour">
-        <button type="button" class="fr-chip" aria-pressed={draft.color === null} onclick={() => (draft.color = null)}>Automatic</button>
+        <Chip type="button" aria-pressed={draft.color === null} onclick={() => (draft.color = null)}>Automatic</Chip>
         <Swatches value={draft.color} colors={SWATCHES} custom onpick={(c) => (draft.color = c)} />
       </div>
       <FormCard><Switch label="List separately" bind:checked={draft.separate} /></FormCard>

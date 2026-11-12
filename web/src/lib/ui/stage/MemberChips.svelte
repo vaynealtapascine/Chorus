@@ -1,7 +1,7 @@
 <script lang="ts">
   // "Only these members" (F8.3, F8.5): a scrolling row of faces that narrow what shows.
   import AvatarImage from '../AvatarImage.svelte';
-  import Chip from './Chip.svelte';
+  import Chip from '../kit/Chip.svelte';
   import type { StageAuthor } from './authors';
 
   let { authors, only, onchange }: { authors: StageAuthor[]; only: string[] | null; onchange: (next: string[] | null) => void } = $props();

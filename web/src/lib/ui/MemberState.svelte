@@ -1,6 +1,7 @@
 <script lang="ts">
   // A member's state (Figma F3.10; Android MemberStatePage): any of the common states, the system's own and
   // their own words, a note, and whether it clears when they stop fronting (`member_status:<id>`).
+  import Chip from './kit/Chip.svelte';
   import { untrack } from 'svelte';
   import * as fd from '../fronting-display';
   import type { Who } from '../fronting-subjects';
@@ -43,9 +44,9 @@
   <div class="fr-chips pad" role="group" aria-label="State">
     {#each offered as t (t)}
       {@const on = picked.includes(t)}
-      <button class="fr-chip" role="checkbox" aria-checked={on} class:on onclick={() => toggle(t)}>{#if on}<Icon name="check" size={14} />{/if}{fd.statusLabel(t, states)}</button>
+      <Chip role="checkbox" aria-checked={on} {on} onclick={() => toggle(t)}>{#if on}<Icon name="check" size={14} />{/if}{fd.statusLabel(t, states)}</Chip>
     {/each}
-    <button class="fr-chip" onclick={() => (typing = true)}><Icon name="plus" size={14} />Custom</button>
+    <Chip onclick={() => (typing = true)}><Icon name="plus" size={14} />Custom</Chip>
   </div>
   <!-- svelte-ignore a11y_autofocus -->
   {#if typing}<input class="own" bind:value={words} maxlength={fd.MAX_STATUS_TAG} placeholder="Custom" aria-label="Custom" autofocus

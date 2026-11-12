@@ -4,6 +4,7 @@
   // (#/people/<account>); sharing with one friend, a bucket, Advanced sharing and notifications from
   // a friend are pages of their own (#/people/share|bucket|advanced|notify/…). Everything about other
   // accounts is the server's filtered view; accepting and buckets are ordinary ops.
+  import Pill from './kit/Pill.svelte';
   import Button from './kit/Button.svelte';
   import '../design/friends.css';
   import { onMount } from 'svelte';
@@ -157,8 +158,8 @@
         <li class="follower"><button class="fr-row" onclick={() => open(r.account.id)}>
           <FriendFace name={personName(r.account)} color={color(r.account)} blob={r.account.avatar_blob} size={40} {dark} />
           <span class="fr-body">
-            <span class="fr-name"><strong>{personName(r.account)}</strong><span class="fr-pill">{isSystem(r.account) ? 'System' : 'Person'}</span></span>
-            {#if theirs.length}<span class="fr-faces">{#each theirs.slice(0, 3) as b (b.id)}<span class="fr-pill accent"><BucketGlyph icon={b.icon} color={b.color} size={13} />{b.name}</span>{/each}</span>
+            <span class="fr-name"><strong>{personName(r.account)}</strong><Pill>{isSystem(r.account) ? 'System' : 'Person'}</Pill></span>
+            {#if theirs.length}<span class="fr-faces">{#each theirs.slice(0, 3) as b (b.id)}<Pill tone="accent"><BucketGlyph icon={b.icon} color={b.color} size={13} />{b.name}</Pill>{/each}</span>
             {:else}<span class="fr-line quiet">In no bucket</span>{/if}
           </span>
           <span class="chev"><Icon name="chevron-right" size={18} /></span>
@@ -235,7 +236,7 @@
     <a class="main" href="#/people/{encodeURIComponent(r.account.id)}">
     <FriendFace name={personName(r.account)} color={color(r.account)} blob={r.account.avatar_blob} size={44} {dark} />
     <span class="fr-body">
-      <span class="fr-name"><strong>{personName(r.account)}</strong><span class="fr-pill">{isSystem(r.account) ? 'System' : 'Person'}</span></span>
+      <span class="fr-name"><strong>{personName(r.account)}</strong><Pill>{isSystem(r.account) ? 'System' : 'Person'}</Pill></span>
       {#if waiting(r)}<span class="fr-line quiet">Waiting for them to accept</span>
       {:else if !r.following}<span class="fr-line quiet">Follows you · you don’t follow them</span>
       {:else if isSystem(r.account) && entries.length}
@@ -268,7 +269,7 @@
   <div class="fr-row request">
     <FriendFace name={personName(account)} color={color(account)} blob={account.avatar_blob} size={44} {dark} />
     <span class="fr-body">
-      <span class="fr-name"><strong>{personName(account)}</strong>{#if account.kind}<span class="fr-pill">{isSystem(account) ? 'System' : 'Person'}</span>{/if}</span>
+      <span class="fr-name"><strong>{personName(account)}</strong>{#if account.kind}<Pill>{isSystem(account) ? 'System' : 'Person'}</Pill>{/if}</span>
       <span class="fr-line">{line}</span>
       <span class="fr-actions">{#each buttons as [label, primary, run] (label)}<Button size="sm" variant={primary ? 'primary' : 'neutral'} onclick={run}>{label}</Button>{/each}</span>
     </span>
@@ -288,7 +289,7 @@
               <span class="fr-line">{inside.map((f) => personName(f.account)).join(', ')}</span></span>
           {:else}<span class="fr-line quiet">Nobody yet</span>{/if}
         </span>
-        {#if !person}{@const p = presetOf(b.ceiling)}<span class="fr-pill preset">{p === 'inherit' ? 'Everyone else’s' : presetName(p)}</span>{/if}
+        {#if !person}{@const p = presetOf(b.ceiling)}<Pill>{p === 'inherit' ? 'Everyone else’s' : presetName(p)}</Pill>{/if}
         <span class="chev"><Icon name="chevron-right" size={18} /></span>
       </a></li>
     {/each}
@@ -345,7 +346,6 @@
   .bucket { align-items: center; text-decoration: none; }
   .bucket-name { font-size: var(--fs-base); font-weight: 600; }
   .tile { width: 44px; height: 44px; border-radius: var(--r-row); }
-  .preset { background: var(--surface-2); color: var(--ink); font-weight: 500; padding: var(--s-1) 10px; border-radius: var(--r-row); }
   .follow { display: grid; gap: var(--s-3); }
   .options { display: grid; gap: 2px; }
   .options button { display: flex; align-items: center; gap: 14px; padding: 10px var(--s-3); border: 0; border-radius: var(--r-row); background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }

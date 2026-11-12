@@ -2,6 +2,7 @@
   // Custom fields (F4.6): the fields every member's profile has, in the order they show. Drag to
   // reorder; open one to rename it, change its kind, who sees it by default, or retire it. Beside
   // the list on a wide screen, in a sheet on a narrow one. Values are edited on the member.
+  import Pill from './kit/Pill.svelte';
   import Button from './kit/Button.svelte';
   import { buckets as bucketRows, fieldDefs, type FieldDef } from '../data';
   import { fieldKeys, nextFieldKey } from '../field-age';
@@ -102,7 +103,7 @@
         <button class="item" class:on={selected === d.id} onclick={() => { selected = d.id; error = ''; }}>
           <span class="tile"><Icon name={ICONS[d.type]} size={20} /></span>
           <span class="info"><strong>{d.name}</strong><span>{kindLabel(d.type)}{d.type === 'date' && d.options.show_age ? ' · shows age only' : ''}</span></span>
-          <span class="pill" class:quiet><Icon name={quiet ? 'lock' : a.mode === 'server' ? 'globe' : 'users'} size={13} />{audienceLabel(a, names)}</span>
+          <Pill tone={quiet ? 'quiet' : 'accent'}><Icon name={quiet ? 'lock' : a.mode === 'server' ? 'globe' : 'users'} size={13} />{audienceLabel(a, names)}</Pill>
           <Icon name="chevron-right" size={18} />
         </button>
       {/snippet}
@@ -164,8 +165,6 @@
   .info { display: grid; flex: 1; min-width: 0; }
   .info strong { font-size: var(--fs-base); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .info span { color: var(--ink-3); font-size: var(--fs-sm); }
-  .pill { display: inline-flex; align-items: center; gap: var(--s-1); border-radius: var(--r-full); background: var(--accent-soft); color: var(--accent); font-size: var(--fs-xs); font-weight: 500; padding: var(--s-1) 10px; white-space: nowrap; }
-  .pill.quiet { background: var(--surface-2); color: var(--ink-2); }
   .dashed { display: flex; align-items: center; justify-content: center; gap: var(--s-2); min-height: 52px; border: 1.5px dashed var(--line); border-radius: var(--r-md); background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
   .panel { padding: var(--s-4); border-radius: var(--r-md); background: var(--surface-2); position: sticky; top: 16px; }
   .detail { display: grid; gap: var(--s-3); }

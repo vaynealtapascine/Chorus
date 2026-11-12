@@ -4,7 +4,7 @@
   import FormCard from '../kit/FormCard.svelte';
   import Switch from '../kit/Switch.svelte';
   import FormNote from '../kit/FormNote.svelte';
-  import Chip from './Chip.svelte';
+  import Chip from '../kit/Chip.svelte';
   import Label from './Label.svelte';
 
   let { def = $bindable(), chatName = true }: { def: Def; chatName?: boolean } = $props();
