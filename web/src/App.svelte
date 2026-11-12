@@ -243,7 +243,7 @@
       {:else if router.route.name === 'post-stage' && router.route.id}
         <PostStage {projection} id={router.route.id} />
       {:else if router.route.name === 'more'}
-        <More />
+        <More {projection} />
       {:else if router.route.name === 'notifications'}
         <Notifications {projection} {dark} />
       {:else if router.route.name === 'chat'}
