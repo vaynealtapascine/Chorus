@@ -42,6 +42,12 @@ Then web, by the same waves, using each audit's *Web* section.
 **Order changed (owner, 2026-11-09):** after Android wave 7 ships, go to web parity (waves 1–7 on web,
 `ui21-web-plan.md`); Android wave 8 (the new approved features) comes after web parity.
 
+**Before wave 8 (owner, 2026-11-12): a design consistency pass over web.** Once the web slices in
+`ui21-web-plan.md` are in, go through every web screen in a browser (desktop 1280 and phone width, light and
+dark) against the frames and against each other: one kit (`web/src/lib/ui/kit`) for sheets, form cards, value
+rows, tabs, chips, buttons and empty states; the same spacing, radii, type sizes and colour tokens; no leftover
+one-off styles, sentences or extra taps. Fix what differs, then wave 8.
+
 ## Owner questions (defaults in use)
 
 Asked and answered 2026-11-08: D-130–D-138 (and Q24). The CHORUS wordmark is outlined from the
