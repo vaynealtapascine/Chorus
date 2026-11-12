@@ -301,7 +301,7 @@
   let mentionIndex = $state(0);
   let dismissedMention = $state('');
   const mentionRange = $derived(!editing && !composing ? mentionAt(draft, cursor, selectionEnd) : null);
-  const mentionMatches = $derived(mentionRange && dismissedMention !== `${draft}|${cursor}` ? mentionOptions.filter((m) => m.name.toLowerCase().includes(mentionRange.query) || !!m.handle?.startsWith(mentionRange.query)).slice(0, 8) : []);
+  const mentionMatches = $derived(mentionRange && dismissedMention !== `${draft}|${cursor}` ? mentionOptions.filter((m) => m.name.toLowerCase().includes(mentionRange.query) || !!m.handle?.startsWith(mentionRange.query)).slice(0, 4) : []);
   function trackCursor() { const next = box?.selectionStart ?? draft.length; if (next !== cursor) mentionIndex = 0; cursor = next; selectionEnd = box?.selectionEnd ?? cursor; }
   function insertText(text: string, from = cursor, to = selectionEnd) {
     const result = replaceSelection(draft, from, to, text);
@@ -1539,6 +1539,20 @@
         {/each}
       </div>
     {/if}
+    {#if mentionMatches.length && !lockedOut}
+      <div class="mention-suggestions" role="listbox" aria-label="Mention suggestions">
+        {#each mentionMatches as mention, i (`${mention.type}:${mention.id}`)}
+          {@const who = mention.id ? people.get(mention.id) : undefined}
+          {@const layer = who ? shownFront.entries.find((e) => e.subject_type === 'member' && e.subject_id === who.id) : undefined}
+          <button class:active={i === mentionIndex} role="option" aria-selected={i === mentionIndex} onmousedown={(e) => e.preventDefault()} onclick={() => insertMention(mention)}>
+            {#if who}<span class="m-face" style="background: {color(who.id).ring}; color: {color(who.id).avatar_ink}"><AvatarImage hash={who.avatar_blob} glyph={who.sigils[0] ?? who.name[0]} name={who.name} /></span>
+            {:else}<span class="m-face" class:front={mention.type === 'front'}>{mention.type === 'front' ? '@' : mention.name[0]?.toUpperCase()}</span>{/if}
+            <strong>@{mention.name}</strong>
+            <small>{mention.type === 'front' ? 'whoever fronts when it arrives' : who ? (layer ? layerNames.get(layer.level)?.toLowerCase() ?? '' : mention.handle ? `@${mention.handle}` : '') : ''}</small>
+          </button>
+        {/each}
+      </div>
+    {/if}
     {#if hasAside && !editing}
       <div class="audience" class:on={aside}>
         <Icon name={aside ? 'lock' : 'globe'} size={18} />
@@ -1608,13 +1622,6 @@
               placeholder={editing ? 'Edit message' : !current ? '' : aside ? asidePlaceholder(systemName) : 'Message'}
               aria-label="Message"
             ></textarea>
-          {/if}
-          {#if mentionMatches.length}
-            <div class="mention-suggestions" role="listbox" aria-label="Mention suggestions">
-              {#each mentionMatches as mention, i (`${mention.type}:${mention.id}`)}
-                <button class:active={i === mentionIndex} role="option" aria-selected={i === mentionIndex} onclick={() => insertMention(mention)}>@{mention.name}<small>{mention.handle ? `@${mention.handle}` : mention.type === 'front' ? 'current fronters' : mention.type}</small></button>
-              {/each}
-            </div>
           {/if}
           {#if completion.length && !editing}
             <div class="emoji-suggestions" role="listbox" aria-label="Emoji autocomplete">
@@ -1710,10 +1717,14 @@
   .info-link { display: block; overflow-wrap: anywhere; padding: 8px 0; }
   .unicode-emoji { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; }
   .unicode-emoji button { font-size: 22px; padding: 7px; justify-content: center; }
-  .mention-suggestions { display: grid; max-height: 240px; overflow: auto; }
-  .mention-suggestions button { display: flex; justify-content: space-between; gap: 12px; text-align: left; padding: 8px; }
-  .mention-suggestions button.active { background: var(--surface-2); outline: 1px solid var(--line); }
-  .mention-suggestions small { color: var(--ink-3); }
+  .mention-suggestions { display: grid; padding: 4px 8px; border-top: 1px solid var(--line); background: var(--surface); }
+  .mention-suggestions button { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 4px 8px; border: 0; border-radius: 10px; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+  .mention-suggestions button:hover, .mention-suggestions button.active { background: var(--surface-2); }
+  .mention-suggestions strong { flex: 1; min-width: 0; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mention-suggestions small { color: var(--ink-3); font-size: 12px; white-space: nowrap; }
+  .m-face { width: 32px; height: 32px; flex: none; display: grid; place-items: center; overflow: hidden; border-radius: 50%; background: var(--surface-3, var(--surface-2)); color: var(--ink-2); font-weight: 600; font-size: 14px; }
+  .m-face.front { background: var(--accent-soft); color: var(--accent); }
+  .m-face :global(img) { width: 100%; height: 100%; object-fit: cover; }
   .jump-latest { align-self: flex-end; margin: 8px 16px; border-radius: 24px; padding: 8px 14px; background: var(--surface-2); animation: chorus-pop-in var(--t-fast) var(--ease); }
   /* bars over the composer, the info panel and in-chat search arrive rather than pop in */
   .bar, .reply-in, .not-sent li, .msg-options { animation: chorus-rise-in var(--t-fast) var(--ease); }

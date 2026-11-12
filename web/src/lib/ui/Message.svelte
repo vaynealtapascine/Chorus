@@ -28,6 +28,7 @@
   import LinkEmbeds from './LinkEmbeds.svelte';
   import ManyMembersSheet from './ManyMembersSheet.svelte';
   import type { MemberChange } from '../many-members';
+  import { layout as menuLayout, type Action } from '../chat-actions';
   import { tag as asideTag } from '../chat-aside';
 
   export type Quote = TextRange;
@@ -162,6 +163,12 @@
     actionMenu.style.left = `${Math.max(12, Math.min(r.left, innerWidth - box.width - 12))}px`;
     actionMenu.style.top = `${Math.max(12, Math.min(r.bottom + 4, innerHeight - box.height - 12))}px`;
   }
+  // what the menu offers: the eight Figma rows first, the rest behind More (chat-actions.ts)
+  let more = $state(false);
+  const layout = $derived(menuLayout([
+    'react', 'reply', 'thread', ...(m.text ? ['copy' as const] : []), 'pin', 'forward', 'select', 'reply_in', 'quote', 'link',
+    ...(mine ? ['edit' as const, 'delete' as const] : []), ...(onreplyprivately ? ['private' as const] : []), ...(m.edited ? ['history' as const] : []),
+  ]));
   const PALETTE = ['💜', '👍', '😂', '🥹', '🎉', '😢', '👀', '🔥'];
   let palette = $state(false);
   let cwExpanded = $state<boolean | null>(null);
@@ -426,24 +433,15 @@
     <button class="action-trigger" bind:this={actionTrigger} popovertarget={menuId} aria-label="Message actions" title="Message actions"><Icon name="more" size={18} /></button>
     <div class="actions" bind:this={actionMenu} id={menuId} popover="auto" role="group" aria-label="Message actions"
       onbeforetoggle={(e) => { if (e.newState === 'open') { menuOpen = true; flushSync(); } }}
-      ontoggle={(e) => { if (e.newState === 'open') placeActions(); else setTimeout(() => { if (!actionMenu?.matches(':popover-open')) menuOpen = false; }, 300); }}>
+      ontoggle={(e) => { if (e.newState === 'open') placeActions(); else setTimeout(() => { if (!actionMenu?.matches(':popover-open')) { menuOpen = false; more = false; } }, 300); }}>
       {#if menuOpen}
       <p class="when"><time datetime={new Date(m.occurred_at).toISOString()}>{when}</time>{m.edited ? ' · edited' : ''}</p>
-      <button onclick={() => runAction(() => (palette = !palette))} title="React" disabled={!speaker}><Icon name="smile" size={20} />React</button>
-      <button onclick={() => runAction(onreply)} title="Reply"><Icon name="action-reply" size={20} />Reply</button>
-      <button onclick={() => runAction(onreplyin)} title="Reply in another channel"><Icon name="action-reply" size={20} />Reply in another channel</button>
-      {#if onreplyprivately}<button onclick={() => runAction(onreplyprivately)} title="Reply privately"><Icon name="chat" size={20} />Reply privately</button>{/if}
-      {#if m.text}<button onclick={() => runAction(copyText)} title="Copy the selected words, or the whole message"><Icon name="copy" size={20} />Copy text</button>{/if}
-      <button onclick={() => runAction(quote)} title="Quote (select text first to quote part)"><Icon name="copy" size={20} />Quote selection or message</button>
-      <button onclick={() => runAction(() => onforward(selectedRange() ?? undefined))} title="Forward selection or message"><Icon name="forward" size={20} />Forward</button>
-      <button onclick={() => runAction(() => navigator.clipboard?.writeText(linkTo(location.origin, { kind: 'message', id: m.id })))} title="Copy a link to this message: it shows as a preview in a chat"><Icon name="copy" size={20} />Copy link</button>
-      <button onclick={() => runAction(onselect)} title={selected ? 'Deselect message' : 'Select for bundle'} aria-label={selected ? 'Deselect message' : 'Select for bundle'}><Icon name="select" size={20} />{selected ? 'Deselect' : 'Select for bundle'}</button>
-      <button onclick={() => runAction(onthread)} title={thread ? 'Open thread' : 'Start thread'} aria-label={thread ? 'Open thread' : 'Start thread'}><Icon name="action-thread" size={20} />{thread ? 'Open thread' : 'Start thread'}</button>
-      <button onclick={() => runAction(onpin)} title={m.pinned ? 'Unpin' : 'Pin'}><Icon name="action-pin" size={20} />{m.pinned ? 'Unpin' : 'Pin'}</button>
-      {#if m.edited}<button onclick={() => runAction(toggleHistory)} title="What it said before"><Icon name="history" size={20} />{history ? 'Hide edit history' : 'Edit history'}</button>{/if}
-      {#if mine}
-        <button onclick={() => runAction(onedit)} title="Edit"><Icon name="action-edit" size={20} />Edit</button>
-        <button class="delete-action" onclick={() => runAction(ondelete)} title="Delete"><Icon name="delete" size={20} />Delete</button>
+      {#if more}
+        <button onclick={() => (more = false)} title="Back" aria-label="Back"><Icon name="back" size={20} />Back</button>
+        {#each layout.more as id (id)}{@render row(id)}{/each}
+      {:else}
+        {#each layout.primary as id (id)}{@render row(id)}{/each}
+        {#if layout.more.length}<button onclick={() => (more = true)} title="More" aria-haspopup="menu"><Icon name="more" size={20} />More</button>{/if}
       {/if}
       {/if}
     </div>
@@ -463,6 +461,23 @@
     {#snippet extra()}{#if others.length}<p class="also">Also reacted: {others.map(nameOf).join(', ')}</p>{/if}{/snippet}
   </ManyMembersSheet>
 {/if}
+
+{#snippet row(id: Action)}
+  {#if id === 'react'}<button onclick={() => runAction(() => (palette = !palette))} title="React" disabled={!speaker}><Icon name="smile" size={20} />React</button>
+  {:else if id === 'reply'}<button onclick={() => runAction(onreply)} title="Reply"><Icon name="action-reply" size={20} />Reply</button>
+  {:else if id === 'thread'}<button onclick={() => runAction(onthread)} title={thread ? 'Open thread' : 'Reply in thread'} aria-label={thread ? 'Open thread' : 'Reply in thread'}><Icon name="action-thread" size={20} />{thread ? 'Open thread' : 'Reply in thread'}</button>
+  {:else if id === 'copy'}<button onclick={() => runAction(copyText)} title="Copy the selected words, or the whole message"><Icon name="copy" size={20} />Copy text</button>
+  {:else if id === 'pin'}<button onclick={() => runAction(onpin)} title={m.pinned ? 'Unpin' : 'Pin'}><Icon name="action-pin" size={20} />{m.pinned ? 'Unpin' : 'Pin'}</button>
+  {:else if id === 'forward'}<button onclick={() => runAction(() => onforward(selectedRange() ?? undefined))} title="Forward selection or message"><Icon name="forward" size={20} />Forward</button>
+  {:else if id === 'edit'}<button onclick={() => runAction(onedit)} title="Edit"><Icon name="action-edit" size={20} />Edit</button>
+  {:else if id === 'select'}<button onclick={() => runAction(onselect)} title={selected ? 'Deselect message' : 'Select'} aria-label={selected ? 'Deselect message' : 'Select'}><Icon name="select" size={20} />{selected ? 'Deselect' : 'Select'}</button>
+  {:else if id === 'delete'}<button class="delete-action" onclick={() => runAction(ondelete)} title="Delete"><Icon name="delete" size={20} />Delete</button>
+  {:else if id === 'private'}<button onclick={() => runAction(() => onreplyprivately?.())} title="Reply privately"><Icon name="chat" size={20} />Reply privately</button>
+  {:else if id === 'reply_in'}<button onclick={() => runAction(onreplyin)} title="Reply in another channel"><Icon name="action-reply" size={20} />Reply in…</button>
+  {:else if id === 'quote'}<button onclick={() => runAction(quote)} title="Quote (select text first to quote part)"><Icon name="copy" size={20} />Quote</button>
+  {:else if id === 'link'}<button onclick={() => runAction(() => navigator.clipboard?.writeText(linkTo(location.origin, { kind: 'message', id: m.id })))} title="Copy a link to this message"><Icon name="copy" size={20} />Copy link</button>
+  {:else if id === 'history'}<button onclick={() => runAction(toggleHistory)} title="What it said before"><Icon name="history" size={20} />{history ? 'Hide edit history' : 'Edit history'}</button>{/if}
+{/snippet}
 
 <!-- beside the bubble: "edited" always, the time on hover where there is one (owner, 2026-11-02) -->
 {#snippet aside()}

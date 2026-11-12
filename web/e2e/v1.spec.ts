@@ -136,6 +136,7 @@ test('reply privately: from the shared space into the DM, linking back (SPEC §5
   const welcome = `welcome to the club ${run}`;
   const msg = friend.page.locator('.msg', { hasText: welcome });
   await msg.getByRole('button', { name: 'Message actions', exact: true }).click();
+  await msg.getByTitle('More', { exact: true }).click();
   await msg.getByTitle('Reply privately').click();
   // the DM opens with the reply ready
   await expect(friend.page.locator('.room-head h1')).toContainText('Stars');
