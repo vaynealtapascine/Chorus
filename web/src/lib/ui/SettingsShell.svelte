@@ -8,6 +8,7 @@
   import ValueRow from './kit/ValueRow.svelte';
   import Trash from './Trash.svelte';
   import ThisComputer from './ThisComputer.svelte';
+  import SyncIssuesPage from './settings/SyncIssuesPage.svelte';
   import ThisDevice from './ThisDevice.svelte';
   import AccountPage from './settings/AccountPage.svelte';
   import AdvancedPage from './settings/AdvancedPage.svelte';
@@ -35,7 +36,8 @@
     return () => query.removeEventListener('change', on);
   });
 
-  const pages = $derived(visiblePages({ person: !!selfMember(projection), admin: !!sync.device?.is_admin, home }));
+  const issues = $derived(projection ? sync.syncIssues().length : 0);
+  const pages = $derived(visiblePages({ person: !!selfMember(projection), admin: !!sync.device?.is_admin, home, issues }));
   const current = $derived(pageFor(page, pages));
   // on a narrow screen no page chosen means the list
   const showList = $derived(!wide && !page);
@@ -72,6 +74,7 @@
       {:else if current === 'webhooks'}<WebhooksPage />
       {:else if current === 'trash'}<Trash {projection} />
       {:else if current === 'devices'}<DevicesPage />
+      {:else if current === 'issues'}<SyncIssuesPage {projection} />
       {:else if current === 'device'}<ThisDevice />
       {:else if current === 'computer'}<ThisComputer />
       {:else if current === 'health'}<ServerHealthPage />

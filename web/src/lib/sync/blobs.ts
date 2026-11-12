@@ -74,3 +74,15 @@ export async function keepStorage(): Promise<boolean> {
     return false;
   }
 }
+
+/** How many bytes of downloaded files this browser keeps (the offline cache), for Clear downloaded files. */
+export async function blobCacheBytes(): Promise<number> {
+  try {
+    const cache = await caches.open(CACHE);
+    let total = 0;
+    for (const request of await cache.keys()) total += (await (await cache.match(request))?.blob())?.size ?? 0;
+    return total;
+  } catch {
+    return 0;
+  }
+}

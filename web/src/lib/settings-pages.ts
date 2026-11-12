@@ -11,6 +11,7 @@ export const SETTINGS_PAGES: SettingsPage[] = [
   { id: 'tokens', label: 'API tokens', icon: 'globe', group: 'Data' },
   { id: 'webhooks', label: 'Webhooks', icon: 'forward', group: 'Data' },
   { id: 'trash', label: 'Trash', icon: 'delete', group: 'Data' },
+  { id: 'issues', label: 'Sync issues', icon: 'target', group: 'Data' },
   { id: 'devices', label: 'Devices', icon: 'users', group: 'This computer' },
   { id: 'device', label: 'This device', icon: 'monitor', group: 'This computer' },
   { id: 'computer', label: 'This computer', icon: 'home', group: 'This computer' },
@@ -26,12 +27,14 @@ export interface SettingsContext {
   admin: boolean;
   /** this browser is on the PC that runs Chorus Home */
   home: boolean;
+  /** refused ops waiting on this device: the page is listed only while there are some */
+  issues?: number;
 }
 
 /** The pages that apply here, in order: Sharing is a system's, Server health an admin's, This computer a home install's. */
 export function visiblePages(ctx: SettingsContext): SettingsPage[] {
   return SETTINGS_PAGES.filter((p) =>
-    (p.id !== 'sharing' || !ctx.person) && (p.id !== 'health' || ctx.admin) && (p.id !== 'computer' || ctx.home));
+    (p.id !== 'sharing' || !ctx.person) && (p.id !== 'health' || ctx.admin) && (p.id !== 'computer' || ctx.home) && (p.id !== 'issues' || !!ctx.issues));
 }
 
 export function groupedPages(pages: SettingsPage[]): { group: SettingsGroup; pages: SettingsPage[] }[] {

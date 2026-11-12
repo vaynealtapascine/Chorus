@@ -1,20 +1,34 @@
 <script lang="ts">
-  // "Keep everything on this device" and "Sync everything now" (D-070, CLIENTS.md §4.3).
+  // On this device (Figma F9.6; D-070, CLIENTS.md §4.3): what is kept offline, sync now, free up space.
   import { onMount } from 'svelte';
   import { sync } from '../sync/client';
+  import { blobCacheBytes, forgetBlobs } from '../sync/blobs';
   import { fillFiles, installed, keepEverything, setKeepEverything, spaceUsed } from '../sync/keep';
+  import ConfirmSheet from './kit/ConfirmSheet.svelte';
+  import FormCard from './kit/FormCard.svelte';
+  import PageHeader from './kit/PageHeader.svelte';
+  import SectionLabel from './kit/SectionLabel.svelte';
+  import Switch from './kit/Switch.svelte';
+  import ValueRow from './kit/ValueRow.svelte';
 
   let keep = $state(false);
   let running = $state(false);
   let checked = $state<{ done: number; total: number } | null>(null);
   let files = $state<{ done: number; total: number; missing: number } | null>(null);
   let space = $state<{ usage: number; quota: number } | null>(null);
+  let downloaded = $state(0);
   let error = $state('');
   let finished = $state(false);
+  let asking = $state(false);
 
   const size = (bytes: number) =>
     bytes >= 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(1)} GB` : `${Math.max(0.1, bytes / 1024 ** 2).toFixed(1)} MB`;
-  const refreshSpace = async () => { space = await spaceUsed(); };
+  async function refreshSpace() {
+    space = await spaceUsed();
+    downloaded = await blobCacheBytes();
+  }
+  const other = $derived(space ? Math.max(0, space.usage - downloaded) : 0);
+  const percent = (part: number) => (space?.quota ? Math.max(1, (part / space.quota) * 100) : 0);
 
   onMount(() => {
     void keepEverything().then((on) => (keep = on));
@@ -45,42 +59,57 @@
       await refreshSpace();
     }
   }
+  async function clear() {
+    asking = false;
+    await forgetBlobs();
+    await refreshSpace();
+  }
+  const issues = sync.syncIssues().length;
 </script>
 
-<section class="card" aria-label="This device">
-  <h2>This device</h2>
-  <label class="check">
-    <input type="checkbox" checked={keep} onchange={(e) => toggle(e.currentTarget.checked)} />
-    Keep everything on this device
-  </label>
-  <span class="hint">
-    All your history stays here either way; this also keeps photos, files (up to 20 MB each), avatars and emoji,
-    so they show without the server. {installed() ? 'On by default in the installed app.' : 'Off by default in a browser tab.'}
-  </span>
-  <div class="row">
-    <button class="primary" onclick={syncEverything} disabled={running || sync.status !== 'live'}>
-      {running ? 'Syncing…' : 'Sync everything now'}
-    </button>
-    {#if sync.status !== 'live'}<span class="hint">Needs the server.</span>{/if}
-  </div>
+<section class="page" aria-label="This device">
+  <PageHeader title="This device" sub={installed() ? 'Installed app' : 'Browser'} />
+  <SectionLabel label="Offline" />
+  <FormCard>
+    <Switch label="Keep everything on this device" sub="Read old chats and posts without a connection" checked={keep} onchange={toggle} />
+    <ValueRow icon="swap" label={running ? 'Syncing…' : 'Sync everything now'} disabled={running || sync.status !== 'live'} onclick={syncEverything} />
+  </FormCard>
   {#if checked && checked.total}
-    <span role="status">Checked {checked.done} of {checked.total} {checked.total === 1 ? 'place' : 'places'} with the server{files ? '' : running ? '…' : '.'}</span>
+    <p class="note" role="status">Checked {checked.done} of {checked.total} {checked.total === 1 ? 'place' : 'places'} with the server{files ? '' : running ? '…' : '.'}</p>
   {/if}
-  {#if files}
-    <span role="status">Files: {files.done} of {files.total}{files.missing ? ` (${files.missing} not available)` : ''}</span>
+  {#if files}<p class="note" role="status">Files: {files.done} of {files.total}{files.missing ? ` (${files.missing} not available)` : ''}</p>{/if}
+  {#if finished}<p class="note" role="status">Everything is on this device.</p>{/if}
+  {#if error}<p class="note error" role="alert">{error}</p>{/if}
+  {#if space}
+    <div class="usage">
+      <div class="head"><strong>Space used</strong><span>{size(space.usage)}{space.quota ? ` of ${size(space.quota)}` : ''}</span></div>
+      <div class="bar" aria-hidden="true">
+        <span class="msg" style="width: {percent(other)}%"></span><span class="files" style="width: {percent(downloaded)}%"></span>
+      </div>
+      <p class="note">This app uses {size(space.usage)} on this device{space.quota ? ` of ${size(space.quota)} available` : ''}.</p>
+    </div>
   {/if}
-  {#if finished}<span role="status">Everything is on this device.</span>{/if}
-  {#if error}<span class="error" role="alert">{error}</span>{/if}
-  {#if space}<span class="hint">This app uses {size(space.usage)} on this device{space.quota ? ` of ${size(space.quota)} available` : ''}.</span>{/if}
+  <SectionLabel label="Free up space" />
+  <FormCard>
+    <ValueRow icon="delete" label="Clear downloaded files" value={downloaded ? `Frees about ${size(downloaded)}` : null} disabled={!downloaded} onclick={() => (asking = true)} />
+  </FormCard>
+  {#if issues}
+    <FormCard><ValueRow icon="target" label="Sync issues" value={String(issues)} href="#/settings/issues" /></FormCard>
+  {/if}
 </section>
 
+{#if asking}
+  <ConfirmSheet title="Clear downloaded files?" message="Frees about {size(downloaded)}. Messages stay; files download again when you open them." confirm="Clear" onconfirm={clear} onclose={() => (asking = false)} />
+{/if}
+
 <style>
-  .card { display: grid; gap: var(--s-2); padding: var(--s-4); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); }
-  h2 { margin: 0; }
-  .check { display: flex; gap: var(--s-2); align-items: center; }
-  .row { display: flex; gap: var(--s-3); align-items: center; }
-  .hint { color: var(--ink-3); font-size: var(--fs-sm); margin: 0; }
-  .error { color: var(--danger); }
-  .primary { font: inherit; justify-self: start; background: var(--accent); color: var(--surface); border: 0; border-radius: var(--r-full); padding: var(--s-2) var(--s-4); cursor: pointer; }
-  .primary:disabled { opacity: 0.5; cursor: default; }
+  .page { display: grid; gap: 12px; max-width: 720px; align-content: start; }
+  .note { margin: 0; color: var(--ink-3); font-size: 13px; padding: 0 4px; }
+  .note.error { color: var(--danger); }
+  .usage { display: grid; gap: 8px; padding: 14px; border-radius: 16px; background: var(--surface-2); }
+  .head { display: flex; justify-content: space-between; gap: 12px; }
+  .head span { color: var(--ink-3); font-size: 13px; }
+  .bar { display: flex; height: 8px; border-radius: 4px; background: var(--surface-3, var(--surface)); overflow: hidden; }
+  .msg { background: var(--accent); }
+  .files { background: var(--sun); }
 </style>
