@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { closedAt, closingLabel, ownChoices, parsePoll, pollOf, pollPayload, tallyOf, toggled } from './polls';
+import { NUDGE_COOLDOWN_MS, closedAt, closingLabel, nudgedRecently, ownChoices, parsePoll, percent, pollOf, pollPayload, tallyOf, toggled, votedCount } from './polls';
 import type { Projection } from './sync/client';
 
 const row = (fields: Record<string, unknown>) => ({ exists: true, fields, clocks: {} });
@@ -48,4 +48,18 @@ it('reads closing times and the earliest close, and builds a closing time into t
   expect(pollPayload(['Soup', 'Rice'], false, 2000, 1000).poll?.closes_at).toBe(2000);
   expect(pollPayload(['Soup', 'Rice'], false, 1000, 1000).error).toMatch(/closing time/);
   expect(pollPayload(['Soup', 'Rice'], false).poll).not.toHaveProperty('closes_at');
+});
+
+it('works out percents, who has voted and who was nudged lately (D-143)', () => {
+  expect(percent(1, 3)).toBe(33);
+  expect(percent(2, 3)).toBe(67);
+  expect(percent(5, 0)).toBe(0);
+  const p = { rows: {
+    poll_vote: { 'x|a': row({ choices: ['a'] }), 'x|b': row({ choices: [] }) },
+    poll_nudge: { 'x|b': row({ nudged_at: 1000 }) },
+  } } as unknown as Projection;
+  expect(votedCount(p, 'x', ['a', 'b', 'c'])).toBe(1);
+  expect(nudgedRecently(p, 'x', 'b', 1000 + NUDGE_COOLDOWN_MS - 1)).toBe(true);
+  expect(nudgedRecently(p, 'x', 'b', 1000 + NUDGE_COOLDOWN_MS)).toBe(false);
+  expect(nudgedRecently(p, 'x', 'a', 2000)).toBe(false);
 });

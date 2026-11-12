@@ -17,7 +17,7 @@
   import { flushUploads, imageThumbnail, stageBlob } from '../sync/uploads';
   import Message from './Message.svelte';
   import PollCard from './PollCard.svelte';
-  import { pollOf, pollPayload } from '../polls';
+  import { closeMessage, pollOf, pollPayload } from '../polls';
   import AvatarImage from './AvatarImage.svelte';
   import EmojiImage from './EmojiImage.svelte';
   import ChatFolderRail from './ChatFolderRail.svelte';
@@ -1199,7 +1199,8 @@
 
 {#snippet pollFor(id: string)}
   {@const poll = pollOf(projection, id)}
-  {#if poll}<PollCard {projection} parentId={id} {poll} member={speaker} />{/if}
+  {@const m = messageById(projection, id)}
+  {#if poll}<PollCard {projection} parentId={id} {poll} member={speaker} onclose={m && m.account_id === sync.accountId ? () => closeMessage(scope, id, m.channel_id) : undefined} />{/if}
 {/snippet}
 
 <div class="chat" class:with-info={showInfo && !listing} class:listing>

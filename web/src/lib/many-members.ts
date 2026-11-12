@@ -37,3 +37,8 @@ export function actors(p: Projection, account: string): MemberRow[] {
 export function frontingIds(p: Projection, account: string): Set<string> {
   return new Set(bodyPresence(p, account).filter((e) => e.subject_type === 'member').map((e) => e.subject_id));
 }
+
+/** A member as the round face draws them. */
+export const faceOf = (m: MemberRow) => ({ type: 'member' as const, id: m.id, name: m.display_name ?? m.name, color: m.color,
+  glyph: m.sigils[0] ?? m.name[0] ?? '?', blob: m.avatar_blob ?? undefined });
+export const isDark = () => typeof document === 'undefined' || document.documentElement.dataset.theme !== 'light';

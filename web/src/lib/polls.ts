@@ -84,3 +84,33 @@ export function pollPayload(texts: string[], multiple: boolean, closesAt: number
   return { poll: { options: options.map((text, i) => ({ id: String.fromCharCode(97 + i), text })), multiple,
     ...(closesAt != null ? { closes_at: closesAt } : {}) } };
 }
+
+/** An option's share of the voters, as the whole percent a poll card shows. */
+export function percent(count: number, voters: number): number {
+  return voters <= 0 ? 0 : Math.min(100, Math.max(0, Math.round((count * 100) / voters)));
+}
+
+/** How many of `members` have voted: "2 of 4 voted" (own account only, D-081). */
+export function votedCount(p: Projection, parentId: string, members: string[]): number {
+  return members.filter((id) => ownChoices(p, parentId, id).length > 0).length;
+}
+
+/** How soon a member can be nudged again on the same poll (core `poll::NUDGE_COOLDOWN_MS`). */
+export const NUDGE_COOLDOWN_MS = 4 * 3_600_000;
+
+/** Was this member nudged on this poll too recently to nudge again? */
+export function nudgedRecently(p: Projection, parentId: string, member: string, now: number): boolean {
+  const at = p.rows.poll_nudge?.[`${parentId}|${member}`]?.fields.nudged_at;
+  return typeof at === 'number' && now - at < NUDGE_COOLDOWN_MS;
+}
+
+/** Remind one of our members, from `by` (D-136, D-143). Never leaves the account. */
+export function nudge(parentId: string, member: string, by: string | null | undefined) {
+  sync.create('poll.nudge', sync.accountScope, parentId, { member_ids: [member], ...(by ? { by_member_id: by } : {}) });
+}
+
+/** The author closes their poll early (D-141): in the author's account for a post, in its space for a message. */
+export function closePost(postId: string) { sync.create('post.poll_close', sync.accountScope, postId, {}); }
+export function closeMessage(scope: string, messageId: string, channelId: string) {
+  sync.create('message.poll_close', scope, messageId, { channel_id: channelId });
+}

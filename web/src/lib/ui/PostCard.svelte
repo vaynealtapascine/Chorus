@@ -2,7 +2,7 @@
   // A journal post the way Android's JournalPostFrame reads it: avatar column, names · compact
   // time, the post, then one quiet icon row (reply, repost, heart, save, share) and a ⋯ menu.
   import PollCard from './PollCard.svelte';
-  import { pollOf } from '../polls';
+  import { closePost, pollOf } from '../polls';
   import { sync, type Projection } from '../sync/client';
   import { core } from '../core';
   import { buckets, type MemberRow } from '../data';
@@ -199,7 +199,7 @@
         {#if post.mood}<p class="mood">{post.mood}</p>{/if}
         {#if post.kind !== 'entry' && post.tags.length}<p class="tags">{#each post.tags as tag (tag)}<span>#{tag}</span>{/each}</p>{/if}
         {#if post.attachments?.length}<PostMedia attachments={post.attachments} who={names} occurredAt={post.occurred_at} />{/if}
-        {#if poll && projection}<PollCard {projection} parentId={post.id} {poll} member={speaker} />{/if}
+        {#if poll && projection}<PollCard {projection} parentId={post.id} {poll} member={speaker} internal={post.visibility.mode === 'private'} onclose={own ? () => closePost(post.id) : undefined} />{/if}
         {#if quote}<QuoteEmbed {quote} />{/if}
         {#if full}
           <p class="detail-time">{detailTime} · {audienceLabel}</p>

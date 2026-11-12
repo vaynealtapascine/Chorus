@@ -19,6 +19,8 @@
   import AvatarImage from './AvatarImage.svelte';
   import Icon from './Icon.svelte';
   import PostCard from './PostCard.svelte';
+  import PollVotes from './PollVotes.svelte';
+  import { pollOf } from '../polls';
   import PostComposer from './PostComposer.svelte';
   import RemotePostActions from './RemotePostActions.svelte';
   import RemotePostPoll from './RemotePostPoll.svelte';
@@ -35,6 +37,7 @@
   const active = $derived(members(projection).filter((m) => canWriteAs(projection, m.id, sync.accountId)));
   const speaker = $derived(bodyAuthors(projection, sync.accountId)[0] || active[0]?.id || null);
   const own = $derived(rows.find((post) => post.id === id && !post.deleted));
+  const ownPoll = $derived(own ? pollOf(projection, own.id) : null);
 
   let detail = $state<PostDetail | null>(null);
   // own posts read their reactions from the replica, which has only ours: friends' come with the server read
@@ -172,6 +175,7 @@
         quote={quoteView(own.quote_post_id, postById, name, detail?.quoted ?? (own.quote_post_id && !postById.has(own.quote_post_id) ? remotePost(own.quote_post_id) : null))}
         replyCount={replies.length} onreply={focusReply}
         onreact={(emoji, add, as) => react(own.id, emoji, add, as)} />
+      {#if ownPoll}<PollVotes {projection} parentId={own.id} poll={ownPoll} voter={speaker} />{/if}
     </div>
   {:else if detail}
     <div class="focus remote" class:joined={ancestors.length > 0}>

@@ -5,7 +5,7 @@
   import type { Snippet } from 'svelte';
   import '../design/friends.css';
   import type { MemberRow } from '../data';
-  import { memberChange, type MemberChange } from '../many-members';
+  import { faceOf, memberChange, type MemberChange } from '../many-members';
   import Face from './Face.svelte';
   import Icon from './Icon.svelte';
   import Sheet from './Sheet.svelte';
@@ -32,8 +32,7 @@
     if (!next.delete(id)) next.add(id);
     chosen = next;
   }
-  const who = (m: MemberRow) => ({ type: 'member' as const, id: m.id, name: m.display_name ?? m.name, color: m.color,
-    glyph: m.sigils[0] ?? m.name[0] ?? '?', blob: m.avatar_blob ?? undefined });
+  const who = faceOf;
 </script>
 
 <Sheet {title} {subtitle} {onclose}>
