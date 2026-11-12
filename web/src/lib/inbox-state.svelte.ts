@@ -4,7 +4,7 @@ import { apiFetch } from './http';
 import { apiBase } from './sync/device';
 import { sync, type Projection } from './sync/client';
 import { selfMember, members } from './data';
-import { fromActivity, fromNotifications, needsYou, type FollowRow, type InboxItem, type JournalActivity } from './inbox';
+import { fromActivity, fromNotifications, needsYou, withReactors, type FollowRow, type InboxItem, type JournalActivity } from './inbox';
 
 export const inbox = $state<{ account: string; items: InboxItem[]; activity: JournalActivity | null; loaded: boolean }>({
   account: '', items: [], activity: null, loaded: false,
@@ -19,7 +19,7 @@ const soft = async <T>(read: () => Promise<T>): Promise<T | null> => { try { ret
 
 /** Other accounts' replies, quotes, reposts and hearts on our posts; `before` pages back. */
 export async function loadActivity(before?: number): Promise<JournalActivity> {
-  return await get(`/posts/activity?limit=50${before === undefined ? '' : `&before=${before}`}`) as JournalActivity;
+  return withReactors(await get(`/posts/activity?limit=50${before === undefined ? '' : `&before=${before}`}`) as JournalActivity);
 }
 
 /** Read the first activity page again for our own cards' counts. */

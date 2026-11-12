@@ -10,6 +10,16 @@ export interface DeviceRecord {
   expires_at: number;
   /** Non-extractable CryptoKeyPair (structured-clonable into IndexedDB). */
   keys: CryptoKeyPair;
+  /** The server signed this device out (D-152, D-153): the browser shows onboarding, and keeps
+   * this copy until `wipe_at` (server time; `offset` = server − this clock when it was learned). */
+  signed_out?: SignedOut;
+}
+
+export interface SignedOut {
+  at: number | null;
+  /** null: nothing is erased on a timer (an older server, or a key that no longer matches) */
+  wipe_at: number | null;
+  offset: number;
 }
 
 export interface Changes {
@@ -137,8 +147,24 @@ export async function uploadedBlob(hash: string): Promise<void> {
   await (await db()).delete('blob_uploads', hash);
 }
 
+/** Every store of this browser's copy. Only `erase.ts` calls it (D-152). */
 export async function wipe(): Promise<void> {
   const d = await db();
   const tx = d.transaction(['ops', 'kv', 'blob_uploads'], 'readwrite');
   await Promise.all([tx.objectStore('ops').clear(), tx.objectStore('kv').clear(), tx.objectStore('blob_uploads').clear(), tx.done]);
+}
+
+/** The unsaved-ops journal with `ops` added (tabs of one browser share it): by op id, `ops`' copy
+ * winning. An unreadable journal is replaced. */
+export function mergeJournal(held: string | null, ops: { id: string }[]): { id: string }[] {
+  let old: unknown = [];
+  try {
+    old = JSON.parse(held ?? '[]');
+  } catch {
+    // replaced
+  }
+  const out = new Map<string, { id: string }>();
+  for (const o of Array.isArray(old) ? old : []) if (o && typeof o.id === 'string') out.set(o.id, o);
+  for (const o of ops) out.set(o.id, o);
+  return [...out.values()];
 }

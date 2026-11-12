@@ -249,8 +249,13 @@ Reviews are computed by the server (it knows `seq`) and sync down as rows.
 - `wss://chorus.<domain>/api/v1/sync`, JSON text frames, permessage-deflate. One connection per
   device (web: one per browser profile, elected with the Web Locks API; other tabs talk to the
   leader over `BroadcastChannel`).
-- Auth: `hello` carries a session token; if expired, the server replies `auth_challenge` and the
-  device signs `nonce‖device_id‖server_instance_id` with its key (API.md §2).
+- Auth: `hello` carries a session token; if it is expired or unknown, the server replies `error`
+  `unauthenticated` and closes, and the device renews over REST by signing
+  `nonce‖device_id‖server_instance_id` with its key (API.md §2), then connects again. A device
+  signed out from another one gets the same `error` mid-connection, on its next frame, and its
+  renewal is refused: `403 signed_out` from `/auth/session`, with `signed_out.at` and `wipe_at`
+  (D-152); `403 forbidden` from an older server or for a device it doesn't know; `401 bad_key`
+  for a key that no longer matches (D-153). §6.5 says what the web client does with each.
 - Fallback when WebSockets are blocked: `POST /api/v1/sync/push`, `GET /api/v1/sync/pull` long
   poll with the same payloads. Typing is WebSocket-only: the HTTP fallback ignores typing and never queues it.
 
@@ -390,6 +395,35 @@ user action
   scope (found by the simulator, §9.2).
 - **Backoff**: reconnect immediately on network change (Android `ConnectivityManager` callback,
   web `online` event) and on a push tickle; otherwise exponential 1 s → 5 min with ±30 % jitter.
+- **Liveness and sign-out (web, D-148)**: the connection is one state machine,
+  `web/src/lib/sync/lifecycle.ts` (`offline → connecting → live`, `renewing`, `signed-out`), and
+  every move goes through `SyncClient.move`, which owns the socket, the reconnect timer and the
+  heartbeat. While live, the syncing tab sends `ping` once **25 s** pass without any frame from
+  the server and gives the socket up (reconnecting with the backoff) if nothing at all arrives
+  in the **10 s** after it; any frame counts as life, so a busy socket never pings, and a
+  `pong` goes no further than that. A socket not welcomed within 35 s is given up too. An
+  `unauthenticated` error moves to `renewing`: no socket and no reconnect timer, one renewal at
+  a time, and the next connection only after it settles (straight away the first time; through
+  the backoff if the server refuses the new session again before a `welcome`). A renewal
+  refused for good (`403 signed_out`, `403 forbidden` or `401 bad_key`, §6.1) ends in
+  **`signed-out`**: no socket, timer or retry on `online` or focus, and the app shows onboarding
+  (CLIENTS §4.1, D-153). A plain `401 unauthenticated` (a stale nonce), network errors, 5xx and
+  rate limits back off as before. Android's OkHttp pings every 25 s.
+- **The signed-out copy (web, D-152, D-153)**: the replica, outbox and blobs stay on disk,
+  unopened, until `wipe_at`; the times are kept on the device record (`signed_out`, with the
+  clock offset of the last `welcome`, so `wipe_at` is compared by the server's clock), so a
+  reload opens no socket. Without a `wipe_at` (`forbidden`, `bad_key`) nothing is erased on a
+  timer. Once `wipe_at` has passed (checked when the answer comes, at every start and by a timer
+  while the page is open) `web/src/lib/sync/erase.ts` erases the copy: every IndexedDB store
+  (ops, metadata, snapshot, device record and key, device settings, staged uploads), the
+  offline file cache, the unsaved-ops journal and per-account localStorage keys, the tabs'
+  drafts, and the push subscription; the other tabs follow over the bus. Enrolling again picks
+  the copy up when the invite is a device link of the same account (`POST /auth/invite` says
+  its `account_id`): the new device opens the old one's ops and metadata, the core re-lists ops
+  without a `seq` (`relist_unsent`), and they go out under the new device, which the server
+  stamps at ingest; an op the server already had from the old device is acked by id, once
+  (`web/src/lib/sync/relink.test.ts`). Any other enrolment erases the copy first, once the
+  person has confirmed it. Nothing else erases it.
 - **Android background**: WorkManager unique work `sync` with `NetworkType.CONNECTED`, expedited
   when the outbox is non-empty; the widget's switch op enqueues it.
 - **Windowed web replica** (R23, D-075): a browser tab not set to "keep everything" (CLIENTS
@@ -423,7 +457,7 @@ user action
 | Op rejected (e.g. lost permission while offline) | Shown in *Sync issues* with reason; local state reverted; user can copy text of a rejected message. Android's Retry (F10.4) writes the same op again under a new id (same kind, scope, entity, acting `member_id` and payload) before letting the refused one go; a retry the server takes shows under *Fixed* for a week (device-local, `Replica::op_status`). |
 | New device joins | Snapshot of each scope + views, then live. |
 | Newer client, older server | Server stores unknown kinds; if `core_min` > client core, client shows "Update Chorus" and stays read-only for sync (keeps queuing locally). |
-| Device revoked | The socket's next frame gets `error unauthenticated` and is closed; renewal answers `403 signed_out` with `at` and `wipe_at` (API §2.2). The device goes back to onboarding with a line saying it was signed out, keeps its copy until `wipe_at` (two days after, or at once if the person signing it out chose that) and then erases it, unsynced writes included. A device link for the same account before then picks the copy back up; any other enrolment erases it first. A `401 bad_key` (the key no longer matches) also goes back to onboarding, with nothing erased on a timer (D-152, D-153). |
+| Device revoked | The socket's next frame gets `error unauthenticated` and is closed; renewal answers `403 signed_out` with `at` and `wipe_at` (API §2.2). The device goes back to onboarding with a line saying it was signed out, keeps its copy until `wipe_at` (two days after, or at once if the person signing it out chose that) and then erases it, unsynced writes included. A device link for the same account before then picks the copy back up; any other enrolment erases it first. A `401 bad_key` (the key no longer matches) also goes back to onboarding, with nothing erased on a timer (D-152, D-153, §6.5). |
 | Server restored from an older backup | See §7.3. |
 
 ### 7.3 Epochs and restore

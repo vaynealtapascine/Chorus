@@ -270,6 +270,29 @@ redraws it when the count or reader changes; a placed widget with no inbox read 
     of the metadata can't lose an op.
   - **A save that fails** (the browser's storage is full) is kept and tried again with the next
     one, and the app says so until one succeeds.
+  - **Ops not yet in IndexedDB** when a tab goes away are journalled to localStorage
+    (`chorus-unsaved-ops`) on `pagehide`. Tabs share the key, so each adds its ops to what is
+    there, by op id, instead of replacing it (a quitting browser hides every tab at once).
+  - **The connection** (SYNC §6.5, D-148): the syncing tab pings a socket that has been quiet for
+    25 s and drops it 10 s later if nothing came back, so a laptop waking from sleep or a dropped
+    idle socket doesn't stay "Live".
+  - **Signed out from another device** (D-152, D-153; SYNC §6.5): the browser stops syncing for
+    good (status `signed-out`, no retries) and shows the ordinary onboarding screen, with one
+    quiet line: it was signed out from another device and, when the server gave a date, what it
+    still holds is erased then unless it is linked to the same account again before. The kept
+    copy isn't shown meanwhile. A key that no longer matches (`bad_key`) or an older server's
+    `forbidden` does the same without a date, and nothing is erased on a timer. When the date
+    passes the copy is erased (`sync/erase.ts`, the only place that erases), every tab follows,
+    and onboarding still says why it is there. Linking again is onboarding as usual: a device
+    link of the same account picks the copy up, and what was written here and never sent goes
+    out under the new device; any other invite erases the copy first, after a confirmation that
+    says it includes what never synced.
+  - **Signing a device out** (*Devices and data* → the device → *Sign out*): an inline
+    confirmation says it needs a new link to come back and that its copy is erased from it two
+    days later unless it's linked again; *Erase its copy now instead* (off by default) sends
+    `{"wipe": true}`, which takes effect the next time that device connects.
+    Tested in a real browser at the end of `web/e2e/v1.spec.ts` (sign out, onboarding, reload,
+    link again, sign out with erase at once).
   - Tested in a real browser with the server killed, a reload, a service-worker update, a
     closing tab and a full disk: `web/e2e/failure.spec.ts`.
 - IndexedDB through `idb`; object stores mirror DATA_MODEL tables with indexes for the hot

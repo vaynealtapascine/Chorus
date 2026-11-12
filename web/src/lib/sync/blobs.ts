@@ -56,6 +56,7 @@ export function loadBlob(hash: string, device: DeviceRecord | null): Promise<Blo
 }
 
 /** Forget every kept blob (with the rest of this device's data). */
+/** The offline file cache. Only `erase.ts` calls it (D-152). */
 export async function forgetBlobs(): Promise<void> {
   try { await caches.delete(CACHE); } catch { /* nothing kept */ }
 }

@@ -99,7 +99,7 @@
     <button class="act" aria-haspopup="menu" aria-expanded={repostMenu} aria-label="Repost or quote" onclick={() => (repostMenu = !repostMenu)}><Icon name="repost" size={18} /></button>
     {#if repostMenu}<div class="menu" role="menu" use:outside><button role="menuitem" disabled title="Only your own system’s posts can be reposted"><Icon name="repost" size={18} />Repost</button><button role="menuitem" onclick={quote}><Icon name="edit" size={18} />Quote</button></div>{/if}
   </span>
-  <button class="act heart" class:on={hearted} disabled={!speaker} title={hearts.map((r) => r.member_name).join(' · ') || undefined}
+  <button class="act heart" class:on={hearted} disabled={!speaker} title={hearts.map((r) => r.member_name ?? 'Someone').join(' · ') || undefined}
     oncontextmenu={holdHeart} use:longPress={{ enabled: writers.length > 1, onpress: () => holdHeart() }}
     aria-label={speaker ? `${hearted ? 'Remove heart' : 'Heart'} as ${speakerName}${hearts.length ? ` (${hearts.length})` : ''}` : `${hearts.length} hearts`}
     onclick={heart}><Icon name={hearted ? 'heart-filled' : 'heart'} size={18} />{#if hearts.length}<span>{hearts.length}</span>{/if}</button>
@@ -112,7 +112,7 @@
   <ManyMembersSheet title="Heart as…" subtitle="Post readers see each name" members={writers}
     had={new Set(hearts.map((r) => r.member_id).filter((id): id is string => !!id && writers.some((m) => m.id === id)))} fronting={frontingIds(projection, sync.accountId)}
     onclose={() => (many = false)} onapply={applyMany}>
-    {#snippet extra()}{#if hearts.length}<p class="also">{hearts.map((r) => r.member_name).join(' · ')}</p>{/if}{/snippet}
+    {#snippet extra()}{#if hearts.length}<p class="also">{hearts.map((r) => r.member_name ?? 'Someone').join(' · ')}</p>{/if}{/snippet}
   </ManyMembersSheet>
 {/if}
 

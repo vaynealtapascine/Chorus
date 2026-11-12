@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { enrol, inviteKind } from '../sync/device';
+  import { enrol, peekInvite, relinkPlan, type InvitePeek } from '../sync/device';
   import { sync } from '../sync/client';
+  import { wipeIn } from '../sync/lifecycle';
   import { homeStatus, homeSetupCode } from '../home';
 
   // Chorus Home's first run (FLOWS F2.2): on the PC itself, no invite is needed
@@ -22,13 +23,27 @@
   let busy = $state(false);
   let error = $state('');
 
+  // signed out from another device (D-152, D-153): the copy this browser still holds waits until
+  // `wipe_at`; a device link of the same account picks it up, anything else erases it first
+  const signedOut = sync.signedOut;
+  const kept = signedOut ? sync.device?.account_id ?? null : null;
+  const wipeOn = signedOut && (wipeIn(signedOut, Date.now()) ?? 0) > 0
+    ? new Date(signedOut.wipe_at! - signedOut.offset).toLocaleString(undefined, { dateStyle: 'long', timeStyle: 'short' }) : '';
+  let peek = $state<InvitePeek | null>(null);
+  const plan = $derived(relinkPlan(kept, homeSetup ? { kind: 'system', account_id: null } : peek));
+  let confirming = $state(false);
+  let erased = false;
+  const why = { 'other-account': 'This link is for a different account', 'new-account': 'This invite starts a new account',
+    'unknown-account': 'This server can’t say which account the link is for' } as Record<string, string>;
+
   async function look(e?: SubmitEvent) {
     e?.preventDefault();
     if (!invite.trim()) return;
     busy = true;
     error = '';
     try {
-      const k = await inviteKind(invite);
+      peek = await peekInvite(invite);
+      const k = peek.kind;
       if (k === 'system' || k === 'person') kind = k;
       step = k === 'device' ? 'device' : k ? 'account' : 'legacy';
     } catch (err) {
@@ -41,9 +56,18 @@
 
   async function submit(e: SubmitEvent) {
     e.preventDefault();
+    if (plan !== 'none' && plan !== 'pick-up' && !confirming) {
+      confirming = true;
+      return;
+    }
     busy = true;
     error = '';
     try {
+      // erased first, as the person was told; another tab enrolling meanwhile stops it here
+      if (confirming && !erased) {
+        if (!(await sync.eraseKept())) return;
+        erased = true;
+      }
       const code = homeSetup ? await homeSetupCode() : invite;
       const account = step === 'device' ? null
         : { display_name: name || undefined, handle: handle || undefined, kind: step === 'account' ? kind : undefined };
@@ -62,10 +86,23 @@
   function another() {
     step = 'link';
     error = '';
+    peek = null;
+    confirming = false;
   }
 </script>
 
+{#snippet erasing()}
+  {#if confirming}
+    <p class="erasing" role="alert">{why[plan]}, so this browser’s copy of the account it was signed out of is
+      erased first, including anything written here that never synced.</p>
+  {/if}
+{/snippet}
+
 <main>
+  {#if signedOut || sync.wasErased}
+    <p class="signed-out">This browser was signed out from another device.{#if wipeOn} What it still holds will be
+      erased on {wipeOn} unless it’s linked to the same account again before then.{/if}</p>
+  {/if}
   <h1 class="display">Welcome to Chorus</h1>
   {#if step === 'link'}
     <p class="lead">A cozy place for plural systems and the people close to them. Paste the invite you were given to set up this browser.</p>
@@ -78,14 +115,16 @@
       <button disabled={busy || !invite.trim()}>{busy ? 'Checking…' : 'Continue'}</button>
     </form>
   {:else if step === 'device'}
-    <p class="lead">This link adds this browser to an account you already have.</p>
+    <p class="lead">This link adds this browser to an account you already have.{#if plan === 'pick-up'} What it still
+      holds comes back with it.{/if}</p>
     <form onsubmit={submit}>
       <label>
         <span>This device</span>
         <input bind:value={device} />
       </label>
       {#if error}<p class="error" role="alert">{error}</p>{/if}
-      <button disabled={busy}>{busy ? 'Linking…' : 'Link this browser'}</button>
+      {@render erasing()}
+      <button disabled={busy}>{busy ? 'Linking…' : confirming ? 'Erase and link this browser' : 'Link this browser'}</button>
       <button type="button" class="ghost" onclick={another} disabled={busy}>Use another invite</button>
     </form>
   {:else}
@@ -119,7 +158,8 @@
         <input bind:value={device} />
       </label>
       {#if error}<p class="error" role="alert">{error}</p>{/if}
-      <button disabled={busy}>{busy ? 'Setting up…' : 'Join'}</button>
+      {@render erasing()}
+      <button disabled={busy}>{busy ? 'Setting up…' : confirming ? 'Erase and join' : 'Join'}</button>
       {#if !homeSetup}
         <button type="button" class="ghost" onclick={another} disabled={busy}>Use another invite</button>
         {#if step === 'legacy'}<p class="hint">Invites for another device of an existing account only need the link.</p>{/if}
@@ -142,6 +182,16 @@
   .lead {
     color: var(--ink-2);
     margin: 0;
+  }
+  .signed-out, .erasing {
+    margin: 0;
+    font-size: var(--fs-sm);
+    color: var(--ink-2);
+  }
+  .erasing {
+    padding: var(--s-3);
+    border-radius: var(--r-sm);
+    background: var(--accent-soft);
   }
   form {
     display: grid;

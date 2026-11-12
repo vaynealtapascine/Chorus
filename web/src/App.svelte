@@ -101,6 +101,8 @@
     live: 'Live',
     connecting: 'Connecting…',
     offline: 'Offline · saved on this device',
+    renewing: 'Connecting…',
+    'signed-out': '', // onboarding shows instead
     'no-device': '',
   };
   // a person account has one member, themself, and no front to switch (D-003)
@@ -163,7 +165,8 @@
 
 <svelte:document onclick={openOwnLink} />
 
-{#if status === 'no-device'}
+<!-- signed out (D-153): onboarding, as for a browser with no device; the kept copy isn't shown -->
+{#if status === 'no-device' || status === 'signed-out'}
   <Onboarding />
 {:else if projection}
   <div class="shell" class:chat-page={router.route.name === 'chat'} class:nav-open={navOpen}>

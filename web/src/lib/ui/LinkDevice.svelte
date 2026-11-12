@@ -40,8 +40,12 @@
   interface Dev { id: string; name: string; platform: string; last_seen_at: number | null }
   let devices = $state<Dev[]>([]);
 
-  async function call(method: string, path: string) {
-    const r = await apiFetch(`${apiBase()}${path}`, { method, headers: { authorization: `Bearer ${sync.device?.session ?? ''}` } });
+  async function call(method: string, path: string, body?: unknown) {
+    const r = await apiFetch(`${apiBase()}${path}`, {
+      method,
+      headers: { authorization: `Bearer ${sync.device?.session ?? ''}`, ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
     if (!r.ok) throw new Error((await r.json().catch(() => null))?.error?.message ?? `HTTP ${r.status}`);
     return r.status === 204 ? null : r.json();
   }
@@ -55,11 +59,19 @@
   }
   loadDevices();
 
+  // signing out asks first, and may erase that device's copy at once instead of in two days (D-152)
+  let asking = $state<string | null>(null);
+  let wipe = $state(false);
+  function ask(d: Dev) {
+    asking = d.id;
+    wipe = false;
+  }
+
   async function signOut(d: Dev) {
-    if (!confirm(`Sign out ${d.name}? It will need a new link to come back.`)) return;
     error = '';
     try {
-      await call('POST', `/devices/${d.id}/revoke`);
+      await call('POST', `/devices/${d.id}/revoke`, wipe ? { wipe: true } : undefined);
+      asking = null;
       await loadDevices();
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
@@ -76,8 +88,20 @@
       {#each devices as d (d.id)}
         <li class="row">
           <span>{d.name} <span class="muted">· {d.platform} · {d.id === sync.device?.device_id ? 'this device' : seen(d.last_seen_at)}</span></span>
-          {#if d.id !== sync.device?.device_id}<button class="ghost" onclick={() => signOut(d)}>Sign out</button>{/if}
+          {#if d.id !== sync.device?.device_id && asking !== d.id}<button class="ghost" onclick={() => ask(d)}>Sign out</button>{/if}
         </li>
+        {#if asking === d.id}
+          <li class="asking" role="group" aria-label="Sign out {d.name}">
+            <p>Sign out {d.name}? It stops syncing and needs a new link to come back. Its copy of your account is erased from it
+              two days from now, unless it’s linked to this account again before then.</p>
+            <label class="check"><input type="checkbox" bind:checked={wipe} /> Erase its copy now instead</label>
+            <p class="muted">It’s erased the next time it connects, including anything written there that never synced.</p>
+            <div class="row">
+              <button class="ghost" onclick={() => signOut(d)}>Sign out {d.name}</button>
+              <button class="ghost" onclick={() => (asking = null)}>Cancel</button>
+            </div>
+          </li>
+        {/if}
       {/each}
     </ul>
   </section>
@@ -116,6 +140,19 @@
   }
   li {
     justify-content: space-between;
+  }
+  .asking {
+    display: grid;
+    gap: var(--s-2);
+    padding: var(--s-3);
+    border-radius: var(--r-sm);
+    background: var(--surface-2);
+  }
+  .check {
+    display: flex;
+    gap: var(--s-2);
+    align-items: center;
+    color: var(--ink);
   }
   .muted {
     color: var(--ink-3);
