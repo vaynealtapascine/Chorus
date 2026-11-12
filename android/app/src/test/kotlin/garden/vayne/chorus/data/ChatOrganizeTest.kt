@@ -52,7 +52,10 @@ class ChatOrganizeTest {
         // not by "Read as", not with hiding turned off, not through a fronting subsystem (display only, D-092)
         assertFalse(ChatOrganize.privateVisible(chat, dm, front("june"), "kai", true, own))
         assertFalse(ChatOrganize.privateVisible(chat, dm, front("june"), null, false, own))
-        assertFalse(ChatOrganize.privateVisible(chat, dm, front("kai"), null, true, own, switched = front("june")))
+        // a channel kept to some members in a shared space is no one's private chat (D-155)
+        val club = channel("art", members = listOf("kai"), space = "s")
+        assertTrue(ChatOrganize.privateVisible(club, friends, front("june"), null, true, own))
+        assertEquals(null, ChatManage.sides(club, friends, own))
         // the other side (nobody of theirs listed) sees it as any DM
         assertTrue(ChatOrganize.privateVisible(chat, dm, emptyList(), null, true, setOf("robin-self")))
     }

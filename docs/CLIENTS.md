@@ -24,6 +24,12 @@ chorus-core (UniFFI / wasm) ── ops ──▶ local op table + outbox
 - Reads are local queries, reactive (Room `Flow` / Svelte stores over IndexedDB change events).
 - Paging for long lists (messages, timeline) from the local DB; beyond the local window, REST
   pages are fetched and cached.
+- Which chats are shown (D-097 members' private chats, D-098 private chats in a DM, D-110 chats
+  with a subsystem, D-102 the front as switched; D-155: both by the front as switched, and D-098 for
+  DM spaces only, so a channel kept to some members in a shared space is ordinary) is written on each client (web `chat-list.ts`
+  `privateVisible`, Android `ChatOrganize.privateVisible`) and held together by
+  `fixtures/ui_chat_visible.json`: each case's space, channel, our members, front, Read as,
+  `chat.hide_private` and subsystem expansion, with the expected `is_private` and `visible`.
 
 ### 1.1 Named front history (D-080, D-083)
 
@@ -151,6 +157,42 @@ android/
 - Mono clock: `SystemClock.elapsedRealtime()`; boot id: `Settings.Global.BOOT_COUNT`.
 - Everything is on Room transactions; the widget and notification actions use the same repository
   (no Activity needed).
+- The socket's lifecycle is one pure reducer, `data/SyncLink.kt` (state, events, effects; JVM-tested
+  in `SyncLinkTest`). `Chorus` changes it only through `transition()`, under one lock, from the main
+  and store threads alike: status, the current socket (numbered), backoff and a renewal in flight
+  can't disagree, a frame or close from a socket that is no longer current changes nothing, and
+  "caught up" is reported only while the socket that delivered the frame is still the live one.
+- **Signed out (D-148, D-152, D-153).** When the socket answers `unauthenticated`, `Chorus` renews
+  the session. The device is signed out for good when the server answers `signed_out` (403 from
+  `/auth/session`, with `at` and `wipe_at`), a bare `forbidden` (an older server, or a device it no
+  longer has; no times) or `bad_key` (401: the device key no longer matches; no times)
+  (`SignedOut.refusal`). Anything else (no network, 5xx, rate limit, an expired nonce) keeps the
+  usual backoff. Signed out, it is `Status.SignedOut` with a `SignedOutRecord` on disk
+  (`sync:signed_out`: `at`, `wipe_at`, and the server's clock offset where the app knew it), so a cold
+  start asks nothing: no socket, no retries, `syncOnce()` returns at once, `authedCall` fails with
+  code `signed_out`, uploads and the notification check skip.
+  - The app shows the ordinary welcome screen, as a phone with no device does, with one line: this
+    phone was signed out from another device, and, with a `wipe_at`, that what it still holds will be
+    erased on that date unless it is linked to the same account again first. What it keeps is not
+    shown meanwhile: the model is empty, widgets included.
+  - **Erasing** (`Chorus.erase`, steps in `data/Erase.kt`) runs only for a `wipe_at` that has passed
+    (checked when the answer arrives, at every app start, and by the one-off `WipeWork` at the
+    deadline, so with the app closed too) or for the enrolment rule below. It removes the encrypted
+    store (ops, metadata, drafts, settings, push state), its key and the device key, downloaded and
+    queued files, the app's preferences (widgets, pins, setup, navigation), the account's
+    WorkManager work, push registration (UnifiedPush unregister, FCM token), shown notifications and
+    launcher shortcuts; unsynced changes go too (the owner's choice). A marker set first and cleared
+    last makes an interrupted erase finish at the next start. Afterwards the app is a fresh install's.
+    With no `wipe_at`, nothing is erased on a timer.
+  - **Linking again** is the ordinary onboarding. The invite is peeked first (`POST /auth/invite`,
+    which names the account of a `device` invite): a device link of the kept copy's account enrols and
+    picks the copy back up (new device id and HLC node over the same store; ops never sent go out,
+    since core relists unsent ops at restore and the server stamps the device on ack; `PickUpTest`).
+    Any other invite, or a device invite whose account the server didn't name, erases the kept copy
+    first, after a confirmation that says so (`SignedOut.enrol`).
+  - **Signing another device out** (F1.6) offers "Also erase its copy now" (off by default; sends
+    `{"wipe": true}`): it happens the next time that device connects; otherwise its copy is erased two
+    days after it was signed out.
 
 ### 2.4 Deep links & intents
 
@@ -179,6 +221,13 @@ android/
 
 See NOTIFICATIONS.md §7. Avatars for `Person` icons are pre-rendered circular bitmaps with the
 member ring, cached by `(blob_hash, color)`.
+
+The Notifications list, its badge and the unread widget come from one full read
+(`Inbox.refresh`, `GET /notifications` without `after=`) that replaces the list each time, so a
+notification whose message or post was deleted or stopped being readable leaves at the next read
+(D-149; the server filters at read time). Only `NotifyCheck`'s look for new pushes is incremental
+(`?after=`). Offline, the last read stays until a read succeeds; system notifications already shown
+are left as they are.
 
 ## 3. The quick-switch widget (RemoteViews, D-058)
 

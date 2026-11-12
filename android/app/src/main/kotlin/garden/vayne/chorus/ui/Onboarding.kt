@@ -36,6 +36,8 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.Api
+import garden.vayne.chorus.data.InvitePeek
+import garden.vayne.chorus.data.SignedOut
 import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.DeviceLinks
 import garden.vayne.chorus.data.Setup
@@ -50,14 +52,19 @@ import kotlinx.coroutines.launch
  * this device is called, with *I am plural* (D-093: on = a system, off = one person; the invite's
  * kind sets it). A link for another device of an account needs only the link: **Link device**
  * scans the QR on that account's Link a device screen and joins at once.
+ *
+ * A phone signed out from another device comes back here too (D-153), with one quiet line. A
+ * device link of the account it kept picks that copy back up; any other invite erases the kept
+ * copy first, once the person has agreed (D-152).
  */
 @Composable
 fun Onboarding(chorus: Chorus, initialLink: String?) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var link by remember { mutableStateOf(initialLink.orEmpty()) }
-    // null: not looked at yet; "system"/"person": a new account; "device": another device; "": an older server
-    var invite by remember { mutableStateOf<String?>(null) }
+    // null: not looked at yet; kind "system"/"person": a new account; "device": another device; "": an older server
+    var peek by remember { mutableStateOf<InvitePeek?>(null) }
+    val invite = peek?.kind
     var plural by remember { mutableStateOf(true) }
     var name by remember { mutableStateOf("") }
     var handle by remember { mutableStateOf("") }
@@ -66,38 +73,50 @@ fun Onboarding(chorus: Chorus, initialLink: String?) {
     var looking by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var scanned by remember { mutableStateOf(false) }
+    var confirmErase by remember { mutableStateOf(false) }
+    val signedOut by chorus.signedOutRecord.collectAsState()
     val valid = Api.parseInvite(link) != null
     val forDevice = invite == "device"
 
-    fun join() {
-        if (busy || !Welcoming.ready(link, invite, name, handle, device)) return
+    fun enrol(eraseFirst: Boolean) {
         busy = true; error = null
         val account = !forDevice
         scope.launch {
             try {
+                if (eraseFirst) chorus.eraseKept()
                 val dev = Api.enrol(link, name.takeIf { account }, handle.takeIf { account },
                     (if (plural) "system" else "person").takeIf { account && invite != "" }, device.trim())
                 // a new system goes through setup next (F1.2–F1.4), which also names it
                 if (account && plural) Setup.begin(ctx, dev.accountId, name.trim())
                 chorus.adopt(dev)
+                confirmErase = false
             } catch (e: Exception) {
                 error = e.message ?: "Couldn't reach the server."
             } finally { busy = false }
         }
     }
 
+    fun join() {
+        if (busy || !Welcoming.ready(link, invite, name, handle, device)) return
+        // the invite was peeked before it is used, so a kept copy is never left behind (D-153)
+        when (SignedOut.enrol(chorus.keptAccount, peek)) {
+            SignedOut.Enrol.EraseFirst -> confirmErase = true
+            SignedOut.Enrol.Fresh, SignedOut.Enrol.PickUp -> enrol(eraseFirst = false)
+        }
+    }
+
     // look at the invite as soon as it's a link (D-093's peek): the toggle follows it; a scanned
     // device link joins straight away
     LaunchedEffect(link) {
-        invite = null
+        peek = null
         if (Api.parseInvite(link) == null) return@LaunchedEffect
         delay(300)
         looking = true; error = null
         try {
-            val k = Api.inviteKind(link)
-            if (k == "system" || k == "person") plural = k == "system"
-            invite = k ?: ""
-            if (k == "device" && scanned) join()
+            val k = Api.peekInvite(link)
+            if (k.kind == "system" || k.kind == "person") plural = k.kind == "system"
+            peek = k
+            if (k.kind == "device" && scanned) join()
         } catch (e: Exception) {
             error = e.message ?: "Couldn't reach the server."
         } finally { looking = false; scanned = false }
@@ -111,6 +130,10 @@ fun Onboarding(chorus: Chorus, initialLink: String?) {
             ChorusWordmark()
             Spacer(Modifier.weight(1f).heightIn(min = 40.dp))
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                signedOut?.let { record ->
+                    Text(SignedOut.notice(record) { at -> wipeDate(at - record.offset) },
+                        color = Welcome.Cream, fontSize = 14.sp, lineHeight = 20.sp, modifier = Modifier.fillMaxWidth())
+                }
                 WelcomeField("Invite code", link, { link = it.trim(); error = null }, "chrs.…/i/…",
                     done = valid && invite != null, busy = looking, enabled = !busy, keyboard = KeyboardType.Uri,
                     shown = Welcoming.code(link), paste = {
@@ -143,7 +166,13 @@ fun Onboarding(chorus: Chorus, initialLink: String?) {
             }
         }
     }
+    if (confirmErase) ConfirmDrawer("Erase what this phone kept?", SignedOut.eraseFirstText(peek), "Erase and continue",
+        onConfirm = { enrol(eraseFirst = true) }, onDismiss = { confirmErase = false }, danger = true, busy = busy)
 }
+
+/** A server time on this phone's calendar, for the signed-out line (D-152). */
+private fun wipeDate(at: Long): String =
+    java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.LONG, java.text.DateFormat.SHORT).format(java.util.Date(at))
 
 /** F1.1's cream field: a small caps label over the text, a teal check once it's filled. */
 @Composable

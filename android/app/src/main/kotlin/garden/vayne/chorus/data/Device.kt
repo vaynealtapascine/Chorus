@@ -64,6 +64,9 @@ object DeviceKey {
         return Base64.encodeToString(gen.generateKeyPair().public.encoded, Base64.NO_WRAP)
     }
 
+    /** Forget the device key (D-152's erase); enrolling again makes a new one. */
+    fun forget() = keyStore().deleteEntry(ALIAS)
+
     fun sign(message: ByteArray): String {
         val key = keyStore().getKey(ALIAS, null) as PrivateKey
         val s = Signature.getInstance("SHA256withECDSA").apply { initSign(key); update(message) }

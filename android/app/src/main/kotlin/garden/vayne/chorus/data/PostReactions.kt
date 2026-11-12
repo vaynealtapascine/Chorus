@@ -15,12 +15,15 @@ object PostReactions {
             reactions.filterNot { it.emoji == emoji && it.memberId == memberId }
         else reactions + PostReaction(emoji, memberId, memberName)
 
+    /** A post's reactions as the server lists them; one by a member this account may not see comes
+     * with no member and no name (D-154) and still counts, as "Someone". */
     fun fromServer(post: JSONObject): List<PostReaction> {
         val rows = post.optJSONArray("reactions") ?: return emptyList()
+        fun JSONObject.text(key: String) = optString(key).takeIf { has(key) && !isNull(key) && it.isNotBlank() && it != "null" }
         return (0 until rows.length()).mapNotNull { i -> rows.optJSONObject(i)?.let { row ->
-            val emoji = row.optString("emoji").takeIf { it.isNotBlank() && it != "null" } ?: return@let null
-            val memberId = row.optString("member_id").takeIf { it.isNotBlank() && it != "null" } ?: return@let null
-            PostReaction(emoji, memberId, row.optString("member_name").takeIf { it.isNotBlank() && it != "null" } ?: "Someone")
+            val emoji = row.text("emoji") ?: return@let null
+            val memberId = row.text("member_id")
+            PostReaction(emoji, memberId, memberId?.let { row.text("member_name") } ?: "Someone")
         } }
     }
 

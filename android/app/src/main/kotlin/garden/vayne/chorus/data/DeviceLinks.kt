@@ -13,6 +13,14 @@ data class LinkedDevice(val id: String, val name: String, val platform: String, 
  * drawn as modules, and the account's devices, this one first.
  */
 object DeviceLinks {
+    /** `POST /devices/{id}/revoke`'s body: `{"wipe": true}` to erase that device's copy at once (D-152). */
+    fun revokeBody(wipe: Boolean): JSONObject = JSONObject().apply { if (wipe) put("wipe", true) }
+
+    /** What signing a device out does to what it holds (D-152), under the "Erase now" switch. */
+    fun revokeText(wipe: Boolean): String =
+        if (wipe) "Its copy is erased the next time it connects, including anything it never synced."
+        else "It keeps its copy, hidden, for two days, then erases it, unless it's linked to this account again before then."
+
     /** A [size]-module square (quiet zone included); each run is `x, y, width` in modules. */
     data class Qr(val size: Int, val runs: List<Triple<Int, Int, Int>>)
 

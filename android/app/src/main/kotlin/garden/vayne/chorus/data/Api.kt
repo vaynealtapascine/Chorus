@@ -10,7 +10,13 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 
-class ApiException(message: String, val code: String = "") : Exception(message)
+/** A refused REST call: the server's error [code], and the whole answer ([body]) for the few
+ * errors that carry more (`signed_out`'s times, D-152). */
+class ApiException(message: String, val code: String = "", val body: JSONObject? = null) : Exception(message)
+
+/** What an invite is for, peeked without using it (D-093): [kind] `system`, `person` or `device`,
+ * "" from a server that can't say; for a device invite the account it links to (D-153), when known. */
+data class InvitePeek(val kind: String, val accountId: String? = null)
 
 /** The few REST calls a device needs (API.md §2). Everything else goes over the sync socket. */
 object Api {
@@ -43,7 +49,7 @@ object Api {
                 if (!r.isSuccessful) {
                     val e = j.optJSONObject("error")
                     if (r.code == 429) Notices.slowDown(Notices.retryAfter(r.header("Retry-After")))
-                    throw ApiException(e?.optString("message")?.ifEmpty { null } ?: "HTTP ${r.code}", e?.optString("code").orEmpty())
+                    throw ApiException(e?.optString("message")?.ifEmpty { null } ?: "HTTP ${r.code}", e?.optString("code").orEmpty(), j)
                 }
                 j
             }
@@ -62,17 +68,24 @@ object Api {
 
     /**
      * What an invite is for, without using it (D-093): `system` or `person` for a new account (the
-     * invite's suggestion; the person joining picks), `device` for another device of an account.
-     * Null when the server predates the question, so onboarding asks nothing.
+     * invite's suggestion; the person joining picks), `device` for another device of an account,
+     * with that account's id (D-153). Kind "" when the server predates the question, so onboarding
+     * asks nothing.
      */
-    suspend fun inviteKind(link: String): String? {
+    suspend fun peekInvite(link: String): InvitePeek {
         val (base, code, pin) = parseInvite(link) ?: throw ApiException("That doesn't look like a Chorus invite link.")
         Pins.trust(pin)
         return try {
-            post(base, "/auth/invite", JSONObject().put("code", code)).optString("kind").takeIf { it in setOf("system", "person", "device") }
+            parsePeek(post(base, "/auth/invite", JSONObject().put("code", code)))
         } catch (e: ApiException) {
-            if (e.code == "bad_request") throw e else null
+            if (e.code == "bad_request") throw e else InvitePeek("")
         }
+    }
+
+    internal fun parsePeek(j: JSONObject): InvitePeek {
+        val kind = j.optString("kind").takeIf { it in setOf("system", "person", "device") } ?: ""
+        val account = j.optString("account_id").takeIf { kind == "device" && !j.isNull("account_id") && it.isNotEmpty() }
+        return InvitePeek(kind, account)
     }
 
     /** Redeem an invite with a fresh device key. The account details are only used for new

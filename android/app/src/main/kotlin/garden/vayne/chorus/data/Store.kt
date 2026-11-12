@@ -11,7 +11,7 @@ import org.json.JSONObject
  * is one database transaction. The old plaintext prototype is copied and checked before removal.
  */
 class Store(private val ctx: Context) {
-    private val database: ReplicaDatabase by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+    private val opened = lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         val file = ctx.getDatabasePath(SECURE_NAME)
         val passphrase = DatabaseKey.passphrase(ctx, file)
         System.loadLibrary("sqlcipher")
@@ -23,6 +23,12 @@ class Store(private val ctx: Context) {
         migrateLegacy(db)
         DatabaseKey.markInitialized(ctx)
         db
+    }
+    private val database: ReplicaDatabase by opened
+
+    /** Close the database (before [Erase] deletes its files); this Store is not used again. */
+    fun close() {
+        if (opened.isInitialized()) opened.value.close()
     }
 
     private val dao: ReplicaDao get() = database.replicaDao()
@@ -135,7 +141,9 @@ class Store(private val ctx: Context) {
         }
     }
 
-    private companion object {
+    internal companion object {
+        /** The database files a fresh install doesn't have (D-152's erase). */
+        val NAMES = listOf("chorus.db", "chorus-secure.db")
         const val LEGACY_NAME = "chorus.db"
         const val SECURE_NAME = "chorus-secure.db"
         const val MIGRATED = "__chorus_legacy_migrated__"

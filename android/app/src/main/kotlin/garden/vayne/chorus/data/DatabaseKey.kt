@@ -70,6 +70,14 @@ internal object DatabaseKey {
         return secret
     }
 
+    /** Forget the wrapped passphrase and its Keystore key, after the database itself is gone (D-152). */
+    fun forget(context: Context) {
+        File(context.noBackupFilesDir, FILE).delete()
+        File(context.noBackupFilesDir, "$FILE.tmp").delete()
+        File(context.noBackupFilesDir, INITIALIZED).delete()
+        KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry(ALIAS)
+    }
+
     fun markInitialized(context: Context) {
         val marker = File(context.noBackupFilesDir, INITIALIZED)
         if (!marker.exists()) FileOutputStream(marker).use { it.fd.sync() }

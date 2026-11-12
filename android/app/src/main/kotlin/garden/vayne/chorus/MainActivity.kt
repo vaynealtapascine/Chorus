@@ -312,7 +312,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
         lastAccount = account
     }
     LaunchedEffect(newEntryRequest, status) {
-        if (newEntryRequest == null || status == Status.Loading || status == Status.NoDevice || status == Status.StorageError) return@LaunchedEffect
+        if (newEntryRequest == null || status == Status.Loading || status == Status.NoDevice || status == Status.SignedOut || status == Status.StorageError) return@LaunchedEffect
         journalNewEntry = newEntryRequest
         journalReplyPost = null; journalOpenPost = null
         searchOpen = false; settingsOpen = false; insightsOpen = false; frontsOpen = false; layersFront = null
@@ -321,7 +321,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
     }
     LaunchedEffect(openChatRequest?.id, status) {
         val req = openChatRequest ?: return@LaunchedEffect
-        if (status == Status.Loading || status == Status.NoDevice || status == Status.StorageError) return@LaunchedEffect
+        if (status == Status.Loading || status == Status.NoDevice || status == Status.SignedOut || status == Status.StorageError) return@LaunchedEffect
         chatSpace = req.spaceId ?: model.channels.find { it.id == req.channelId }?.spaceId
         chatChannel = req.channelId
         chatSearchHit = null
@@ -332,7 +332,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
     val linkContext = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(openPostRequest?.id, status) {
         val req = openPostRequest ?: return@LaunchedEffect
-        if (status == Status.Loading || status == Status.NoDevice || status == Status.StorageError) return@LaunchedEffect
+        if (status == Status.Loading || status == Status.NoDevice || status == Status.SignedOut || status == Status.StorageError) return@LaunchedEffect
         searchOpen = false; settingsOpen = false; insightsOpen = false; frontsOpen = false; layersFront = null
         if (req.messageId != null) {
             // only where this reader may see it now (its chat shown, its audience including who's here)
@@ -361,7 +361,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
     var handoverOpen by remember { mutableStateOf(false) }
     LaunchedEffect(switchRequest, status) {
         val handover = switchRequest ?: return@LaunchedEffect
-        if (status == Status.Loading || status == Status.NoDevice || status == Status.StorageError) return@LaunchedEffect
+        if (status == Status.Loading || status == Status.NoDevice || status == Status.SignedOut || status == Status.StorageError) return@LaunchedEffect
         tab = Tab.Fronting; handoverOpen = handover; quickSwitchOpen = true
         onSwitchConsumed()
     }
@@ -380,7 +380,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
     // a new system's setup (F1.2–F1.4) comes before everything else, once the replica is open
     var setupName by remember(navAccount) { mutableStateOf(garden.vayne.chorus.data.Setup.pending(context, navAccount)) }
     if (setupName != null && navAccount.isNotEmpty() && !model.isPerson && status != Status.Loading && status != Status.NoDevice &&
-        status != Status.StorageError) {
+        status != Status.SignedOut && status != Status.StorageError) {
         garden.vayne.chorus.ui.SystemSetup(chorus, model, setupName.orEmpty()) {
             garden.vayne.chorus.data.Setup.done(context, navAccount); setupName = null
         }
@@ -388,7 +388,8 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
     }
     when (status) {
         Status.Loading -> Box(Modifier.fillMaxSize().background(p.bg))
-        Status.NoDevice -> Onboarding(chorus, invite)
+        // signed out from another device: onboarding, as a phone with no device (D-153)
+        Status.NoDevice, Status.SignedOut -> Onboarding(chorus, invite)
         Status.StorageError -> Box(Modifier.fillMaxSize().background(p.bg).padding(24.dp), contentAlignment = Alignment.Center) {
             Text("The local replica could not be opened or saved. Keep this app's data intact and check the device storage.", color = p.danger)
         }

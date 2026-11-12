@@ -156,7 +156,7 @@ internal fun JournalActions(reactions: List<PostReaction>, member: Member?, enab
         }, { disclose = false }, enabled = enabled, icon = R.drawable.ic_heart)
     if (many) {
         val ids = members.mapTo(HashSet()) { it.id }
-        val had = reactions.filter { it.emoji == PostReactions.HEART && it.memberId in ids }.mapTo(HashSet()) { it.memberId }
+        val had = reactions.filter { it.emoji == PostReactions.HEART && it.memberId in ids }.mapNotNullTo(HashSet()) { it.memberId }
         ManyMembersDrawer("Heart as…", if (readersSeeName) "Post readers see each name" else null, members, had, here,
             { many = false }, { change ->
                 many = false

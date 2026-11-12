@@ -20,6 +20,10 @@ class NoticesTest {
         assertEquals(Notices.Connection.Asleep, Notices.connection(Status.Connecting, Notices.ASLEEP_AFTER, network = true))
     }
 
+    @Test fun aSignedOutPhoneHasNoBannerItGoesBackToOnboarding() {
+        assertEquals(Notices.Connection.None, Notices.connection(Status.SignedOut, 9, network = false))
+    }
+
     @Test fun theWordsDependOnTheInstall() {
         assertNull(Notices.connectionText(Notices.Connection.None, homeInstall = true))
         assertTrue(Notices.connectionText(Notices.Connection.Away, homeInstall = true)!!.startsWith("Away from home"))

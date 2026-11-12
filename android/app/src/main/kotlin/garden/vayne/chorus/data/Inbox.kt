@@ -121,6 +121,17 @@ object Inbox {
         }
     }
 
+    /** Who reacted, by name, with [hidden] members this account may not see counted but unnamed (D-154). */
+    internal fun reactors(names: List<String>, hidden: Int): String {
+        val total = names.size + hidden
+        return when {
+            names.isEmpty() -> if (total <= 1) "Someone" else "$total people"
+            total == 1 -> names[0]
+            total == 2 -> "${names[0]} and ${names.getOrNull(1) ?: "someone else"}"
+            else -> "${names[0]} and ${total - 1} others"
+        }
+    }
+
     /** Hearts, quotes and reposts of our posts by other accounts (replies arrive as notifications).
      * One row per post and emoji: "Kit and Juniper liked “A quiet afternoon”". */
     fun fromActivity(activity: JournalActivity?): List<InboxItem> {
@@ -129,8 +140,9 @@ object Inbox {
             ?.let { if (it.length > 60) it.take(60).substringBeforeLast(' ').trimEnd('.', ',', ' ') + "…" else it }?.let { "“$it”" } ?: "your post"
         val out = ArrayList<InboxItem>()
         for ((key, group) in activity.items.filter { it.kind == "reaction" }.groupBy { "${it.target?.id}:${it.emoji}" }) {
-            val names = group.mapNotNull { it.memberName }.distinct()
-            val who = when (names.size) { 0 -> "Someone"; 1 -> names[0]; 2 -> "${names[0]} and ${names[1]}"; else -> "${names[0]} and ${names.size - 1} others" }
+            val names = group.filter { it.memberId != null }.mapNotNull { it.memberName }.distinct()
+            // members this account may not see come with no name (D-154)
+            val who = reactors(names, group.count { it.memberId == null })
             val first = group.first()
             val verb = if (first.emoji == PostReactions.HEART) "liked" else "reacted ${first.emoji} to"
             out += InboxItem("react:$key:${group.mapNotNull { it.memberId }.sorted().joinToString(",").hashCode()}", "reaction", "friends", "likes",
@@ -195,9 +207,14 @@ object Inbox {
     /** The last read of every source, with the account it belongs to: the bar's badge and the screen. */
     val state: StateFlow<Pair<String, List<InboxItem>>?> = latest
 
+    /** Forget what was read (D-152's erase). */
+    fun forget() { latest.value = null }
+
     fun of(accountId: String?): List<InboxItem>? = latest.value?.takeIf { it.first == accountId }?.second
 
-    /** Read every source again. One failing source leaves the others standing. */
+    /** Read every source again. One failing source leaves the others standing. Always a full read
+     * that replaces the list, never newer items added to kept ones: a notification the server stops
+     * returning (its message or post deleted or no longer readable, D-149) leaves at the next read. */
     suspend fun refresh(dev: DeviceRecord, model: Model): List<InboxItem> {
         suspend fun <T> soft(read: suspend () -> T): T? = try { read() }
             catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { null }
