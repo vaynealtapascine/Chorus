@@ -16,6 +16,13 @@
   import { journalCompose } from '../journal-compose.svelte';
   import { handleMentions, memberHandles } from '../handles';
   import { remotePost } from '../remote-posts.svelte';
+  import Sheet from './Sheet.svelte';
+  import FormattingSheet from './FormattingSheet.svelte';
+  import Segmented from './kit/Segmented.svelte';
+  import Switch from './kit/Switch.svelte';
+  import { unicodeEmoji } from '../chat-composer';
+  import { active as isActive, inline, insert, link, linkProblem, lines, lineStyle, style, wordCount, type Sel } from '../format-text';
+  import { tick } from 'svelte';
 
   let { projection, initialAuthors = [], replyTo, defaultVisibility = 'private', onsent }: { projection: Projection; initialAuthors?: string[]; replyTo?: string; defaultVisibility?: 'private' | 'followers' | 'server'; onsent?: () => void } = $props();
   const active = $derived(members(projection).filter((m) => canWriteAs(projection, m.id, sync.accountId)));
@@ -85,7 +92,52 @@
   let pending = $state<{ file: File; alt: string; spoiler: boolean; url: string }[]>([]);
   let error = $state('');
   let busy = $state(false);
-  let optionsOpen = $state(false);
+  let formatOpen = $state(false);
+  let linkOpen = $state(false);
+  let linkUrl = $state('');
+  let linkError = $state('');
+  let emojiOpen = $state(false);
+  let alertsOpen = $state(false);
+  let cwOpen = $state(false);
+  let tagsOpen = $state(false);
+  let camera = $state<HTMLInputElement | undefined>();
+  const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+  // the textarea's selection, mirrored so the buttons can show what is on and the pill when text is picked
+  let caret = $state({ start: 0, end: 0 });
+  let focused = $state(false);
+  const marks: [string, string, string][] = [['format-bold', 'Bold', '**'], ['format-italic', 'Italic', '_'], ['format-strike', 'Strikethrough', '~~'], ['format-code', 'Code', '`']];
+  const words = $derived(wordCount(draft.body));
+  const picked = $derived(focused && caret.start !== caret.end);
+  function track() {
+    if (!textarea) return;
+    caret = { start: textarea.selectionStart, end: textarea.selectionEnd };
+    focused = document.activeElement === textarea;
+  }
+  const current = (): Sel => ({ text: draft.body, ...caret });
+  const headingOn = $derived(lineStyle(current()).startsWith('heading'));
+  const activeMark = (marker: string) => isActive(current(), marker);
+  // a toolbar press must not take the selection away from the text
+  const keepFocus = (e: Event) => e.preventDefault();
+  async function apply(next: Sel) {
+    draft.body = next.text;
+    caret = { start: next.start, end: next.end };
+    await tick();
+    textarea?.focus();
+    textarea?.setSelectionRange(next.start, next.end);
+    track();
+  }
+  const act = (fn: (v: Sel) => Sel) => { track(); void apply(fn(current())); };
+  function openLink() { track(); linkUrl = ''; linkError = ''; linkOpen = true; }
+  function addLink() {
+    const url = linkUrl.trim();
+    const problem = linkProblem(url);
+    if (problem) { linkError = problem; return; }
+    linkOpen = false;
+    void apply(link(current(), url));
+  }
+  function toggleCw() {
+    if (cwOpen || draft.cw) { draft.cw = ''; cwOpen = false; } else cwOpen = true;
+  }
   let textarea = $state<HTMLTextAreaElement | undefined>();
   let picker = $state<HTMLInputElement | undefined>();
 
@@ -173,7 +225,7 @@
       for (const item of files) if (item.url) URL.revokeObjectURL(item.url);
       pending = [];
       restored = false;
-      optionsOpen = false; // the popover would otherwise cover the feed it just posted to
+      cwOpen = tagsOpen = false;
       onsent?.();
     } catch (cause) {
       error = `Could not post. Your draft is kept. ${cause instanceof Error ? cause.message : String(cause)}`;
@@ -189,7 +241,15 @@
   </div>
   {#if restored}<p class="restored">Draft restored{draft.lostFiles ? ` · ${draft.lostFiles} ${draft.lostFiles === 1 ? 'file needs' : 'files need'} attaching again` : ''}. <button type="button" onclick={discard}>Discard</button></p>{/if}
   {#if draft.kind === 'entry'}<input bind:value={draft.title} placeholder="Title (optional)" aria-label="Entry title" />{/if}
-  <textarea bind:this={textarea} bind:value={draft.body} onpaste={pasteFiles} rows={draft.kind === 'entry' ? 9 : 2} placeholder={replyTo ? 'Reply…' : draft.quote ? 'Add a comment…' : draft.kind === 'entry' ? 'Write your entry…' : "What's on your mind?"} aria-label="Post text"></textarea>
+  <div class="body-wrap">
+    {#if picked}<div class="pill" role="toolbar" aria-label="Format the selection">
+      {#each marks as [icon, label, marker] (marker)}<button type="button" class:on={activeMark(marker)} aria-label={label} onmousedown={keepFocus} onclick={() => act((v) => inline(v, marker))}><Icon name={icon} size={18} /></button>{/each}
+      <button type="button" aria-label="Link" onmousedown={keepFocus} onclick={openLink}><Icon name="link" size={18} /></button>
+      <button type="button" class:on={activeMark('||')} aria-label="Spoiler" onmousedown={keepFocus} onclick={() => act((v) => inline(v, '||'))}><Icon name="eye-off" size={18} /></button>
+      <button type="button" aria-label="Formatting" onmousedown={keepFocus} onclick={() => (formatOpen = true)}><Icon name="format-text" size={18} /></button>
+    </div>{/if}
+    <textarea bind:this={textarea} bind:value={draft.body} onselect={track} onkeyup={track} onclick={track} oninput={track} onfocus={track} onblur={track} onpaste={pasteFiles} rows={draft.kind === 'entry' ? 9 : 2} placeholder={replyTo ? 'Reply…' : draft.quote ? 'Add a comment…' : draft.kind === 'entry' ? 'Write your entry…' : "What's on your mind?"} aria-label="Post text"></textarea>
+  </div>
   {#if quote}<div class="quoting"><QuoteEmbed {quote} gone={quote.post ? undefined : 'Loading the quoted post…'} /><button type="button" class="unquote" aria-label="Remove quote" onclick={() => (draft.quote = null)}><Icon name="close" size={16} /></button></div>
     {#if quotingOther}<p class="borrowed">Visible to readers of the quoted post.</p>{/if}{/if}
   {#if pending.length}
@@ -207,27 +267,67 @@
       {/each}
     </div>
   {/if}
-  <div class="compose-footer">
-    <button type="button" class="attach" aria-label="Attach photos or files" title="Attach photos or files" disabled={pending.length >= MAX_FILES} onclick={() => picker?.click()}><Icon name="attach" size={18} /></button>
+  {#if draft.pollOn}
+    <div class="fields poll">
+      <div class="field-head"><strong>Poll</strong><button type="button" class="remove" aria-label="Remove poll" onclick={() => (draft.pollOn = false)}><Icon name="close" size={16} /></button></div>
+      {#each draft.pollOptions as _, i (i)}<input bind:value={draft.pollOptions[i]} placeholder="Option {i + 1}" aria-label="Poll option {i + 1}" maxlength="200" />{/each}
+      {#if draft.pollOptions.length < 20}<button type="button" class="text-btn" onclick={() => (draft.pollOptions = [...draft.pollOptions, ''])}>Add option</button>{/if}
+      <Switch label="Allow more than one choice" bind:checked={draft.pollMultiple} />
+      <label class="closes">Closes <input type="datetime-local" bind:value={draft.pollCloses} aria-label="Poll closes" /></label>
+    </div>
+  {/if}
+  {#if cwOpen || draft.cw}<div class="fields"><input bind:value={draft.cw} placeholder="Content warning" aria-label="Content warning" /></div>{/if}
+  {#if tagsOpen || draft.tags || draft.mood}<div class="fields"><input bind:value={draft.tags} placeholder="Tags, separated by commas" aria-label="Tags" /><input bind:value={draft.mood} placeholder="Mood" aria-label="Mood" /></div>{/if}
+  <div class="bar">
+    <div class="row chips">
+      <span class="audience"><AudienceChip label="This post" value={audience} own buckets={chipBuckets} onchange={setAudience}
+        defaultAudience={replyTo ? undefined : accountDefault} onusedefault={useByDefault} /></span>
+      <button type="button" class="chip" class:on={!!draft.alerts} aria-label="Notifications" onclick={() => (alertsOpen = true)}><Icon name={draft.alerts === 'none' ? 'bell-off' : 'bell'} size={16} />{draft.alerts === 'none' ? 'Silent' : draft.alerts === 'delayed' ? 'Delayed' : ''}</button>
+      <span class="saved">{busy || error || !occupied(draft, start.mode, startBuckets) ? '' : 'Saved'}</span>
+    </div>
+    <div class="row icons" role="toolbar" aria-label="Formatting">
+      <button type="button" aria-label="Formatting" title="Formatting" onmousedown={keepFocus} onclick={() => (formatOpen = true)}><Icon name="format-text" size={20} /></button>
+      {#each marks as [icon, label, marker] (marker)}<button type="button" class:on={activeMark(marker)} aria-pressed={activeMark(marker)} aria-label={label} title={label} onmousedown={keepFocus} onclick={() => act((v) => inline(v, marker))}><Icon name={icon} size={20} /></button>{/each}
+      <button type="button" class:on={headingOn} aria-pressed={headingOn} aria-label="Heading" title="Heading" onmousedown={keepFocus} onclick={() => act((v) => style(v, lineStyle(v) === 'heading1' ? '' : 'heading1'))}><Icon name="format-heading" size={20} /></button>
+      <button type="button" aria-label="Bulleted list" title="Bulleted list" onmousedown={keepFocus} onclick={() => act((v) => lines(v, '• '))}><Icon name="format-list-ul" size={20} /></button>
+      <button type="button" aria-label="Numbered list" title="Numbered list" onmousedown={keepFocus} onclick={() => act((v) => lines(v, '', true))}><Icon name="format-list-ol" size={20} /></button>
+      <button type="button" aria-label="Quote" title="Quote" onmousedown={keepFocus} onclick={() => act((v) => style(v, lineStyle(v) === 'quote' ? '' : 'quote'))}><Icon name="format-quote" size={20} /></button>
+      <button type="button" aria-label="Link" title="Link" onmousedown={keepFocus} onclick={openLink}><Icon name="link" size={20} /></button>
+      <button type="button" class:on={activeMark('||')} aria-pressed={activeMark('||')} aria-label="Spoiler" title="Spoiler" onmousedown={keepFocus} onclick={() => act((v) => inline(v, '||'))}><Icon name="eye-off" size={20} /></button>
+    </div>
+    <div class="row icons">
+      <button type="button" aria-label="Attach photos or files" title="Attach photos or files" disabled={pending.length >= MAX_FILES} onclick={() => picker?.click()}><Icon name="image" size={20} /></button>
+      {#if coarse}<button type="button" aria-label="Take a photo" title="Take a photo" disabled={pending.length >= MAX_FILES} onclick={() => camera?.click()}><Icon name="camera" size={20} /></button>{/if}
+      <button type="button" class:on={draft.pollOn} aria-pressed={draft.pollOn} aria-label="Poll" title="Poll" onclick={() => (draft.pollOn = !draft.pollOn)}><Icon name="poll" size={20} /></button>
+      <button type="button" aria-label="Emoji" title="Emoji" onclick={() => (emojiOpen = true)}><Icon name="smile" size={20} /></button>
+      <button type="button" class:on={cwOpen || !!draft.cw} aria-pressed={cwOpen || !!draft.cw} aria-label="Content warning" title="Content warning" onclick={toggleCw}><Icon name="alert" size={20} /></button>
+      <button type="button" class:on={tagsOpen || !!draft.tags || !!draft.mood} aria-pressed={tagsOpen || !!draft.tags || !!draft.mood} aria-label="Tags and mood" title="Tags and mood" onclick={() => (tagsOpen = !tagsOpen)}><Icon name="hash" size={20} /></button>
+      <span class="words">{words} {words === 1 ? 'word' : 'words'}</span>
+      <button class="primary" disabled={!canPost}>{busy ? 'Posting…' : replyTo ? 'Reply' : 'Post'}</button>
+    </div>
     <input bind:this={picker} class="sr-label" type="file" multiple tabindex="-1" aria-hidden="true" onchange={(e) => { if (e.currentTarget.files) addFiles(e.currentTarget.files); e.currentTarget.value = ''; }} />
-    <details class="extras" bind:open={optionsOpen}><summary><Icon name="plus" size={16} />Post options</summary><div class="extra-fields"><input bind:value={draft.cw} placeholder="Content warning (optional)" aria-label="Content warning" /><input bind:value={draft.mood} placeholder="Mood" aria-label="Mood" /><input bind:value={draft.tags} placeholder="Tags, separated by commas" aria-label="Tags" />
-      <label><input type="checkbox" bind:checked={draft.pollOn} /> Add a poll</label>
-      {#if draft.pollOn}
-        {#each draft.pollOptions as _, i (i)}<input bind:value={draft.pollOptions[i]} placeholder="Option {i + 1}" aria-label="Poll option {i + 1}" maxlength="200" />{/each}
-        {#if draft.pollOptions.length < 20}<button type="button" onclick={() => (draft.pollOptions = [...draft.pollOptions, ''])}>Add option</button>{/if}
-        <label><input type="checkbox" bind:checked={draft.pollMultiple} /> Allow more than one choice</label>
-        <label>Closes <input type="datetime-local" bind:value={draft.pollCloses} aria-label="Poll closes" /></label>
-      {/if}
-      <fieldset class="alerts"><legend>Notifications</legend>
-        <div class="seg">{#each [['', 'As usual'], ['delayed', 'Random delay'], ['none', 'Don’t notify']] as [id, label] (id)}<button type="button" class:on={draft.alerts === id} aria-pressed={draft.alerts === id} onclick={() => (draft.alerts = id as typeof draft.alerts)}>{label}</button>{/each}</div>
-      </fieldset>
-    </div></details>
-    <span class="audience"><AudienceChip label="This post" value={audience} own buckets={chipBuckets} onchange={setAudience}
-      defaultAudience={replyTo ? undefined : accountDefault} onusedefault={useByDefault} /></span>
-    <button class="primary" disabled={!canPost}>{busy ? 'Posting…' : replyTo ? 'Reply' : 'Post'}</button>
+    <input bind:this={camera} class="sr-label" type="file" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true" onchange={(e) => { if (e.currentTarget.files) addFiles(e.currentTarget.files); e.currentTarget.value = ''; }} />
   </div>
   {#if error}<p class="error" role="alert">{error}</p>{/if}
 </form>
+{#if formatOpen}<FormattingSheet value={current()} onchange={apply} onlink={() => { formatOpen = false; openLink(); }} onclose={() => (formatOpen = false)} />{/if}
+{#if linkOpen}
+  <Sheet title="Link" onclose={() => (linkOpen = false)}>
+    <input class="link-field" bind:value={linkUrl} placeholder="https://" aria-label="Link address" inputmode="url" onkeydown={(e) => e.key === 'Enter' && (e.preventDefault(), addLink())} />
+    {#if linkError}<p class="error" role="alert">{linkError}</p>{/if}
+    {#snippet footer()}<button type="button" class="primary" onclick={addLink}>Add link</button>{/snippet}
+  </Sheet>
+{/if}
+{#if emojiOpen}
+  <Sheet title="Emoji" onclose={() => (emojiOpen = false)}>
+    <div class="emoji-grid">{#each unicodeEmoji as emoji (emoji)}<button type="button" title={emoji} aria-label={`Insert ${emoji}`} onclick={() => { act((v) => insert(v, emoji)); emojiOpen = false; }}>{emoji}</button>{/each}</div>
+  </Sheet>
+{/if}
+{#if alertsOpen}
+  <Sheet title="Notify" onclose={() => (alertsOpen = false)}>
+    <Segmented label="Notifications" value={draft.alerts} options={[{ id: '', label: 'As usual' }, { id: 'delayed', label: 'Random delay' }, { id: 'none', label: 'Don’t notify' }]} onchange={(v) => { draft.alerts = v as typeof draft.alerts; alertsOpen = false; }} />
+  </Sheet>
+{/if}
 
 <style>
   .composer { display: grid; gap: var(--s-3); background: var(--bg); border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: var(--s-4); }
@@ -241,16 +341,11 @@
   .authors label.on { background: var(--accent-soft); }
   input:not([type='checkbox']), textarea { border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); color: var(--ink); padding: var(--s-2); font: inherit; }
   textarea { width: 100%; resize: vertical; box-sizing: border-box; }
-  .extras { margin-right: auto; position: relative; }
-  .extras input { flex: 1 1 9rem; min-width: 0; }
   .primary { justify-self: end; min-height: 40px; border: 0; border-radius: var(--r-sm); background: var(--accent); color: var(--on-accent); padding: var(--s-2) var(--s-4); cursor: pointer; }
   .primary:disabled { opacity: .5; cursor: default; }
   .error { color: var(--danger); margin: 0; }
   .restored { margin: 0; color: var(--ink-3); font-size: var(--fs-xs); }
   .borrowed { margin: -4px 0 0; color: var(--ink-3); font-size: var(--fs-xs); }
-  .alerts { display: grid; gap: 6px; flex: 1 1 100%; }
-  .alerts .seg { justify-self: start; }
-  .alerts .seg button { white-space: nowrap; }
   .restored button { border: 0; background: none; padding: 0; color: var(--accent); font: inherit; cursor: pointer; }
   .author-picker { min-width: 0; position: relative; flex: 1; }
   .author-picker summary { cursor: pointer; color: var(--ink); font-size: var(--fs-sm); min-height: 40px; display: flex; align-items: center; font-weight: 600; }
@@ -270,12 +365,29 @@
   .tray-fields input:not([type='checkbox']) { padding: 6px 8px; }
   .tray-fields label { display: flex; align-items: center; gap: 6px; color: var(--ink-2); font-size: var(--fs-xs); }
   .remove { display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 50%; background: none; color: var(--ink-3); cursor: pointer; }
-  .compose-footer { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  .attach { display: grid; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 50%; background: none; color: var(--accent); cursor: pointer; }
-  .attach:hover:not(:disabled) { background: var(--surface-2); }
-  .attach:disabled { opacity: .4; cursor: default; }
-  .extras summary { cursor: pointer; display: flex; gap: 6px; align-items: center; color: var(--ink-3); font-size: var(--fs-xs); min-height: 40px; }
-  .extra-fields { display: grid; gap: 8px; position: absolute; left: 0; top: 100%; z-index: 3; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); width: min(280px, 75vw); }
+  .body-wrap { position: relative; }
+  .pill { position: absolute; z-index: 2; top: 0; left: 0; transform: translateY(-100%); display: flex; gap: 2px; padding: 4px; border-radius: 14px; background: var(--surface-2); box-shadow: var(--shadow-pop); }
+  .pill button { display: grid; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 10px; background: none; color: var(--ink-2); cursor: pointer; }
+  .pill button.on, .icons button.on { background: var(--accent-soft); color: var(--accent); }
+  .fields { display: grid; gap: 8px; }
+  .fields.poll { padding: 12px; border-radius: 12px; background: var(--surface); }
+  .field-head { display: flex; align-items: center; justify-content: space-between; }
+  .text-btn { justify-self: start; border: 0; background: none; color: var(--accent); font: inherit; padding: 4px 0; cursor: pointer; }
+  .closes { display: flex; align-items: center; gap: 8px; color: var(--ink-2); font-size: var(--fs-sm); }
+  .bar { display: grid; gap: 4px; margin: 0 calc(var(--s-4) * -1) calc(var(--s-4) * -1); padding: 8px var(--s-3); background: var(--surface); border-top: 1px solid var(--line); }
+  .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .chips { min-height: 40px; }
+  .chip { display: inline-flex; align-items: center; gap: 4px; min-height: 32px; padding: 0 10px; border: 0; border-radius: var(--r-full); background: var(--surface-2); color: var(--ink-3); font: inherit; font-size: var(--fs-sm); cursor: pointer; }
+  .chip.on { background: var(--accent-soft); color: var(--accent); }
+  .saved { margin-left: auto; color: var(--ink-3); font-size: var(--fs-sm); }
+  .icons { gap: 0; justify-content: space-between; flex-wrap: nowrap; }
+  .icons button:not(.primary) { display: grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: 10px; background: none; color: var(--accent); cursor: pointer; flex: none; }
+  .icons button:disabled { opacity: .4; cursor: default; }
+  .icons[role='toolbar'] button:not(.on) { color: var(--ink-2); }
+  .words { margin-left: auto; margin-right: 8px; color: var(--ink-3); font-size: var(--fs-sm); white-space: nowrap; }
+  .link-field { border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); color: var(--ink); padding: var(--s-2); font: inherit; }
+  .emoji-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 4px; }
+  .emoji-grid button { height: 44px; border: 0; border-radius: 10px; background: var(--surface-2); font-size: 24px; cursor: pointer; }
   .audience { display: flex; align-items: center; gap: 4px; color: var(--ink-3); min-width: 0; }
   .sr-label { position: absolute; width: 1px; height: 1px; clip-path: inset(50%); overflow: hidden; white-space: nowrap; }
 </style>
