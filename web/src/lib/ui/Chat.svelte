@@ -4,10 +4,10 @@
   import { onDestroy, tick, untrack } from 'svelte';
   import { core, type Composed, type Entity } from '../core';
   import RichText from './RichText.svelte';
-  import { channels, contentWarningsAutoExpand, customEmojis, lastRead, memberMarks, members, messageById, messagePage, pinnedMessages, reactions, readPerMember, segmentParsing, spaces, threadSummaries, unread, type MessageRow, type QuoteValue, type SnapshotItem, type TextRange } from '../data';
+  import { channels, contentWarningsAutoExpand, customEmojis, lastRead, latestMessage, memberMarks, members, messageById, messagePage, pinnedMessages, reactions, readPerMember, segmentParsing, spaces, threadSummaries, unread, type MessageRow, type QuoteValue, type SnapshotItem, type TextRange } from '../data';
   import { activeViewers, memberVisible } from '../hidden';
   import { router } from '../router.svelte';
-  import { forTarget, quoteForTarget, snapshot } from '../selection';
+  import { quoteForTarget, snapshot } from '../selection';
   import { editedSegments, segmentRich } from '../segments';
   import { canWriteAs, posts } from '../posts';
   import { channelFrontChoices, channelFrontId, channelFrontKey, channelReaders, channelSpeaker } from '../channel-front';
@@ -28,7 +28,7 @@
   import { expandFront } from '../subsystems';
   import Icon from './Icon.svelte';
   import EmptyState from './kit/EmptyState.svelte';
-  import { authorCards, listSpaces, openDm, spaceTitle, type SpaceInfo } from '../spaces';
+  import { accountName, authorCards, listSpaces, openDm, spaceTitle, type SpaceInfo } from '../spaces';
   import { accountsLabel, frontingLine } from '../friends';
   import { frontOf, refreshFront } from '../friend-fronts.svelte';
   import { carryReply, takeReply } from '../replyElsewhere';
@@ -36,6 +36,8 @@
   import SpaceRoles from './SpaceRoles.svelte';
   import ChannelEditor from './ChannelEditor.svelte';
   import NewChat from './NewChat.svelte';
+  import ForwardSheet, { type Target } from './ForwardSheet.svelte';
+  import { snapshotsFor, warning as forwardCard } from '../chat-forward';
   import { afterSend, everyone, offered as asideOffered, on as asideOn, placeholder as asidePlaceholder } from '../chat-aside';
   import { startFrom } from '../new-chat';
   import SpacePanel from './SpacePanel.svelte';
@@ -469,12 +471,44 @@
   // Reply elsewhere (SPEC §5.3): the reply goes to another channel, thread or DM and links back
   // (a reference card, for readers who can see the original)
   let replyIn = $state<MessageRow | null>(null);
-  const replyTargets = $derived(
-    allChannels
-      .filter((c) => c.id !== current?.id && !c.archived && shownNow(c))
-      .map((c) => ({ id: c.id, label: `${ss.find((x) => x.id === c.space_id)?.name ?? 'DM'} › ${c.kind === 'thread' ? 'thread' : '#'}${c.name}` }))
-      .sort((a, b) => a.label.localeCompare(b.label)),
-  );
+  let quoteIn = $state(false);
+  // the chats a forward, a reply or a quote can go to, as faces (F5.20); built only while a sheet is open
+  const targetRows = $derived.by((): Target[] => {
+    if (!forwarding && !replyIn && !quoteIn) return [];
+    const own = new Set(members(projection).map((m) => m.id));
+    const open = allChannels.filter((c) => !c.archived && c.kind !== 'thread' && shownNow(c));
+    return open.map((c) => {
+      const sp = ss.find((x) => x.id === c.space_id);
+      const siblings = open.filter((o) => o.space_id === c.space_id).length;
+      const sides = privateSides(c, sp, (id) => own.has(id));
+      const theirs = sides?.theirs.map((id) => people.get(id)?.display_name ?? people.get(id)?.name).filter(Boolean).join(' & ');
+      const title = sides ? (theirs || (sp ? spaceTitle(sp, directory.get(sp.id), sync.accountId) : c.name))
+        : c.kind === 'member_dm' ? c.name
+        : sp?.kind === 'dm' ? spaceTitle(sp, directory.get(sp.id), sync.accountId)
+        : sp?.kind === 'shared' ? (siblings > 1 ? `${sp.name} · ${c.name}` : sp.name)
+        : c.name;
+      const partner = c.kind === 'member_dm' && !sides ? people.get(c.member_ids?.[0] ?? '')
+        : sides?.theirs.length ? people.get(sides.theirs[0])
+        : sp?.kind === 'dm' ? dmFace(directory.get(sp.id), sync.accountId, cards) : undefined;
+      const letter = (title.match(/\p{L}|\p{N}/u)?.[0] ?? '#').toUpperCase();
+      const disc = c.avatar_blob ? { glyph: c.icon ?? letter, color: c.color ?? discColor(c.id), blob: c.avatar_blob }
+        : partner ? { glyph: partner.sigils[0] ?? partner.name[0] ?? '?', color: partner.color, blob: partner.avatar_blob ?? undefined }
+        : { glyph: c.icon ?? letter, color: c.color ?? discColor(c.id) };
+      return { id: c.id, title, names: [sp?.name, c.name], at: latestMessage(projection, c.id)?.occurred_at ?? 0, disc };
+    });
+  });
+  // the red card (F5.20) when a copy leaves where it was written, and who is on the other side
+  function leavingCard(targetId: string) {
+    const target = allChannels.find((c) => c.id === targetId);
+    if (!target || !current || !space) return null;
+    const outward = forwarding ? sharingOutward(target.id, target.space_id, current.space_id, forwardingSensitive)
+      : sharingOutward(target.id, target.space_id, quoteSourceSpaceId, quoteSensitive);
+    if (!outward) return null;
+    const source = space.kind === 'internal' ? (systemName === 'your system' ? 'this chat' : systemName) : space.kind === 'dm' ? 'this chat' : space.name || 'this chat';
+    const there = ss.find((x) => x.id === target.space_id);
+    const audience = there?.kind === 'internal' ? [] : (directory.get(target.space_id)?.accounts ?? []).filter((a) => a.id !== sync.accountId).map(accountName);
+    return forwardCard(source, audience, targetRows.find((t) => t.id === targetId)?.title ?? target.name);
+  }
   function replyElsewhere(target: string) {
     if (!replyIn || !target) return;
     carryReply(replyIn, target);
@@ -719,18 +753,14 @@
   function moveQuote(targetId: string) {
     const target = allChannels.find((c) => c.id === targetId && !c.archived);
     if (!retainedAllowed || !target || !shownNow(target) || !quoting || target.id === current?.id) return;
-    if (sharingOutward(target.id, target.space_id, quoteSourceSpaceId, quoteSensitive) &&
-        !confirm('This quote shares a snapshot of the selected content with another channel. Continue?')) return;
     keepQuoteOnNavigation = true;
     router.go(`/chat/${target.id}`);
   }
 
-  function forwardTo(targetId: string) {
+  function forwardTo(targetId: string, comment = '', showAuthors = true) {
     const target = allChannels.find((c) => c.id === targetId);
     const items = forwarding;
     if (lockedOut || !target || !shownNow(target) || target.archived || !items || !speaker || !current) return;
-    if (sharingOutward(target.id, target.space_id, current.space_id, forwardingSensitive) &&
-        !confirm('This forward shares a snapshot of the selected content with another channel. Continue?')) return;
     const targetScope = scopeOf(target.space_id);
     const attachments = items.flatMap((item) => item.attachments ?? []).map((a) => {
       const id = sync.newId();
@@ -743,10 +773,10 @@
     sync.create('message.forward', targetScope, sync.newId(), {
       channel_id: target.id,
       authors: [speaker],
-      text: '',
+      text: comment.trim(),
       entities: [],
       forward_of_id: items[0].message_id,
-      forward_snapshot: forTarget(items, current.space_id, target.space_id),
+      forward_snapshot: snapshotsFor(items, current.space_id, target.space_id, showAuthors),
       ...(attachments.length ? { attachments } : {}),
     });
     forwarding = null;
@@ -1435,17 +1465,6 @@
       </div>
     {/if}
     {#if (!atLatest || returnTo) && !lockedOut}<button class="jump-latest" onclick={jumpLatest} aria-label={returnTo ? 'Back to where you jumped from' : `Jump to latest${pendingUnread ? `, ${pendingUnread} unread` : ''}`}>{returnTo ? '↓ Back' : `↓ Latest${pendingUnread ? ` · ${pendingUnread}` : ''}`}</button>{/if}
-    {#if forwarding && !lockedOut}
-      <div class="bar">
-        Forward {forwarding.length} {forwarding.length === 1 ? 'item' : 'items'} to
-        <select onchange={(e) => { forwardTo((e.currentTarget as HTMLSelectElement).value); e.currentTarget.value = ''; }} aria-label="Forward to channel">
-          <option value="">choose…</option>
-          {#each allChannels.filter((c) => !c.archived && shownNow(c)) as c (c.id)}<option value={c.id}># {c.name}</option>{/each}
-        </select>
-        {#if !speaker}<span>Pick a speaker first.</span>{/if}
-        <button class="x" onclick={() => (forwarding = null)} aria-label="Cancel forward">✕</button>
-      </div>
-    {/if}
     {#if notSent.length}
       <ul class="not-sent" aria-label="Messages not sent">
         {#each notSent as issue (issue.id)}
@@ -1459,24 +1478,11 @@
       </ul>
     {/if}
     {#if slowMode && !canManage}<p class="hint slow">Slow mode: one message every {slowLabel(slowMode)} here.</p>{/if}
-    {#if replyIn}
-      <div class="reply-in" role="group" aria-label="Reply in another channel">
-        Reply to {replyIn.authors.map((a) => people.get(a)?.name ?? '?').join(' & ')} in
-        <select aria-label="Channel to reply in" onchange={(e) => replyElsewhere(e.currentTarget.value)}>
-          <option value="">choose…</option>
-          {#each replyTargets as t (t.id)}<option value={t.id}>{t.label}</option>{/each}
-        </select>
-        <button onclick={() => (replyIn = null)}>Cancel</button>
-      </div>
-    {/if}
     {#if retainedAllowed && (replyTo || quoting || editing)}
       <div class="bar">
         {#if editing}Editing message{:else if quoting}Quoting {#if 'items' in quoting}{quoting.items.length} {quoting.items.length === 1 ? 'message' : 'messages'}{:else}“{quoting.text.slice(0, 60)}”{/if}{:else if replyTo}Replying to {replyTo.authors.map((a) => people.get(a)?.name ?? '?').join(' & ')}{/if}
         {#if quoting}
-          <select onchange={(e) => { moveQuote((e.currentTarget as HTMLSelectElement).value); e.currentTarget.value = ''; }} aria-label="Quote in another channel">
-            <option value="">Quote in…</option>
-            {#each allChannels.filter((c) => !c.archived && c.id !== current?.id && shownNow(c)) as c (c.id)}<option value={c.id}># {c.name}</option>{/each}
-          </select>
+          <button onclick={() => (quoteIn = true)}>Quote in…</button>
         {/if}
         <button class="x" onclick={cancel} aria-label="Cancel">✕</button>
       </div>
@@ -1697,6 +1703,17 @@
     </aside>
   {/if}
 </div>
+{#if forwarding && !lockedOut}
+  <ForwardSheet targets={targetRows} {dark} speaker={speaker ? people.get(speaker) ?? null : null} label="Forward to" exclude={current?.id}
+    warning={leavingCard} onsend={forwardTo} onclose={() => (forwarding = null)} />
+{/if}
+{#if replyIn}
+  <ForwardSheet targets={targetRows} {dark} label="Reply in" placeholder="Reply in…" exclude={current?.id} onpick={replyElsewhere} onclose={() => (replyIn = null)} />
+{/if}
+{#if quoteIn && quoting}
+  <ForwardSheet targets={targetRows} {dark} label="Quote in" placeholder="Quote in…" exclude={current?.id} warning={leavingCard}
+    onpick={(id) => { quoteIn = false; moveQuote(id); }} onclose={() => (quoteIn = false)} />
+{/if}
 {#if newChat}<NewChat {projection} {dark} start={newChat} onclose={() => (newChat = false)} />{/if}
 {#if editingGroup && space && !lockedOut}
   <ChannelEditor {projection} {dark} spaceId={space.id} spaceKind={space.kind} group={space}
@@ -1727,7 +1744,7 @@
   .m-face :global(img) { width: 100%; height: 100%; object-fit: cover; }
   .jump-latest { align-self: flex-end; margin: 8px 16px; border-radius: 24px; padding: 8px 14px; background: var(--surface-2); animation: chorus-pop-in var(--t-fast) var(--ease); }
   /* bars over the composer, the info panel and in-chat search arrive rather than pop in */
-  .bar, .reply-in, .not-sent li, .msg-options { animation: chorus-rise-in var(--t-fast) var(--ease); }
+  .bar, .not-sent li, .msg-options { animation: chorus-rise-in var(--t-fast) var(--ease); }
   .room-info { animation: chorus-slide-in var(--t-base) var(--ease); }
   .search-overlay { animation: chorus-fade-in var(--t-fast) var(--ease); }
   .history-message { display: grid; gap: var(--s-2); padding: var(--s-4); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); }
@@ -1845,13 +1862,6 @@
     border-top: 1px solid var(--line);
     background: var(--surface-2);
   }
-  .bar select {
-    font: inherit;
-    color: var(--ink);
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r-sm);
-  }
   .x {
     margin-left: auto;
     background: none;
@@ -1876,8 +1886,6 @@
   .not-sent li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
   .not-sent .why { color: var(--ink-2); font-size: var(--fs-sm); }
   .not-sent .text { color: var(--ink-3); overflow-wrap: anywhere; }
-  .reply-in { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); padding: var(--s-2); color: var(--ink-2); }
-  .reply-in select { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: var(--s-1); max-width: 100%; }
   .segment-edit { display: grid; gap: 2px; font-size: var(--fs-xs); color: var(--ink-2); }
   .segment-edit + .segment-edit { margin-top: var(--s-2); }
   .chip-wrap {
