@@ -382,7 +382,7 @@ test('a device signed out from another one goes back to onboarding, and can be l
   // the open socket learns it on its next frame: the heartbeat's ping, within ~25 s of quiet
   const line = desk.page.getByText('This browser was signed out from another device.');
   await expect(line).toBeVisible({ timeout: 45_000 });
-  await expect(desk.page.getByRole('heading', { name: 'Welcome to Chorus' })).toBeVisible();
+  await expect(desk.page.getByRole('heading', { name: /^Chorus/ })).toBeVisible();
   await expect(desk.page.locator('.shell')).toHaveCount(0); // the kept copy isn't shown
   // a reload remembers it, and opens no socket
   const sockets: string[] = [];
@@ -397,9 +397,8 @@ test('a device signed out from another one goes back to onboarding, and can be l
   await stars.page.getByRole('button', { name: 'Link another device…' }).click();
   const link = await stars.page.locator('section[aria-label="Link another device"] code').innerText();
   await desk.page.getByLabel('Invite link or code').fill(link);
-  await desk.page.getByRole('button', { name: 'Continue' }).click();
-  await desk.page.getByRole('button', { name: 'Link this browser', exact: true }).click();
-  const erase = desk.page.getByRole('button', { name: 'Erase and link this browser' });
+  await desk.page.getByRole('button', { name: 'Link', exact: true }).click();
+  const erase = desk.page.getByRole('button', { name: 'Erase and continue' });
   if (await erase.waitFor({ timeout: 3_000 }).then(() => true, () => false)) {
     await expect(desk.page.getByRole('alert')).toContainText('including anything written here that never synced');
     await erase.click();

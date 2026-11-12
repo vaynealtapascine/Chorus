@@ -28,11 +28,13 @@
   import PlaceSheet from './PlaceSheet.svelte';
   import HomeSections from './HomeSections.svelte';
   import SectionLabel from './kit/SectionLabel.svelte';
+  import { cap, parseWords } from '../words';
   import { core } from '../core';
 
   let { projection, dark, onswitch }: { projection: Projection; dark: boolean; onswitch: (front?: string, addTo?: string) => void } = $props();
   const accountId = $derived(sync.accountId);
   const self = $derived(selfMember(projection));
+  const words = $derived(parseWords(projection.rows.system?.[sync.accountId]?.fields.terminology as string | undefined));
   const person = $derived(!!self);
   const who = $derived(whoMap(projection));
   const own = $derived(ownMembers(projection));
@@ -216,7 +218,7 @@
     {:else if id === 'fronting'}
       <section class="card fronting" aria-label="Fronting now">
         <header>
-          <strong>{configured ? scene.nested[0]?.name ?? 'Fronting' : 'Fronting'} now</strong>
+          <strong>{configured ? scene.nested[0]?.name ?? cap(words.fronting) : cap(words.fronting)} now</strong>
           {#if frontSince}<span>since {time(frontSince)} · {fd.duration(now - frontSince)}</span>{/if}
         </header>
         {#if !here.length}<p class="none">No one fronting</p>

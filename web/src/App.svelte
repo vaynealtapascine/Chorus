@@ -10,6 +10,8 @@
   import MemberEditor from './lib/ui/MemberEditor.svelte';
   import Members from './lib/ui/Members.svelte';
   import Onboarding from './lib/ui/Onboarding.svelte';
+  import Setup from './lib/ui/Setup.svelte';
+  import { setupOwed } from './lib/setup';
   import People from './lib/ui/People.svelte';
   import UpdateSheet from './lib/ui/UpdateSheet.svelte';
   import SettingsShell from './lib/ui/SettingsShell.svelte';
@@ -87,6 +89,9 @@
   });
 
   const dark = $derived(appearance.dark);
+  // a new system's setup (F1.2-F1.4) is owed until it's finished
+  let setupDone = $state(0);
+  const setupName = $derived.by(() => { void setupDone; return sync.device ? setupOwed.pending(sync.accountId) : null; });
 
   let status: Status = $state(sync.status);
   let storageFull = $state(sync.storageFull);
@@ -164,6 +169,8 @@
 <!-- signed out (D-153): onboarding, as for a browser with no device; the kept copy isn't shown -->
 {#if status === 'no-device' || status === 'signed-out'}
   <Onboarding />
+{:else if projection && setupName !== null}
+  <Setup {projection} name={setupName} ondone={() => { setupOwed.done(sync.accountId); setupDone++; }} />
 {:else if projection}
   <div class="shell" class:chat-page={router.route.name === 'chat'} class:nav-open={navOpen}>
     <a class="skip" href="#main-content" onclick={(e) => { e.preventDefault(); document.getElementById('main-content')?.focus(); }}>Skip to content</a>

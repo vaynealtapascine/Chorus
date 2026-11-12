@@ -42,10 +42,20 @@ export async function device(browser: Browser, who: string): Promise<Device> {
 /** Enrol through the invite page (a new account, or another device of one). */
 export async function enrol(page: Page, code: string, name?: string, handle?: string): Promise<void> {
   await page.goto(`/i/${code}`);
-  if (name) await page.getByLabel(/^(Your system's name|Your name|Name)/).fill(name);
+  if (name) await page.getByLabel(/^(System name|Your name|Name)/).fill(name);
   if (handle) await page.getByLabel(/^Handle/).fill(handle);
-  // the invite decides the form (D-093): Join for a new account, Link this browser for another device
-  await page.getByRole('button', { name: /^(Join|Link this browser)$/ }).click();
+  // the invite decides the form (D-093): Continue for a new account, Link for another device
+  await page.getByRole('button', { name: /^(Continue|Link)$/ }).click();
+  // a new system goes through setup (F1.2-F1.4): leave it as it is
+  const setup = page.getByRole('main', { name: 'Setup' });
+  for (let i = 0; i < 3; i++) {
+    const seen = await Promise.race([
+      setup.waitFor({ timeout: 15_000 }).then(() => true, () => false),
+      page.locator('.shell').waitFor({ state: 'attached', timeout: 15_000 }).then(() => false, () => false),
+    ]);
+    if (!seen) break;
+    await setup.getByRole('button', { name: 'Continue' }).click();
+  }
   await live(page);
 }
 
