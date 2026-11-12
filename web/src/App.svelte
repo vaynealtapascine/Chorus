@@ -245,7 +245,7 @@
       {:else if router.route.name === 'post' && router.route.id}
         <PostThread {projection} id={router.route.id} {dark} />
       {:else if router.route.name === 'post-stage' && router.route.id}
-        <PostStage {projection} id={router.route.id} />
+        <PostStage {projection} {dark} id={router.route.id} />
       {:else if router.route.name === 'more'}
         <More {projection} />
       {:else if router.route.name === 'notifications'}
