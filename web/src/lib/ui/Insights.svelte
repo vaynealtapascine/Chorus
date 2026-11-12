@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PageHeader from './kit/PageHeader.svelte';
   import { onMount } from 'svelte';
   import { members } from '../data';
   import { cofrontPairs, csv, frontDaily, localDay, namedFrontDays, switchesPerDay, windowStart } from '../insights';
@@ -96,10 +97,7 @@
 </script>
 
 <section class="insights-page">
-  <header>
-    <h1 class="display">Insights</h1>
-    <p class="hint">For your own reflection · only your system sees this</p>
-  </header>
+  <PageHeader title="Insights" sub="For your own reflection · only your system sees this" />
   <Segmented label="Insight range" options={RANGES.map((r) => ({ id: r.id, label: r.label }))} bind:value={range} />
   {#if system}
     <details class="options">
@@ -190,15 +188,14 @@
   .scope label { display: grid; gap: var(--s-1); flex: 1 1 10rem; min-width: 0; color: var(--ink-2); font-size: var(--fs-sm); }
   .scope select { min-height: 44px; min-width: 0; width: 100%; padding: var(--s-2); background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: var(--r-sm); font: inherit; }
   .insights-page { display: grid; gap: var(--s-5); }
-  header, .chart-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s-3); }
-  h1, h2, p { margin: 0; }
+  .chart-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s-3); }
+  h2, p { margin: 0; }
   h2 { font-size: var(--fs-lg); }
   .hint { color: var(--ink-3); font-size: var(--fs-sm); }
   .chart { display: grid; gap: var(--s-3); border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--s-4); background: var(--surface); }
   .chart-head button { min-height: 44px; border: 1px solid var(--line); background: var(--surface-2); border-radius: var(--r-sm); padding: var(--s-1) var(--s-3); color: var(--ink); cursor: pointer; white-space: nowrap; }
   .options summary { cursor: pointer; color: var(--accent); font-size: var(--fs-sm); }
   .options .scope { margin-top: var(--s-2); }
-  header { display: grid; gap: 2px; }
   .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s-2); }
   .tile { display: grid; gap: 2px; align-content: start; min-width: 0; padding: var(--s-3); border-radius: var(--r-md); background: var(--surface); }
   .tile .k { font-size: 11px; font-weight: 500; color: var(--ink-2); }

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PageHeader from './kit/PageHeader.svelte';
   import Button from './kit/Button.svelte';
   // Chorus Home's *This computer* page (D-071, FLOWS F2.3–F2.4): add a phone over the home wifi,
   // and the few settings a home install has, instead of editing chorus.toml.
@@ -70,7 +71,7 @@
 </script>
 
 <section class="computer">
-  <h1 class="display">This computer</h1>
+  <PageHeader title="This computer" />
   {#if !loaded}
     <p class="muted">Looking…</p>
   {:else if !status}
@@ -135,7 +136,7 @@
 
 <style>
   .computer { display: grid; gap: var(--s-4); max-width: 620px; margin: auto; }
-  h1, h2 { margin: 0; }
+  h2 { margin: 0; }
   h2 { font-size: var(--fs-lg); }
   .lead { color: var(--ink-2); margin: 0; }
   .card { display: grid; gap: var(--s-3); padding: var(--s-5); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); }

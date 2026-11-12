@@ -4,6 +4,8 @@
   // (#/people/<account>); sharing with one friend, a bucket, Advanced sharing and notifications from
   // a friend are pages of their own (#/people/share|bucket|advanced|notify/…). Everything about other
   // accounts is the server's filtered view; accepting and buckets are ordinary ops.
+  import FormNote from './kit/FormNote.svelte';
+  import UnderlineTabs from './kit/UnderlineTabs.svelte';
   import SectionLabel from './kit/SectionLabel.svelte';
   import ValueRow from './kit/ValueRow.svelte';
   import Pill from './kit/Pill.svelte';
@@ -113,11 +115,7 @@
     <button class="fr-icon ink" aria-label="Follow someone" onclick={() => (adding = true)}><Icon name="user-plus" /></button>
     <button class="fr-icon ink" aria-label={searching ? 'Close search' : 'Search friends'} onclick={() => { searching = !searching; query = ''; }}><Icon name={searching ? 'close' : 'search'} /></button>
   </header>
-  <div class="fr-tabs" role="tablist" aria-label="Friends">
-    {#each tabs as label, i (label)}
-      <button role="tab" aria-selected={tab === i} onclick={() => (friends.tab = i)}>{label}{#if label === 'Requests' && requestCount}<span class="fr-count">{requestCount}</span>{/if}</button>
-    {/each}
-  </div>
+  <div class="fr-tabbar"><UnderlineTabs label="Friends" value={String(tab)} tabs={tabs.map((label, i) => ({ id: String(i), label, count: label === 'Requests' && requestCount ? requestCount : null }))} onchange={(id) => (friends.tab = Number(id))} /></div>
   {#if searching}<div class="search"><input bind:value={query} placeholder="Search friends" aria-label="Search friends" /></div>{/if}
   {#if friends.error}<p class="fr-error" role="alert">{friends.error}</p>{/if}
   {#if notice}<p class="fr-error" role="alert">{notice}</p>{/if}
@@ -203,7 +201,7 @@
       </ul>
     {/if}
   {:else}
-    <p class="fr-note"><Icon name="shield" size={16} />Friends in the same bucket hear the same things. A friend in two buckets gets the more open one.</p>
+    <FormNote quiet inset icon="shield" text="Friends in the same bucket hear the same things. A friend in two buckets gets the more open one." />
     <SectionLabel inset label="Buckets" aside="who · how much" />
     {@render bucketRows()}
     <SectionLabel inset label="Everyone else" />

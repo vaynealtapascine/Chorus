@@ -1,6 +1,7 @@
 <script lang="ts">
   // F10.1 More, as Android's MoreScreen: "Go to" what is not on the bar, then "Settings", each row
   // with its state as a line under it where there is one (counts, the current look).
+  import PageHeader from './kit/PageHeader.svelte';
   import { onMount } from 'svelte';
   import { groups, members, selfMember } from '../data';
   import { appearance } from '../appearance.svelte';
@@ -43,7 +44,7 @@
 </script>
 
 <section class="more">
-  <h1 class="display">More</h1>
+  <PageHeader title="More" />
   <h2 class="label">Go to</h2>
   {#each goTo as r (r.href)}{@render row(r)}{/each}
   <h2 class="label">Settings</h2>
@@ -62,7 +63,6 @@
 
 <style>
   .more { display: grid; max-width: 720px; margin: auto; }
-  h1 { font-size: var(--fs-xl); margin: 0 0 var(--s-2); }
   .label { margin: 0; padding: var(--s-4) var(--s-1) 6px; color: var(--accent); font-size: var(--fs-sm); font-weight: 600; line-height: 18px; }
   a { display: flex; gap: var(--s-4); align-items: center; min-height: 62px; padding: var(--s-2) var(--s-1); color: var(--ink); text-decoration: none; }
   a:hover { background: var(--surface-2); }

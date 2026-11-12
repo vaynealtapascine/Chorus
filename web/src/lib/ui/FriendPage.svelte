@@ -3,6 +3,8 @@
   // our bucket pills, Message / Notifying / Chats (a person: Tell me about posts), who's around now
   // as they share it, the members they share, and what's between us. A person shows their posts,
   // journal and about instead of fronting. Only what the server's filtered reads allow.
+  import FormNote from './kit/FormNote.svelte';
+  import UnderlineTabs from './kit/UnderlineTabs.svelte';
   import SectionLabel from './kit/SectionLabel.svelte';
   import ValueRow from './kit/ValueRow.svelte';
   import Pill from './kit/Pill.svelte';
@@ -129,15 +131,11 @@
       {#if !r.following}<Button size="sm" onclick={followBack}><Icon name="user-plus" size={16} />Follow back</Button>{/if}
     </div>
     {#if notice}<p class="fr-error" role="alert">{notice}</p>{/if}
-    {#if !r.following && r.follower?.status === 'active'}<p class="fr-note"><Icon name="user-plus" size={16} />{name} follows you. Once you follow back and they accept, you’ll see what they share with followers, and you’re friends.</p>{/if}
+    {#if !r.following && r.follower?.status === 'active'}<FormNote quiet inset icon="user-plus" text="{name} follows you. Once you follow back and they accept, you’ll see what they share with followers, and you’re friends." />{/if}
 
     {#if !isSystem(r.account)}
       {@render between(r)}
-      <div class="fr-tabs on-page" role="tablist" aria-label="{name}’s posts">
-        {#each [['posts', 'Posts'], ['journal', 'Journal'], ['about', 'About']] as [id, label] (id)}
-          <button role="tab" aria-selected={tab === id} onclick={() => (tab = id as typeof tab)}>{label}</button>
-        {/each}
-      </div>
+      <UnderlineTabs label="{name}’s posts" bind:value={tab} tabs={[{ id: 'posts', label: 'Posts' }, { id: 'journal', label: 'Journal' }, { id: 'about', label: 'About' }]} />
       {#if tab === 'about'}
         <div class="about">
           {#if !about}<EmptyState icon="eye-off" label="Not shared with you" />
@@ -202,7 +200,7 @@
             {/each}
           </div>
         {/if}
-      {:else if shared && follows(r)}<p class="fr-note"><Icon name="members" size={16} />{name} haven’t shared any member profiles with you yet.</p>{/if}
+      {:else if shared && follows(r)}<FormNote quiet inset icon="members" text="{name} haven’t shared any member profiles with you yet." />{/if}
       {@render between(r)}
     {/if}
   {/if}
