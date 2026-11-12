@@ -111,6 +111,19 @@ Desktop 1280 and phone width, light and dark, plus Large text and Compact densit
 9. MemberEditor: banner "Add a banner" label pill, Change picture pill, notification rule segments.
 10. Decide: 14 px type step, the 8 px radius, a kit IconButton, a kit FaceRow.
 
+## Browser tour
+
+Toured against a demo server on a copy of a seeded data dir (Lanterns account, Chrome via Playwright, 1280x800 and 390x844, dark and
+light). Toured so far: Home, Fronting, History, Fronts, Layers, Members (+ tabs), Chat list, Journal, Friends, Notifications.
+Findings (fixed in the commit that carries this table unless noted):
+
+| Screen | Width / theme | What was wrong | Status |
+| --- | --- | --- | --- |
+| Journal | 390 both | Whole page scrolled sideways 90 px: the composer grid and the journal grid had no `minmax(0, 1fr)` column, and the formatting toolbar did not wrap | fixed |
+| Journal | all | A second big "Journal" h1 under the app bar's own title | fixed (h1 removed; the React-as / Feeds / More tools stay, right aligned) |
+| Notifications | all | Two titles: the app bar and the page's own header | fixed (app bar hidden on screens that carry their own title row: Notifications, Friends, a friend's page) |
+| Friends | 1280 | Same double title | fixed (as above) |
+
 ## How counted
 
 `grep -hoE` per pattern over the 136 files (kit excluded), run before the first commit and after the last; the list above names

@@ -331,7 +331,7 @@
 {/if}
 
 <style>
-  .composer { display: grid; gap: var(--s-3); background: var(--bg); border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: var(--s-4); }
+  .composer { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-3); background: var(--bg); border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: var(--s-4); }
   .head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); }
   .seg { display: flex; background: var(--surface-2); border-radius: var(--r-full); padding: 2px; }
   .seg button { border: 0; background: none; color: var(--ink-2); padding: var(--s-1) var(--s-3); border-radius: var(--r-full); cursor: pointer; }
@@ -379,7 +379,7 @@
   .chip { display: inline-flex; align-items: center; gap: var(--s-1); min-height: 32px; padding: 0 10px; border: 0; border-radius: var(--r-full); background: var(--surface-2); color: var(--ink-3); font: inherit; font-size: var(--fs-sm); cursor: pointer; }
   .chip.on { background: var(--accent-soft); color: var(--accent); }
   .saved { margin-left: auto; color: var(--ink-3); font-size: var(--fs-sm); }
-  .icons { gap: 0; justify-content: space-between; flex-wrap: nowrap; }
+  .icons { gap: 0; justify-content: space-between; flex-wrap: wrap; }
   .icons button { display: grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: var(--r-sm); background: none; color: var(--accent); cursor: pointer; flex: none; }
   .icons button:disabled { opacity: .4; cursor: default; }
   .icons[role='toolbar'] button:not(.on) { color: var(--ink-2); }

@@ -89,7 +89,7 @@
 </script>
 
 <div class="journal-layout"><section class="journal">
-  <header><h1 class="display">Journal</h1>
+  <header>
     <div class="head-tools">{#if self}<a class="me" href="#/profile/{self.id}">My profile</a>{:else}<label>React as <select bind:value={actingAs} aria-label="React as member"><option value="">Current front</option>{#each active as person (person.id)}<option value={person.id}>{person.display_name ?? person.name}</option>{/each}</select></label>{/if}
       <button class="icon-btn" aria-label="Feeds" title="Feeds" onclick={() => (section = 'feeds')}><Icon name="hash" size={22} /></button>
       <button class="icon-btn" aria-label="More" aria-haspopup="menu" title="More" onclick={() => (menu = true)}><Icon name="more-vert" size={22} /></button></div></header>
@@ -154,9 +154,9 @@
   .journal-context .context-search { background: var(--surface-2); border-radius: var(--r-full); padding: var(--s-3) var(--s-4); color: var(--ink-3); }
   @media (max-width: 1279px) { .journal-layout { grid-template-columns: minmax(0, 1fr); } .journal-context { display: none; } }
   /* a set width (auto margins would shrink it to its content), so switching sections doesn't move the tabs */
-  .journal { width: 100%; max-width: 760px; margin: 0 auto; display: grid; gap: var(--s-4); align-content: start; min-width: 0; }
-  header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--s-3); }
-  h1, p { margin: 0; }
+  .journal { width: 100%; max-width: 760px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-4); align-content: start; min-width: 0; }
+  header { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: var(--s-3); }
+  p { margin: 0; }
   /* switching sections fades the new one in */
   .timeline { animation: chorus-fade-in var(--t-fast) var(--ease); }
   .head-tools { display: flex; align-items: center; gap: var(--s-1); }
