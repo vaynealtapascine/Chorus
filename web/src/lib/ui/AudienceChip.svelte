@@ -37,6 +37,8 @@
   } = $props();
 
   let open = $state(false);
+  // the menu hangs from the chip's right edge; a chip near the left edge opens it rightwards instead
+  let fromLeft = $state(false);
   let allBuckets = $state(false);
   const names = $derived(new Map(buckets.map((b) => [b.id, b.name])));
   const live = $derived(new Set(buckets.map((b) => b.id)));
@@ -64,13 +66,13 @@
   <button type="button" class="chip" class:shared={!priv} class:own aria-haspopup="menu" aria-expanded={open}
     aria-label="{label}: {text}{own || !inherit ? '' : ` (${inherit.toLowerCase()})`}. Change who can see it"
     title={own || !inherit ? undefined : inherit}
-    onclick={(e) => { e.stopPropagation(); open = !open; }}>
+    onclick={(e) => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); fromLeft = r.right - 250 < (innerWidth >= 1024 ? 250 : 8) && r.left + 250 <= innerWidth; open = !open; }}>
     {#if !priv && single}<BucketGlyph icon={single.icon} color={single.color} size={14} />
     {:else}<Icon name={priv ? 'lock' : value.mode === 'server' ? 'globe' : 'users'} size={14} />{/if}
     <span>{text}</span>
   </button>
   {#if open}
-    <div class="menu" role="menu" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
+    <div class="menu" class:from-left={fromLeft} role="menu" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
       <p class="menu-title">Who can see {label.toLowerCase()}</p>
       {#if inherit}
         <button role="menuitemradio" aria-checked={!own} onclick={() => pick(null)}>{inherit}</button>
@@ -102,6 +104,7 @@
   .chip.shared { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
   .chip:not(.own) { border-style: dashed; }
   .menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; width: 250px; display: grid; gap: 2px; padding: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-control); box-shadow: var(--shadow-pop); }
+  .menu.from-left { left: 0; right: auto; }
   .menu-title { margin: 6px var(--s-2) 2px; font-size: var(--fs-xs); color: var(--ink-3); }
   .menu > button { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-2); text-align: left; border: 0; background: none; color: var(--ink); font: inherit; font-size: var(--fs-sm); padding: var(--s-2); border-radius: 8px; cursor: pointer; }
   .menu > button:hover { background: var(--surface-2); }

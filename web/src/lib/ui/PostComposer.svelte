@@ -382,6 +382,7 @@
   .icons { gap: 0; justify-content: space-between; flex-wrap: wrap; }
   .icons button { display: grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: var(--r-sm); background: none; color: var(--accent); cursor: pointer; flex: none; }
   .icons button:disabled { opacity: .4; cursor: default; }
+  .icons[role='toolbar'] { justify-content: flex-start; }
   .icons[role='toolbar'] button:not(.on) { color: var(--ink-2); }
   .words { margin-left: auto; margin-right: var(--s-2); color: var(--ink-3); font-size: var(--fs-sm); white-space: nowrap; }
   .link-field { border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); color: var(--ink); padding: var(--s-2); font: inherit; }

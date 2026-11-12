@@ -134,8 +134,25 @@ Findings (fixed in the commit that carries this table unless noted):
 | Post page, Journal | 390 | Author name cut to "F..." by the long "Everyone on this server" pill and the handle | fixed (the handle gives way first) |
 | Fronting | 390, Compact density | Front tabs' hard-coded -16px margin overran main's scaled padding by 4px, sideways scroll | fixed (margin from `--s-4`) |
 | Large text / Compact density | Chat, Fronting, Journal, Home, Members, History, Settings at 1280 dark and 390 light | Looked at Chat, Fronting, Journal, Home at Larger and Compact; nothing clipped beyond the item above | Members, History, Settings screenshots taken but not individually viewed |
+| Journal composer, post audience menu | 390 / 1280 | The audience menu hung from the chip's right edge, so from a chip at the left it ran off the phone's left edge (text cut) and over the side bar at 1280 | fixed (AudienceChip opens rightwards when the chip is near the left edge) |
+| Journal composer | 390 | Wrapped formatting toolbar spread Quote / Link / Spoiler across the width | fixed (left aligned) |
+| Welcome, invite, Setup | 1280 / 390 | Looked at the invite form, Who's in the system, and the first Home; nothing to fix | none |
+| Stage (chat) | all | Dark in both themes (the capture surface); the Style / Filters / Names tabs were not opened | left (not toured: tab clicks missed) |
 | API tokens, Webhooks | all | Two "add" controls: the header button and an action inside the empty state | fixed (empty state has no action; the header button stays) |
 | This device | all | "This app uses 1.8 MB on this device of 10.0 GB" repeats the Space used row above it | left (an e2e spec reads this sentence) |
+
+### Stage 1's open decisions, settled by the tour
+
+- 14 px type step: **no token.** The tour found no screen where 14 reads as wrong beside 13 or 15, and a new `--fs-*` step
+  means a tokens.json change that Android generates from. The 62 literals stay; revisit only if Android adds the step.
+- 8 px radius: stays a literal (small tags, bars).
+- Kit `IconButton` and `FaceRow`: **deferred.** Round icon buttons looked consistent on every screen toured (44 px target, ink-2
+  glyph, surface-2 hover), so no visible gain for a 13-file change with no e2e cover on the face rows.
+- The five `.fr-seg` controls: left alone; the e2e specs were not checked for their roles.
+- Not toured (usage and time): Trash, Sync issues, Link device, This computer pages, Export/Import, Chat folders, Custom fields
+  sheets, Forward sheet, Relationships, System board, poll card and Votes, Stage's five tool tabs and Save drawer, the connection
+  banner and slow-down toast, ConfirmSheets. Large text and Compact density: Members, History and Settings screenshots were taken
+  but not individually viewed.
 
 ## How counted
 
