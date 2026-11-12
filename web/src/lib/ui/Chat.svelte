@@ -1139,12 +1139,30 @@
   let atLatest = $state(true);
   let unreadBoundary = $state(0);
   let readChannel = '';
-  const pendingUnread = $derived(visibleMsgs.filter((m) => !m.deleted && m.account_id !== sync.accountId && m.occurred_at > unreadBoundary).length);
-  const firstUnread = $derived(visibleMsgs.find((m) => !m.deleted && m.account_id !== sync.accountId && m.occurred_at > unreadBoundary)?.id);
+  // with reading tracked per member, the boundary is the reading member's own mark (as when the chat was opened)
+  let markBoundary = $state(new Map<string, number>());
+  const reader = $derived(perMember && !self && speaker ? people.get(speaker) ?? null : null);
+  const readerName = $derived(reader ? reader.display_name ?? reader.name : null);
+  const boundary = $derived(reader ? markBoundary.get(reader.id) ?? 0 : unreadBoundary);
+  const unreadRows = $derived(visibleMsgs.filter((m) => !m.deleted && m.account_id !== sync.accountId && m.occurred_at > boundary));
+  const pendingUnread = $derived(unreadRows.length);
+  const firstUnread = $derived(unreadRows[0]?.id);
+  // unread messages that name the reader, for the @ jump
+  const mentionedUnread = $derived(unreadRows.filter((m) => m.entities.some((e) => e.type === 'mention' && e.target_type === 'member' &&
+    (reader ? e.target_id === reader.id : typeof e.target_id === 'string' && ownIds.has(e.target_id)))));
+  const readerSince = $derived(reader && boundary ? dayLabel(boundary).toLowerCase() : '');
+  function jumpMention() {
+    const m = mentionedUnread[0];
+    const el = m && list?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(m.id)}"]`);
+    if (!el) return;
+    el.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    flash(el);
+  }
   $effect(() => {
     if (current?.id === readChannel) return;
     readChannel = current?.id ?? '';
     unreadBoundary = current ? lastRead(projection, current.id, sync.accountId) : 0;
+    markBoundary = new Map(marksHere.map((x) => [x.member, x.at]));
     atLatest = true;
     jumpTrail = [];
   });
@@ -1367,6 +1385,11 @@
         onopen={(m) => { searchHere = false; void tick().then(() => showMessage(m)); }} />{/key}</div>
     {/if}
     <div class="search-underlay" inert={searchHere} aria-hidden={searchHere}>
+    {#if reader && !lockedOut}
+      <div class="reading-as"><span class="who" style="background: {color(reader.id).ring}; color: {color(reader.id).avatar_ink}"><AvatarImage hash={reader.avatar_blob} glyph={reader.sigils[0] ?? reader.name[0]} name={reader.name} /></span>
+        <span class="says">Reading as {readerName}{readerSince ? ` · last read ${readerSince}` : ''}</span>
+        <button onclick={() => (picking = true)}>Change</button></div>
+    {/if}
     {#if pinned.length && !showPins}
       {@const latestPin = pinned[pinned.length - 1]}
       <button class="pinned-bar" onclick={() => (showPins = true)} aria-label="Show pinned messages">
@@ -1439,7 +1462,7 @@
           <div class="service"><span>{line.text}</span></div>
         {:else if line.kind === 'msg'}
         {@const m = line.m}
-        {#if m.id === firstUnread && unreadBoundary > 0}<div class="service unread-divider"><span>{pendingUnread} unread</span></div>{/if}
+        {#if m.id === firstUnread && boundary > 0}<div class="service unread-divider"><span>{pendingUnread} unread{readerName ? ` for ${readerName}` : ''}</span></div>{/if}
         <Message
           {m}
           handleOf={(id) => shownHandle(people.get(id), ownHandles)}
@@ -1496,6 +1519,7 @@
         <button class="x" onclick={() => { selecting = false; selectedIds = new Set(); }} aria-label="Cancel selection">✕</button>
       </div>
     {/if}
+    {#if mentionedUnread.length && !lockedOut}<button class="jump-latest jump-mention" onclick={jumpMention} aria-label="{mentionedUnread.length} unread {mentionedUnread.length === 1 ? 'mention' : 'mentions'}{readerName ? ` for ${readerName}` : ''}">@ · {mentionedUnread.length}</button>{/if}
     {#if (!atLatest || returnTo) && !lockedOut}<button class="jump-latest" onclick={jumpLatest} aria-label={returnTo ? 'Back to where you jumped from' : `Jump to latest${pendingUnread ? `, ${pendingUnread} unread` : ''}`}>{returnTo ? '↓ Back' : `↓ Latest${pendingUnread ? ` · ${pendingUnread}` : ''}`}</button>{/if}
     {#if notSent.length}
       <ul class="not-sent" aria-label="Messages not sent">
@@ -1791,6 +1815,10 @@
   .m-face { width: 32px; height: 32px; flex: none; display: grid; place-items: center; overflow: hidden; border-radius: 50%; background: var(--surface-3, var(--surface-2)); color: var(--ink-2); font-weight: 600; font-size: 14px; }
   .m-face.front { background: var(--accent-soft); color: var(--accent); }
   .m-face :global(img) { width: 100%; height: 100%; object-fit: cover; }
+  .reading-as { display: flex; align-items: center; gap: 8px; padding: 0 4px 0 12px; background: var(--accent-soft, var(--surface-2)); color: var(--ink-2); font-size: 12px; line-height: 16px; }
+  .reading-as .who { width: 24px; height: 24px; flex: none; display: grid; place-items: center; overflow: hidden; border-radius: 50%; font-weight: 700; }
+  .reading-as .says { flex: 1; min-width: 0; }
+  .reading-as button { min-height: 36px; padding: 0 10px; border: 0; background: none; color: var(--accent); font: inherit; cursor: pointer; }
   .jump-latest { align-self: flex-end; margin: 8px 16px; border-radius: 24px; padding: 8px 14px; background: var(--surface-2); animation: chorus-pop-in var(--t-fast) var(--ease); }
   /* bars over the composer, the info panel and in-chat search arrive rather than pop in */
   .bar, .not-sent li, .msg-options { animation: chorus-rise-in var(--t-fast) var(--ease); }
