@@ -11,7 +11,7 @@
   import { addFolder, FOLDER_OF, FOLDERS, memberListPrefs } from '../member-list';
   import { claimedHere, MAX_CLAIMS, memberHandles, normalizeClaim, validClaim } from '../handles';
 
-  let { projection, id, dark }: { projection: Projection; id: string; dark: boolean } = $props();
+  let { projection, id, dark, page }: { projection: Projection; id: string; dark: boolean; page?: string } = $props();
 
   const all = $derived(members(projection));
   const m = $derived(all.find((x) => x.id === id));
@@ -183,7 +183,7 @@
 {#if !m}
   <p class="muted">This member doesn't exist (yet). <a href="#/members">Back to members</a></p>
 {:else}
-  <article class="editor" style="--ring: {colors?.ring}; --tint: {colors?.tint}">
+  <article class="editor" data-page={page} style="--ring: {colors?.ring}; --tint: {colors?.tint}">
     <header>
       <a class="back" href={person ? '#/settings' : '#/members'} aria-label={person ? 'Back to settings' : 'Back to members'}>‹ {person ? 'Settings' : 'Members'}</a>
       <div class="identity">

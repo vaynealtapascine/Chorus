@@ -41,6 +41,9 @@ export interface GroupRow {
   parent_id?: string;
   color?: string;
   avatar_blob?: string;
+  icon?: string;
+  /** who can see the group, once one is chosen (nothing reads it yet) */
+  visibility?: unknown;
   deleted: boolean;
 }
 
@@ -253,6 +256,8 @@ export function groups(p: Projection): GroupRow[] {
       parent_id: str(r.fields.parent_id),
       color: str(r.fields.color),
       avatar_blob: str(r.fields.avatar_blob),
+      icon: str(r.fields.icon),
+      visibility: r.fields.visibility ?? undefined,
       deleted: r.fields.deleted_at != null,
     }))
     .filter((g) => !g.deleted)

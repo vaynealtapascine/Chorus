@@ -10,7 +10,9 @@ export interface Route {
 function parse(hash: string): Route {
   // a ?query on the hash (e.g. #/computer?welcome) is for the page, not the route
   const parts = hash.replace(/^#\/?/, '').split('?')[0].split('/').filter(Boolean);
-  if (parts[0] === 'members' && parts[1]) return { name: 'member', id: decodeURIComponent(parts[1]) };
+  // the Members tabs and Reorder have words for ids; a member's pages hang off their id
+  if (parts[0] === 'members' && ['groups', 'fronts', 'fields', 'reorder'].includes(parts[1])) return { name: 'members', id: parts[1] };
+  if (parts[0] === 'members' && parts[1]) return { name: 'member', id: decodeURIComponent(parts[1]), memberId: parts[2] };
   if (parts[0] === 'members') return { name: 'members' };
   if (parts[0] === 'profile' && parts[1]) return { name: 'profile', id: decodeURIComponent(parts[1]) };
   if (parts[0] === 'journal' && parts[1] === 'post' && parts[2]) return { name: 'post', id: decodeURIComponent(parts[2]) };

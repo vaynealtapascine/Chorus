@@ -220,9 +220,9 @@
       {#if person && ['fronting', 'members', 'history', 'fronts', 'layers'].includes(router.route.name)}
         <HomeDashboard {projection} {dark} onswitch={() => {}} />
       {:else if router.route.name === 'members'}
-        <Members {projection} {dark} />
+        <Members {projection} {dark} tab={router.route.id} />
       {:else if router.route.name === 'member' && router.route.id}
-        <MemberEditor {projection} id={router.route.id} {dark} />
+        <MemberEditor {projection} id={router.route.id} {dark} page={router.route.memberId} />
       {:else if router.route.name === 'friend' && router.route.id && router.route.memberId}
         <FriendProfiles accountId={router.route.id} memberId={router.route.memberId} {dark} {projection} />
       {:else if router.route.name === 'friend' && router.route.id}
