@@ -379,7 +379,7 @@
 {/if}
 
 <style>
-  .editor { display: grid; gap: var(--s-3); align-content: start; padding-bottom: 72px; }
+  .editor { display: grid; gap: var(--s-3); align-content: start; }
   header { display: flex; align-items: center; gap: var(--s-2); }
   header > div { flex: 1; min-width: 0; }
   h1 { margin: 0; font-size: 20px; line-height: 26px; }
@@ -403,7 +403,9 @@
   .archive, .restore { min-height: 44px; border: 0; background: none; font: inherit; font-size: var(--fs-md); font-weight: 600; cursor: pointer; }
   .archive { color: var(--danger); }
   .restore { color: var(--accent); }
-  .savebar { position: fixed; left: 0; right: 0; bottom: 0; display: flex; justify-content: center; padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); background: var(--bg); z-index: 5; }
+  /* in the page column (not under the side bar), and above the phone's tab bar */
+  .savebar { position: sticky; bottom: 0; display: flex; justify-content: center; padding: 10px 0 calc(10px + env(safe-area-inset-bottom)); background: var(--bg); z-index: 5; }
+  @media (max-width: 1023px) { .savebar { bottom: calc(69px + env(safe-area-inset-bottom)); padding-bottom: 10px; } }
   .save { flex: 1; max-width: 560px; min-height: 48px; border: 0; border-radius: var(--r-control); background: var(--accent); color: var(--on-accent); font: inherit; font-size: var(--fs-base); font-weight: 600; cursor: pointer; }
   .save:disabled { background: var(--surface-2); color: var(--ink-3); cursor: default; }
   .crop { display: grid; gap: var(--s-2); justify-items: start; }

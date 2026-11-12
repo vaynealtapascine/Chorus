@@ -258,7 +258,7 @@
   .tabs button.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
   .tabs button.on :global(.icon), .tabs button.on .count { color: var(--accent); }
   /* on a phone the tabs share the app bar's panel, as in Figma F3.1 */
-  @media (max-width: 1023px) { .tabs { margin: -16px -16px 2px; padding: 2px var(--s-4) var(--s-3); background: var(--surface); } }
+  @media (max-width: 1023px) { .tabs { margin: calc(var(--s-4) * -1) calc(var(--s-4) * -1) 2px; padding: 2px var(--s-4) var(--s-3); background: var(--surface); } }
   .add-front { width: 32px; height: 32px; flex: none; display: grid; place-items: center; border: 1px dashed var(--line); border-radius: 50%; color: var(--ink-3); }
   .follow-state { display: flex; flex-wrap: wrap; gap: var(--s-2); align-items: center; justify-content: space-between; padding: 6px var(--s-3); border-radius: var(--r-row); background: var(--surface); color: var(--ink-2); font-size: var(--fs-sm); }
   .link { background: none; border: 0; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; min-height: 40px; }

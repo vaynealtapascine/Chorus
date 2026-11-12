@@ -114,7 +114,7 @@ Desktop 1280 and phone width, light and dark, plus Large text and Compact densit
 ## Browser tour
 
 Toured against a demo server on a copy of a seeded data dir (Lanterns account, Chrome via Playwright, 1280x800 and 390x844, dark and
-light). Toured so far: Home, Fronting, History, Fronts, Layers, Members (+ tabs), Chat list, Chat (+ message actions, attach, info, new message), Journal, Feeds, Friends, Notifications, More, Settings (root, Account, Appearance, Notifications, Sharing, Tokens, Webhooks, This device, Updates, Server health), Insights, Search, Switcher, Home sections.
+light). Toured so far: Home, Fronting, History, Fronts, Layers, Members (+ tabs), Chat list, Chat (+ message actions, attach, info, new message), Journal, Feeds, Friends, Notifications, More, Settings (root, Account, Appearance, Notifications, Sharing, Tokens, Webhooks, This device, Updates, Server health), Insights, Search, Switcher, Home sections, Edit member, Post page, a friend's page, Stage (chat), Lists, New group sheet, Large text and Compact density on the dense screens.
 Findings (fixed in the commit that carries this table unless noted):
 
 | Screen | Width / theme | What was wrong | Status |
@@ -129,6 +129,11 @@ Findings (fixed in the commit that carries this table unless noted):
 | Search results | all | A spoiler's Reveal button inside a result card also opened the message (click and Enter bubbled to the card) | fixed (card ignores events from inner buttons/links) |
 | Feeds | all | Built-in feed rows (Our system, Friends, Journals) carried descriptions the Figma frames do not have | fixed (removed) |
 | Members tabs, Chat info tabs | 390 / 300 px panel | The selected tab could sit half cut off at the edge of a scrolling tab row; Chat info's five tabs ran past the panel | fixed (UnderlineTabs scrolls the selected tab into view; tighter tab padding in Chat info) |
+| Edit member | all | App bar title above the page's own "Edit member" bar | fixed (app bar hidden on Edit member and on a Post's page, which both carry a back bar) |
+| Edit member | 390 / 1280 | The fixed Save bar sat behind the phone's tab bar (unreachable without scrolling the page away) and, at 1280, covered the bottom of the side bar | fixed (sticky in the page column; above the tab bar on phone) |
+| Post page, Journal | 390 | Author name cut to "F..." by the long "Everyone on this server" pill and the handle | fixed (the handle gives way first) |
+| Fronting | 390, Compact density | Front tabs' hard-coded -16px margin overran main's scaled padding by 4px, sideways scroll | fixed (margin from `--s-4`) |
+| Large text / Compact density | Chat, Fronting, Journal, Home, Members, History, Settings at 1280 dark and 390 light | Looked at Chat, Fronting, Journal, Home at Larger and Compact; nothing clipped beyond the item above | Members, History, Settings screenshots taken but not individually viewed |
 | API tokens, Webhooks | all | Two "add" controls: the header button and an action inside the empty state | fixed (empty state has no action; the header button stays) |
 | This device | all | "This app uses 1.8 MB on this device of 10.0 GB" repeats the Space used row above it | left (an e2e spec reads this sentence) |
 

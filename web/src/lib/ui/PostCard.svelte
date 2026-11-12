@@ -296,7 +296,7 @@
   .identity { display: flex; align-items: center; gap: var(--s-1); min-width: 0; padding-right: 36px; line-height: 20px; }
   .authors { font-weight: 600; font-size: var(--fs-md); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .authors a { color: var(--ink); text-decoration: none; }
-  .handle { color: var(--ink-3); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 0 1 auto; }
+  .handle { color: var(--ink-3); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 0 100 auto; }
   .authors a:hover { text-decoration: underline; }
   .when { color: var(--ink-3); font-size: 14px; white-space: nowrap; }
   .when a { color: inherit; text-decoration: none; }
