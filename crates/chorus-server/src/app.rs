@@ -269,7 +269,9 @@ impl From<AuthError> for ApiError {
             }
             AuthError::HandleTaken => (StatusCode::CONFLICT, "conflict"),
             AuthError::BadSignature | AuthError::BadSession => (StatusCode::UNAUTHORIZED, "unauthenticated"),
+            AuthError::KeyMismatch => (StatusCode::UNAUTHORIZED, "bad_key"),
             AuthError::UnknownDevice => (StatusCode::FORBIDDEN, "forbidden"),
+            AuthError::SignedOut { .. } => (StatusCode::FORBIDDEN, "signed_out"),
             AuthError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
         };
         if matches!(e, AuthError::Internal(_)) {
@@ -334,8 +336,13 @@ struct PeekIn {
 /// What an invite is for, before using it (D-093): onboarding asks "system or just you?" only for
 /// new accounts. Under the sign-in rate limit, like redeeming.
 async fn peek_invite(State(s): State<AppState>, Json(b): Json<PeekIn>) -> Result<Json<serde_json::Value>, ApiError> {
-    let kind = auth::peek_invite(&s.db(), &b.code, now_ms())?;
-    Ok(Json(json!({ "kind": kind })))
+    let peek = auth::peek_invite(&s.db(), &b.code, now_ms())?;
+    let mut out = json!({ "kind": peek.kind });
+    // a device link names its account (D-153), so a signed-out device can tell it is its own
+    if let Some(account) = peek.account_id {
+        out["account_id"] = json!(account);
+    }
+    Ok(Json(out))
 }
 
 #[derive(Deserialize)]
@@ -355,10 +362,21 @@ struct SessionIn {
     signature: String,
 }
 
-async fn session(State(s): State<AppState>, Json(b): Json<SessionIn>) -> Result<Json<serde_json::Value>, ApiError> {
+async fn session(State(s): State<AppState>, Json(b): Json<SessionIn>) -> Result<Response, ApiError> {
     let ttl = s.session_ttl();
     let now = now_ms();
-    let token = auth::verify(&s.db(), &b.device_id, &b.nonce, &b.signature, &s.instance_id, now, ttl)?;
+    let token = match auth::verify(&s.db(), &b.device_id, &b.nonce, &b.signature, &s.instance_id, now, ttl) {
+        Ok(token) => token,
+        // D-152: the error, plus when it was signed out and when it erases its copy
+        Err(e @ AuthError::SignedOut { at, wipe_at }) => {
+            let body = json!({
+                "error": {"code": "signed_out", "message": e.to_string(), "retry": false},
+                "signed_out": {"at": at, "wipe_at": wipe_at},
+            });
+            return Ok((StatusCode::FORBIDDEN, Json(body)).into_response());
+        }
+        Err(e) => return Err(e.into()),
+    };
     let is_admin: bool = s
         .db()
         .query_row(
@@ -367,7 +385,7 @@ async fn session(State(s): State<AppState>, Json(b): Json<SessionIn>) -> Result<
             |r| r.get(0),
         )
         .map_err(anyhow::Error::from)?;
-    Ok(Json(json!({"session": token, "expires_at": now + ttl, "is_admin": is_admin})))
+    Ok(Json(json!({"session": token, "expires_at": now + ttl, "is_admin": is_admin})).into_response())
 }
 
 fn bearer(headers: &axum::http::HeaderMap) -> Result<&str, ApiError> {
@@ -437,7 +455,19 @@ async fn device_revoke(
     State(s): State<AppState>,
     headers: axum::http::HeaderMap,
     Path(id): Path<String>,
+    body: axum::body::Bytes,
 ) -> Result<StatusCode, ApiError> {
+    // optional `{"wipe": true}`: the device erases its copy at once instead of after two days (D-152)
+    #[derive(Deserialize, Default)]
+    struct RevokeIn {
+        #[serde(default)]
+        wipe: bool,
+    }
+    let RevokeIn { wipe } = if body.iter().all(u8::is_ascii_whitespace) {
+        RevokeIn::default()
+    } else {
+        serde_json::from_slice(&body).map_err(|e| ApiError(StatusCode::BAD_REQUEST, "bad_request", e.to_string()))?
+    };
     let conn = s.db();
     let me = who(&s, &conn, &headers)?;
     if id == me.device_id {
@@ -452,7 +482,7 @@ async fn device_revoke(
     if owner.as_deref() != Some(me.account_id.as_str()) {
         return Err(ApiError(StatusCode::NOT_FOUND, "not_found", "no such device".into()));
     }
-    auth::revoke_device(&conn, &id, now_ms())?;
+    auth::revoke_device(&conn, &id, now_ms(), wipe)?;
     let mut peers = s.peers.lock().unwrap_or_else(|e| e.into_inner());
     typing::disconnect(&conn, &mut peers, &id, now_ms());
     peers.remove(&id);
@@ -502,13 +532,13 @@ async fn follow_request(
 ) -> Result<Response, ApiError> {
     let conn = s.db();
     let me = who(&s, &conn, &headers)?;
-    let (id, op) = follows::request(&conn, &me.account_id, &b.target, now_ms())?;
-    let created = op.is_some();
-    if let Some(o) = op {
+    let asked = follows::ask(&conn, &me.account_id, &b.target, now_ms())?;
+    if let Some(o) = asked.op {
         fan_out(&s, &conn, &[o], None)?;
     }
-    let status = if created { StatusCode::CREATED } else { StatusCode::OK };
-    Ok((status, Json(json!({"id": id}))).into_response())
+    // a request held back by the cooldown (D-150) answers exactly like a new one
+    let status = if asked.new { StatusCode::CREATED } else { StatusCode::OK };
+    Ok((status, Json(json!({"id": asked.id}))).into_response())
 }
 
 async fn follow_prefs(

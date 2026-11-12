@@ -440,6 +440,8 @@ fn current_search_keeps_exact_chat_scope_and_private_thread_ancestry() {
     let _shared = shared();
     use chorus_server::search::{self, MessageQuery};
     let conn = seed();
+    // a private chat (D-098) is a DM's; in a shared space `member_ids` limits nothing (D-155)
+    conn.execute("UPDATE space SET kind='dm' WHERE id=?1", [SPACE]).unwrap();
     conn.execute("INSERT INTO channel(id,space_id,kind,name,member_ids,created_at) VALUES ('private',?1,'member_dm','private','[\"rose\"]',0)",[SPACE]).unwrap();
     conn.execute("INSERT INTO message(id,channel_id,account_id,device_id,occurred_at,text) VALUES ('private-msg','private',?1,?1,200,'violet private')",[ALICE]).unwrap();
     conn.execute("INSERT INTO message_fts(rowid,text,cw) SELECT rowid,text,'' FROM message WHERE id='private-msg'", [])

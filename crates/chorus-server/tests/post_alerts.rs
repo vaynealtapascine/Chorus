@@ -169,11 +169,20 @@ fn asked_approved_and_then_each_readable_post_pings_once() {
     assert_eq!(w.inbox(ALEX).len(), 4);
     assert_eq!(w.inbox(ALEX)[0].2, "Content warning: spoilers");
 
-    // the follow ends: followers posts stop, server-wide ones still reach Alex
+    // the follow ends: followers posts stop, server-wide ones still reach Alex, and the alerts
+    // for followers posts Alex can't read any more leave the list (D-149)
     w.c.execute("UPDATE follow SET status = 'ended' WHERE follower_account_id = ?1", [ALEX]).unwrap();
     w.post(STARS, &kai, 9, json!({}));
     w.post(STARS, &kai, 10, json!({"visibility": {"mode": "server"}}));
-    assert_eq!(w.inbox(ALEX).len(), 5);
+    let kinds: Vec<String> = w.inbox(ALEX).into_iter().map(|(_, title, text)| format!("{title}: {text}")).collect();
+    assert_eq!(
+        kinds,
+        [
+            "Kai posted: post 10",
+            "Kai wrote a journal entry: A long day",
+            "Post alerts for Kai: Kai said yes: you'll hear when they post."
+        ]
+    );
 }
 
 #[test]
@@ -290,4 +299,80 @@ fn replies_ping_the_post_author_and_a_post_can_be_quiet_or_late() {
     assert_eq!(w.inbox(ALEX).len(), before);
     w.post(STARS, &kai, 8, json!({"alerts": "delayed"}));
     assert_eq!(w.inbox(ALEX)[0], ("post".into(), "Kai posted".into(), "post 8".into()));
+}
+
+/// D-106/D-147: a delayed ping is judged again when it falls due. If the post is gone, its
+/// audience no longer reaches the reader, the follow that let them read it ended, or (for a post
+/// alert) the alert was declined meanwhile, nothing is delivered and the row is cancelled.
+#[test]
+fn a_delayed_alert_is_checked_again_when_it_falls_due() {
+    let mut w = W::new(&[(STARS, "stars"), (ALEX, "alex")]);
+    let kai = new_id(NOW as u64, [40; 10]);
+    let ash = new_id(NOW as u64, [42; 10]);
+    w.push(STARS, "member.create", &kai, json!({"name": "Kai", "visibility": {"mode": "server"}}));
+    w.push(ALEX, "member.create", &ash, json!({"name": "Ash", "visibility": {"mode": "server"}}));
+    w.follow(ALEX, STARS);
+    w.follow(STARS, ALEX);
+    post_alerts::request(&w.c, ALEX, STARS, &kai, w.at()).unwrap();
+    post_alerts::decide(&w.c, STARS, ALEX, &kai, true, w.at()).unwrap();
+    let start = w.inbox(ALEX).len();
+    let later = NOW + 10_000_000;
+    // the one undelivered row for `post_id`: (delivered, cancelled)
+    let state = |w: &W, post: &str| -> (bool, bool) {
+        w.c.query_row(
+            "SELECT delivered_at IS NOT NULL, cancelled_at IS NOT NULL FROM notification
+             WHERE json_extract(payload, '$.post_id') = ?1",
+            [post],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap()
+    };
+
+    // deleted before it was due
+    let gone = w.post(STARS, &kai, 1, json!({"alerts": "delayed"}));
+    w.push(STARS, "post.delete", &gone, json!({}));
+    // made private
+    let hidden = w.post(STARS, &kai, 2, json!({"alerts": "delayed"}));
+    w.push(STARS, "post.set_visibility", &hidden, json!({"visibility": {"mode": "private"}}));
+    // the alert declined
+    let declined = w.post(STARS, &kai, 3, json!({"alerts": "delayed", "visibility": {"mode": "server"}}));
+    post_alerts::decide(&w.c, STARS, ALEX, &kai, false, w.at()).unwrap();
+    for post in [&gone, &hidden, &declined] {
+        assert_eq!(state(&w, post), (false, false), "queued, not yet due");
+    }
+    let pushes = notifier::process_due(&w.c, later).unwrap();
+    for post in [&gone, &hidden, &declined] {
+        assert_eq!(state(&w, post), (false, true), "cancelled");
+    }
+    assert_eq!(w.inbox(ALEX).len(), start);
+    assert!(pushes.pushes.is_empty());
+
+    // the follow ends before a followers-only post's alert is due (alerts on again first)
+    w.c.execute("UPDATE post_alert SET status = 'active' WHERE subscriber_account_id = ?1", [ALEX]).unwrap();
+    let unfollowed = w.post(STARS, &kai, 4, json!({"alerts": "delayed"}));
+    w.c.execute("UPDATE follow SET status = 'ended' WHERE follower_account_id = ?1", [ALEX]).unwrap();
+    notifier::process_due(&w.c, later).unwrap();
+    assert_eq!(state(&w, &unfollowed), (false, true));
+
+    // a reply notification: the reply made followers-only after the Stars' follow of Alex ended
+    let root = w.post(STARS, &kai, 5, json!({"visibility": {"mode": "server"}, "alerts": "none"}));
+    let reply = w.post(ALEX, &ash, 6, json!({"reply_to": root, "alerts": "delayed"}));
+    w.c.execute("UPDATE follow SET status = 'ended' WHERE follower_account_id = ?1", [STARS]).unwrap();
+    let deleted_reply =
+        w.post(ALEX, &ash, 7, json!({"reply_to": root, "visibility": {"mode": "server"}, "alerts": "delayed"}));
+    w.push(ALEX, "post.delete", &deleted_reply, json!({}));
+    notifier::process_due(&w.c, later).unwrap();
+    assert_eq!(state(&w, &reply), (false, true));
+    assert_eq!(state(&w, &deleted_reply), (false, true));
+    assert!(w.inbox(STARS).iter().all(|(kind, ..)| kind != "post_reply"));
+
+    // unchanged, a delayed alert and a delayed reply still arrive
+    let kept = w.post(STARS, &kai, 8, json!({"alerts": "delayed", "visibility": {"mode": "server"}}));
+    let kept_reply =
+        w.post(ALEX, &ash, 9, json!({"reply_to": root, "visibility": {"mode": "server"}, "alerts": "delayed"}));
+    notifier::process_due(&w.c, later).unwrap();
+    assert_eq!(state(&w, &kept), (true, false));
+    assert_eq!(state(&w, &kept_reply), (true, false));
+    assert_eq!(w.inbox(ALEX)[0], ("post".into(), "Kai posted".into(), "post 8".into()));
+    assert_eq!(w.inbox(STARS)[0].0, "post_reply");
 }

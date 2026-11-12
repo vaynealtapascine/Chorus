@@ -6,9 +6,11 @@
 //! Also, if asked for, the account's own switches made on another device; post alerts
 //! (`post_alerts.rs`, D-106); and nudges to vote on a poll (D-136).
 //!
-//! Queued on live ingest of `message.send` and `front.*` (never on rebuild), delivered by the
+//! Queued on live ingest of `message.send`, `message.forward` and `front.*` (never on rebuild), delivered by the
 //! notifier loop within seconds, as an inbox row plus an encrypted push. In a shared space the
-//! author's own account is never notified. Restricted (not public) messages notify nobody.
+//! author's own account is never notified. Another account hears only about a message sync would
+//! send it (`visibility::op_visible_to`): restricted (not public) messages, and messages in a
+//! thread under one, notify nobody else.
 
 use std::collections::BTreeMap;
 
@@ -20,7 +22,11 @@ use crate::push;
 
 fn name_of(conn: &Connection, member: &str) -> anyhow::Result<Option<String>> {
     Ok(conn
-        .query_row("SELECT COALESCE(display_name, name) FROM member WHERE id = ?1", [member], |r| r.get(0))
+        .query_row(
+            concat!("SELECT ", crate::profiles::shown_name_sql!(""), " FROM member WHERE id = ?1"),
+            [member],
+            |r| r.get(0),
+        )
         .optional()?
         .flatten())
 }
@@ -215,7 +221,8 @@ pub fn on_op(conn: &Connection, o: &Op, now: i64) -> anyhow::Result<()> {
     if o.kind == "poll.nudge" {
         return poll_nudge(conn, o, author, now);
     }
-    if o.kind != "message.send" {
+    // a forward notifies like a message (D-151), with its own comment as the text
+    if !matches!(o.kind.as_str(), "message.send" | "message.forward") {
         return Ok(());
     }
     let p = &o.payload;
@@ -239,10 +246,12 @@ pub fn on_op(conn: &Connection, o: &Op, now: i64) -> anyhow::Result<()> {
     }
     let mut st = conn.prepare_cached("SELECT account_id FROM scope_access WHERE scope = ?1 AND account_id <> ?2")?;
     let mut others: Vec<String> = st.query_map(params![o.scope, author], |r| r.get(0))?.collect::<Result<_, _>>()?;
-    // only accounts that may view the channel hear about it (perms.rs)
+    // only accounts sync would send the message to hear about it (`visibility::op_visible_to`):
+    // public, in a channel they may view (perms.rs), and not in a thread under a message they
+    // can't see (a thread is as private as its parent, D-147)
     let mut viewers = Vec::with_capacity(others.len());
     for a in others.drain(..) {
-        if crate::perms::can(conn, &a, channel_id, "view")? {
+        if crate::visibility::op_visible_to(conn, &a, o)? {
             viewers.push(a);
         }
     }
@@ -499,7 +508,7 @@ fn author_card(conn: &Connection, member_id: &str) -> anyhow::Result<AuthorCard>
     let Some((name, display, color, sigil, avatar_blob)) = row else {
         return Ok(AuthorCard::default());
     };
-    let shown = display.filter(|s| !s.trim().is_empty()).or(name).unwrap_or_default();
+    let shown = crate::profiles::shown_name(display, name).unwrap_or_default();
     let glyph = sigil
         .filter(|s| !s.trim().is_empty())
         .or_else(|| (!shown.trim().is_empty()).then(|| first_glyph(&shown, false)));
@@ -665,7 +674,7 @@ fn own_switch(conn: &Connection, o: &Op, author: &str, now: i64) -> anyhow::Resu
 fn subject_name(conn: &Connection, kind: chorus_core::front::SubjectType, id: &str) -> anyhow::Result<String> {
     use chorus_core::front::SubjectType;
     let sql = match kind {
-        SubjectType::Member => "SELECT COALESCE(display_name, name) FROM member WHERE id = ?1",
+        SubjectType::Member => concat!("SELECT ", crate::profiles::shown_name_sql!(""), " FROM member WHERE id = ?1"),
         SubjectType::Group => "SELECT name FROM member_group WHERE id = ?1",
         SubjectType::State => "SELECT name FROM custom_state WHERE id = ?1",
     };
@@ -708,13 +717,15 @@ fn named_front_text(
 }
 
 fn legacy_front_text(conn: &Connection, account: &str) -> anyhow::Result<String> {
-    let mut st = conn.prepare_cached(
+    let mut st = conn.prepare_cached(concat!(
         "SELECT CASE subject_type
-                  WHEN 'member' THEN (SELECT COALESCE(display_name, name) FROM member WHERE id = subject_id)
+                  WHEN 'member' THEN (SELECT ",
+        crate::profiles::shown_name_sql!(""),
+        " FROM member WHERE id = subject_id)
                   WHEN 'group' THEN (SELECT name FROM member_group WHERE id = subject_id)
                   ELSE (SELECT name FROM custom_state WHERE id = subject_id) END, level
          FROM front_interval WHERE account_id = ?1 AND end_at IS NULL ORDER BY position",
-    )?;
+    ))?;
     let rows: Vec<(Option<String>, String)> =
         st.query_map([account], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<Result<_, _>>()?;
     let names = |level: &str| {
@@ -786,6 +797,9 @@ fn sender_of(name: &str, card: &AuthorCard) -> Value {
     sender
 }
 
+/// A forward's notification text when its forwarder added no comment.
+const FORWARDED: &str = "Forwarded a message";
+
 fn queue(
     conn: &Connection,
     o: &Op,
@@ -810,7 +824,11 @@ fn queue(
         None => AuthorCard::default(),
     };
     let sender = sender_of(&who, &first_author);
-    let text: String = p.get("text").and_then(Value::as_str).unwrap_or_default().chars().take(280).collect();
+    let own_text = p.get("text").and_then(Value::as_str).unwrap_or_default();
+    // a forward says only what its forwarder wrote; the forwarded words (its snapshot) are the
+    // original's, which the recipient may not be able to see
+    let own_text = if o.kind == "message.forward" && own_text.trim().is_empty() { FORWARDED } else { own_text };
+    let text: String = own_text.chars().take(280).collect();
     for (recipient, kind) in why {
         let (title, chat) =
             chat_visual(conn, meta, channel_id, &recipient, o.account_id.as_deref(), &who, &first_author)?;
@@ -864,16 +882,24 @@ fn queue(
 /// Deliver due activity notifications; returns the pushes to send after the lock is released.
 pub fn process_due(conn: &Connection, now: i64) -> anyhow::Result<Vec<push::Outbound>> {
     let mut st = conn.prepare_cached(
-        "SELECT id, recipient_account_id, payload FROM notification
+        "SELECT id, recipient_account_id, payload, kind FROM notification
          WHERE kind IN ('mention', 'dm', 'reply', 'message', 'member_dm', 'own_switch', 'post', 'post_reply', 'poll_nudge', 'alert_request', 'alert_accepted')
            AND delivered_at IS NULL AND cancelled_at IS NULL AND due_at <= ?1
          ORDER BY due_at, id LIMIT 500",
     )?;
-    let rows: Vec<(String, String, String)> =
-        st.query_map([now], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<Result<_, _>>()?;
+    let rows: Vec<(String, String, String, String)> =
+        st.query_map([now], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?.collect::<Result<_, _>>()?;
     let mut pushes = Vec::new();
-    for (id, recipient, payload) in rows {
+    for (id, recipient, payload, kind) in rows {
         let mut p: Value = serde_json::from_str(&payload).unwrap_or(json!({}));
+        // a post alert or reply ping waits up to an hour (D-127): only if the post can still be
+        // read by its recipient then (D-106, D-147)
+        if matches!(kind.as_str(), "post" | "post_reply")
+            && !crate::post_alerts::still_deliverable(conn, &recipient, &kind, &p)?
+        {
+            conn.execute("UPDATE notification SET cancelled_at = ?2 WHERE id = ?1", params![id, now])?;
+            continue;
+        }
         if p.get("t").and_then(Value::as_str) == Some("own_switch") {
             let Some((title, text)) = own_switch_text(conn, &recipient, &p)? else {
                 conn.execute("UPDATE notification SET cancelled_at = ?2 WHERE id = ?1", params![id, now])?;

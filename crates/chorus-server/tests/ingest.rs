@@ -607,6 +607,33 @@ fn handles_are_one_namespace_for_claims_and_accounts() {
 }
 
 #[test]
+fn a_deleted_members_claims_stay_reserved() {
+    // D-146: deleting is a restorable tombstone (D-053), so a deleted member keeps their claims;
+    // otherwise restoring them could leave two live members on one handle. Restoring them and
+    // removing the claim frees it.
+    let (c, a, b) = setup();
+    let (sa, sb) = (format!("account:{a}"), format!("account:{b}"));
+    let push = |n: u8, who: &str, scope: &str, kind: &str, payload: Value, entity: Option<&str>| {
+        let mut o = op(n, kind, scope, payload, NOW + i64::from(n));
+        if let Some(e) = entity {
+            o.entity_id = Some(e.to_string());
+        }
+        ingest::accept(&c, &session(who, 0), o, NOW, false).unwrap().0.error.map(|e| (e.code, e.message))
+    };
+    let kai = op(1, "member.create", &sa, json!({}), NOW).entity_id.unwrap();
+    assert_eq!(push(1, &a, &sa, "member.create", json!({"name": "Kai", "handles": ["kai"]}), None), None);
+    assert_eq!(push(2, &a, &sa, "member.delete", json!({}), Some(&kai)), None);
+    let refused = push(3, &b, &sb, "member.create", json!({"name": "Kai", "handles": ["kai"]}), None).unwrap();
+    assert_eq!(refused, ("conflict".to_string(), "@kai is taken".to_string()), "reserved while deleted");
+    let own = push(4, &a, &sa, "member.create", json!({"name": "Kai 2", "handles": ["kai"]}), None).unwrap();
+    assert_eq!(own.0, "conflict", "within the account too");
+    // restored, Kai still holds it alone; once Kai lets it go, it is free
+    assert_eq!(push(5, &a, &sa, "member.restore", json!({}), Some(&kai)), None);
+    assert_eq!(push(6, &a, &sa, "member.set", json!({"handles": []}), Some(&kai)), None);
+    assert_eq!(push(7, &b, &sb, "member.create", json!({"name": "Kai", "handles": ["kai"]}), None), None);
+}
+
+#[test]
 fn enrolment_writes_the_account_handle_into_the_log_once() {
     let (c, a, _) = setup();
     c.execute("UPDATE account SET handle='stars' WHERE id=?1", [&a]).unwrap();

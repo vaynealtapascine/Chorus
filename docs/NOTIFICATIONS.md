@@ -295,6 +295,21 @@ never imply eligibility. Raw front/purpose metadata remains private to the ownin
   In a shared space or DM an account hears about any mention that reaches it; a mention never
   notifies an account that can't view the channel, and a guest of a channel shared out of an
   internal space hears about mentions there like any other account.
+- **Only what sync would send (D-147).** Another account is notified of a message (any kind
+  above: `dm`, `mention`, `reply`, `message`, `member_dm`) only if sync would send it that
+  message (`visibility::op_visible_to`): public, in a channel it may view, and not in a thread
+  under a message it can't see. A thread is as private as its parent, so a thread under a
+  system-only aside notifies nobody outside the account, whatever is said in it.
+- **Forwards (D-151).** A `message.forward` notifies exactly like a `message.send` (every rule
+  above, the own-space member rules and the visibility check). Its text is the forwarder's own
+  comment, else "Forwarded a message"; never the forwarded words.
+- **Listed only while the source can be read (D-149).** `GET /notifications` leaves out a chat
+  item (`mention`, `dm`, `reply`, `message`, `member_dm`), a `poll_nudge`, or a `post` /
+  `post_reply` whose message or post the reader can't read now (deleted, or no longer theirs:
+  `messages::readable_by`, `posts::readable_sql`). Decided at read time, so a restore or regained
+  access brings it back; nothing is erased. A client reading only `?after=` (Android's no-push
+  poller) can't learn that an item it already showed has left; the inbox screens read the whole
+  list and do.
 - In your own internal space, a mention of one of your members (by name, through a group, or
   `@front`) and a member DM ping your account under each member's rule: `pref`
   key `notify_member:<member id>` = `{"mentions": rule, "dms": rule}`, where rule is `always`,
@@ -361,6 +376,15 @@ reply) and `parent_id`. Replies within one account never notify it. Delivered li
 delay") gives each recipient its own due time drawn uniformly from 5–60 minutes after the post
 (`post_alerts::MIN_DELAY_MS`/`MAX_DELAY_MS`), so a ping doesn't say exactly when it was written.
 The post itself is readable at once as usual; only the ping waits. Not stored on the post.
+
+**Checked again when delivered (D-147).** A `post` or `post_reply` row, immediate or delayed, is
+delivered only if, at that moment, the post (for `post_reply`, the reply) still exists undeleted
+and its recipient may read it (`posts::readable_sql`), and for `post` the recipient still has an
+active alert for one of its authors (`post_alerts::still_deliverable`, called from
+`activity::process_due`). Otherwise the row is cancelled: nothing is pushed or listed. So a post
+deleted or narrowed, a follow or bucket assignment that ended, or an alert declined during a
+random delay leaves no ping behind. A notification already delivered leaves the list while its
+post can't be read (D-149, §7).
 
 ## 7a. Implementation (`chorus_core::notify`)
 

@@ -174,7 +174,8 @@ pub fn write_denied(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<O
     {
         return Ok(Some("only its author can edit a message".into()));
     }
-    if kind.as_deref() != Some("internal")
+    // private chats (D-098) are a DM's only (D-155): elsewhere `member_ids` has no effect
+    if kind.as_deref() == Some("dm")
         && let Some(why) = private_chat(conn, author, o, space)?
     {
         return Ok(Some(why));
@@ -240,9 +241,10 @@ pub fn write_denied(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<O
     })
 }
 
-/// D-098: the members of `account` a chat outside the system's own space is kept to (its
-/// `member_ids`, in their order; a thread uses its parent message's channel), then everyone inside
-/// any of them who is a subsystem ([with_parts]). Empty: the account isn't limited there. The
+/// D-098: the members of `account` a chat in a DM space is kept to (its `member_ids`, in their
+/// order; a thread uses its parent message's channel), then everyone inside any of them who is a
+/// subsystem ([with_parts]). Empty: the account isn't limited there. Only DM spaces have private
+/// chats (D-155): a channel listing members in a shared space is an ordinary channel, and the
 /// internal space's members' DMs stay soft (D-097) and never count.
 pub fn kept_to(conn: &Connection, account: &str, channel: &str) -> rusqlite::Result<Vec<String>> {
     let listed = listed_in(conn, account, channel)?;
@@ -251,7 +253,7 @@ pub fn kept_to(conn: &Connection, account: &str, channel: &str) -> rusqlite::Res
 
 fn listed_in(conn: &Connection, account: &str, channel: &str) -> rusqlite::Result<Vec<String>> {
     conn.prepare_cached(
-        "SELECT x.value FROM channel c JOIN space s ON s.id = c.space_id AND s.kind <> 'internal'
+        "SELECT x.value FROM channel c JOIN space s ON s.id = c.space_id AND s.kind = 'dm'
          CROSS JOIN json_each(CASE WHEN json_valid(c.member_ids) THEN c.member_ids ELSE '[]' END) x
          JOIN member mb ON mb.id = x.value AND mb.account_id = ?1
          WHERE c.id = coalesce((SELECT pm.channel_id FROM channel t JOIN message pm ON pm.id = t.parent_message_id
@@ -303,7 +305,7 @@ fn string_list(v: Option<&Value>) -> Vec<String> {
     v.and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).map(str::to_string).collect()
 }
 
-/// D-098, private chats outside the system's own space: an account whose members a chat is kept
+/// D-098, private chats in a DM space (D-155): an account whose members a chat is kept
 /// to (`member_ids`) speaks there only as them; `member_ids` names only members of the space's
 /// accounts; and only an account changes which of its own members are listed, so the other side
 /// can't open someone's private chat to the rest of their system. `Some(reason)`: refused.

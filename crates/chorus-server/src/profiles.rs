@@ -20,6 +20,27 @@ use std::collections::HashSet;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
 
+/// A member's shown name in SQL: the display name unless it is blank, else the name. `$p` is the
+/// member table's prefix as a literal (`""` or `"m."`), so it also fits in `const` SQL through
+/// `concat!`. The one definition of this rule; [`shown_name`] is the same in Rust.
+macro_rules! shown_name_sql {
+    ($p:literal) => {
+        concat!("COALESCE(NULLIF(trim(", $p, "display_name), ''), ", $p, "name)")
+    };
+}
+pub(crate) use shown_name_sql;
+
+/// A display name that counts as one: not blank.
+pub(crate) fn display_shown(display: Option<&str>) -> Option<&str> {
+    display.filter(|s| !s.trim().is_empty())
+}
+
+/// A member's shown name, as [`shown_name_sql`] has it: the display name unless it is blank,
+/// else the name.
+pub(crate) fn shown_name(display: Option<String>, name: Option<String>) -> Option<String> {
+    if display_shown(display.as_deref()).is_some() { display } else { name }
+}
+
 /// The built-in profile parts that carry their own audience.
 pub const PARTS: &[&str] = &["name", "pronouns", "description", "birthday", "banner"];
 
@@ -147,7 +168,7 @@ impl Row {
         if self.part(v, key) { value.clone() } else { None }
     }
     fn display_name(&self) -> Option<&str> {
-        self.display_name.as_deref().filter(|s| !s.trim().is_empty())
+        display_shown(self.display_name.as_deref())
     }
     /// The complete name when the viewer may see it (the `name` part, private unless chosen),
     /// else the display name: what everyone who may see the member calls them.
@@ -325,6 +346,40 @@ pub fn names_for(conn: &Connection, viewer: &str, member: &str) -> rusqlite::Res
     let Some((m, owner)) = found else { return Ok(None) };
     let v = Viewer::of(conn, viewer, &owner)?;
     Ok(Some((m.name_for(&v).to_string(), m.display_name().map(str::to_string))))
+}
+
+/// A member's pronouns as `viewer` may see them: only if the viewer may open the profile and the
+/// `pronouns` part reaches them (`Row::card`'s rule), else `None`. For cards outside this module
+/// that carry pronouns, such as shared-chat author cards (D-147).
+pub(crate) fn pronouns_for(conn: &Connection, viewer: &str, member: &str) -> rusqlite::Result<Option<String>> {
+    let found = conn
+        .query_row(&format!("SELECT {COLUMNS}, account_id FROM member WHERE id = ?1"), [member], |r| {
+            Ok((row(r)?, r.get::<_, String>(13)?))
+        })
+        .optional()?;
+    let Some((m, owner)) = found else { return Ok(None) };
+    let v = Viewer::of(conn, viewer, &owner)?;
+    if !m.open(&v) {
+        return Ok(None);
+    }
+    Ok(m.card(&v)["pronouns"].as_str().map(str::to_string))
+}
+
+/// How a reaction's member appears to `viewer` (D-154): their shown name (the display name, else
+/// the name, D-126; never a full name behind a display name) for the reacting account itself or
+/// where the member's profile is open to `viewer` (`member.visibility`), else `None`: the
+/// reaction still counts, without saying whose it is.
+pub(crate) fn reaction_name_for(conn: &Connection, viewer: &str, member: &str) -> rusqlite::Result<Option<String>> {
+    let found = conn
+        .query_row(&format!("SELECT {COLUMNS}, account_id FROM member WHERE id = ?1"), [member], |r| {
+            Ok((row(r)?, r.get::<_, String>(13)?))
+        })
+        .optional()?;
+    let Some((m, owner)) = found else { return Ok(None) };
+    if owner != viewer && !m.open(&Viewer::of(conn, viewer, &owner)?) {
+        return Ok(None);
+    }
+    Ok(Some(m.display_name().unwrap_or(&m.name).to_string()))
 }
 
 /// Small cards only. Reuses exactly the profile-opening rule, without fetching relationships

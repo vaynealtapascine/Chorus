@@ -40,6 +40,32 @@ pub struct Shown {
 /// subject id → (name, colour, glyph), snapshotted when a change is queued.
 type Names = BTreeMap<String, (String, Option<String>, Option<String>)>;
 
+/// Where a queued switch notification is (`Queued.state`, stored in the row's JSON payload under
+/// these names, so rows written before this type existed read the same).
+///
+/// Transitions, all in [`process_due`]:
+/// - `pending` → `held` (quiet hours: due again later), `digest` (waits for the day's summary),
+///   `delivered` (pinged now) or `revealed` (the view changed, nobody pinged; the row is closed
+///   with `cancelled_at`). Only a `pending` row reveals (NOTIFICATIONS §5): the follower view
+///   changes there and nowhere else.
+/// - `held` → `delivered`; `digest` → `delivered` (as the summary, or folded into it:
+///   `cancelled_at` + `collapsed_into`).
+///
+/// A row can also be cancelled (`cancelled_at`) in any undelivered state: superseded, a policy
+/// change re-planning it (D-115), the follow ending or a grant being revoked.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum QueueState {
+    Pending,
+    Held,
+    Digest,
+    Delivered,
+    Revealed,
+}
+
+/// SQL for "this switch row is still pending" (`QueueState::Pending` in the payload).
+const PENDING_SQL: &str = "json_extract(payload, '$.state') = 'pending'";
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct Queued {
     target_account_id: String,
@@ -52,8 +78,8 @@ struct Queued {
     tz_offset_min: i32,
     notify: Notify,
     draws: Draws,
-    /// pending → (held | digest) → delivered, or revealed (no ping)
-    state: String,
+    /// see [`QueueState`] for the transitions
+    state: QueueState,
     text: Option<String>,
     displayed: Option<notify::Displayed>,
     /// '' = Body; otherwise an additional front this follower was granted (D-084).
@@ -251,7 +277,10 @@ fn names_for(conn: &Connection, account: &str, seen: &[&Seen]) -> anyhow::Result
                 .optional()?,
         };
         let (name, display, color, glyph) = row.unwrap_or((None, None, None, None));
-        out.insert(subject_id.clone(), (display.or(name).unwrap_or_else(|| "Someone".into()), color, glyph));
+        out.insert(
+            subject_id.clone(),
+            (crate::profiles::shown_name(display, name).unwrap_or_else(|| "Someone".into()), color, glyph),
+        );
     }
     Ok(out)
 }
@@ -277,13 +306,13 @@ fn revealed(conn: &Connection, follower: &str, target: &str, front: &str) -> any
 
 /// Pending (not yet revealed) rows for (follower, target), oldest first.
 fn pending(conn: &Connection, follower: &str, target: &str, front: &str) -> anyhow::Result<Vec<(String, i64, Queued)>> {
-    let mut st = conn.prepare_cached(
+    let mut st = conn.prepare_cached(&format!(
         "SELECT id, due_at, payload FROM notification
          WHERE recipient_account_id = ?1 AND kind = 'switch' AND delivered_at IS NULL AND cancelled_at IS NULL
-           AND json_extract(payload, '$.target_account_id') = ?2 AND json_extract(payload, '$.state') = 'pending'
+           AND json_extract(payload, '$.target_account_id') = ?2 AND {PENDING_SQL}
            AND coalesce(json_extract(payload, '$.front_id'), '') = ?3
-         ORDER BY due_at, id",
-    )?;
+         ORDER BY due_at, id"
+    ))?;
     let rows = st.query_map(params![follower, target, front], |r| {
         Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, String>(2)?))
     })?;
@@ -336,17 +365,21 @@ pub fn changes_policy(o: &chorus_core::op::Op) -> bool {
 pub fn on_policy_change(conn: &Connection, account: &str, now: i64) -> anyhow::Result<()> {
     let newest: Option<String> = conn
         .query_row(
-            "SELECT payload FROM notification WHERE kind = 'switch' AND delivered_at IS NULL AND cancelled_at IS NULL
-               AND json_extract(payload, '$.target_account_id') = ?1 AND json_extract(payload, '$.state') = 'pending'
-             ORDER BY json_extract(payload, '$.occurred_at') DESC, id DESC LIMIT 1",
+            &format!(
+                "SELECT payload FROM notification WHERE kind = 'switch' AND delivered_at IS NULL AND cancelled_at IS NULL
+               AND json_extract(payload, '$.target_account_id') = ?1 AND {PENDING_SQL}
+             ORDER BY json_extract(payload, '$.occurred_at') DESC, id DESC LIMIT 1"
+            ),
             [account],
             |r| r.get(0),
         )
         .optional()?;
     let Some(q) = newest.and_then(|p| serde_json::from_str::<Queued>(&p).ok()) else { return Ok(()) };
     conn.execute(
-        "UPDATE notification SET cancelled_at = ?2 WHERE kind = 'switch' AND delivered_at IS NULL AND cancelled_at IS NULL
-           AND json_extract(payload, '$.target_account_id') = ?1 AND json_extract(payload, '$.state') = 'pending'",
+        &format!(
+            "UPDATE notification SET cancelled_at = ?2 WHERE kind = 'switch' AND delivered_at IS NULL AND cancelled_at IS NULL
+           AND json_extract(payload, '$.target_account_id') = ?1 AND {PENDING_SQL}"
+        ),
         params![account, now],
     )?;
     let at = Latest { id: None, occurred_at: q.occurred_at, tz_offset_min: q.tz_offset_min, notify: q.notify };
@@ -518,7 +551,7 @@ fn queue_for_front(
             tz_offset_min: tz,
             notify: how,
             draws: d,
-            state: "pending".into(),
+            state: QueueState::Pending,
             text: None,
             displayed: None,
             front_id: ctx.id.clone(),
@@ -655,7 +688,7 @@ pub fn process_due(conn: &Connection, now: i64) -> anyhow::Result<Processed> {
             conn.execute("UPDATE notification SET cancelled_at = ?2 WHERE id = ?1", params![id, now])?;
             continue;
         }
-        if q.state == "pending" {
+        if q.state == QueueState::Pending {
             // §5: the follower view changes here and only here
             let (_, prev_since) = revealed(conn, &follower, &q.target_account_id, &q.front_id)?;
             let shown_since =
@@ -730,10 +763,10 @@ pub fn process_due(conn: &Connection, now: i64) -> anyhow::Result<Processed> {
             });
             match route {
                 Route::Deliver { at } if at <= now => pushes.extend(deliver(conn, &id, &follower, &mut q, now)?),
-                Route::Deliver { at } => hold(conn, &id, &mut q, "held", at)?,
-                Route::Digest { at } => hold(conn, &id, &mut q, "digest", at)?,
+                Route::Deliver { at } => hold(conn, &id, &mut q, QueueState::Held, at)?,
+                Route::Digest { at } => hold(conn, &id, &mut q, QueueState::Digest, at)?,
                 Route::RevealOnly => {
-                    q.state = "revealed".into();
+                    q.state = QueueState::Revealed;
                     conn.execute(
                         "UPDATE notification SET cancelled_at = ?2, payload = ?3 WHERE id = ?1",
                         params![id, now, serde_json::to_string(&q)?],
@@ -741,7 +774,7 @@ pub fn process_due(conn: &Connection, now: i64) -> anyhow::Result<Processed> {
                 }
             }
         } else {
-            if q.state == "digest" {
+            if q.state == QueueState::Digest {
                 digests.entry((follower.clone(), q.target_account_id.clone())).or_default().push((id, q));
             } else {
                 // held by quiet hours: its time has come
@@ -810,8 +843,8 @@ fn digest_text(items: &[(String, Queued)]) -> String {
     if parts.is_empty() { "Switches today".into() } else { parts.join(" · ") }
 }
 
-fn hold(conn: &Connection, id: &str, q: &mut Queued, state: &str, at: i64) -> anyhow::Result<()> {
-    q.state = state.into();
+fn hold(conn: &Connection, id: &str, q: &mut Queued, state: QueueState, at: i64) -> anyhow::Result<()> {
+    q.state = state;
     conn.execute(
         "UPDATE notification SET due_at = ?2, payload = ?3 WHERE id = ?1",
         params![id, at, serde_json::to_string(q)?],
@@ -826,7 +859,7 @@ fn deliver(
     q: &mut Queued,
     now: i64,
 ) -> anyhow::Result<Vec<crate::push::Outbound>> {
-    q.state = "delivered".into();
+    q.state = QueueState::Delivered;
     let at = q.displayed.and_then(|d| d.at);
     conn.execute(
         "UPDATE notification SET delivered_at = ?2, displayed_time = ?3, payload = ?4 WHERE id = ?1",
@@ -887,6 +920,10 @@ pub fn list_for(
         if device.is_some() && p["from_device"].as_str() == device {
             continue;
         }
+        // its message or post gone for this reader: not listed while so (D-149)
+        if !source_available(conn, follower, &kind, &p)? {
+            continue;
+        }
         let mut item = json!({
             "id": id, "kind": kind, "title": p["title"], "text": p["text"],
             "channel_id": p["channel_id"], "message_id": p["message_id"], "scope": p["scope"], "reply_as": p["reply_as"],
@@ -909,6 +946,23 @@ pub fn list_for(
     items.sort_by_key(|i| std::cmp::Reverse(i["delivered_at"].as_i64().unwrap_or(0)));
     items.truncate(limit as usize);
     Ok(json!({"items": items}))
+}
+
+/// Whether a delivered notification's source can still be read by its recipient (D-149): the
+/// message (REST read rule, `messages::readable_by`) for chat kinds and a chat poll's nudge, the
+/// post (`post_alerts::post_readable`) for post alerts, reply pings and a post poll's nudge.
+/// Kinds without a source (alert requests, export and own-switch notices) always are.
+fn source_available(conn: &Connection, recipient: &str, kind: &str, p: &Value) -> anyhow::Result<bool> {
+    if !matches!(kind, "mention" | "dm" | "reply" | "message" | "member_dm" | "post" | "post_reply" | "poll_nudge") {
+        return Ok(true);
+    }
+    if let Some(message) = p["message_id"].as_str() {
+        return Ok(crate::messages::readable_by(conn, recipient, message)?);
+    }
+    if let Some(post) = p["post_id"].as_str() {
+        return crate::post_alerts::post_readable(conn, recipient, post);
+    }
+    Ok(true)
 }
 
 fn switch_items(conn: &Connection, follower: &str, after: i64, limit: i64) -> anyhow::Result<Vec<Value>> {
@@ -1194,4 +1248,31 @@ fn stats_of(log: &[Logged], now: i64) -> Value {
         spans.into_iter().map(|(n, d)| (n, ((d as f64 / total as f64 * 20.0).round() as i64) * 5)).collect();
     members.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
     json!({"days": HISTORY_DAYS, "members": members.iter().map(|(n, p)| json!({"name": n, "share_pct": p})).collect::<Vec<_>>()})
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Stored payloads keep their string states: each name round-trips, and [`PENDING_SQL`]
+    /// compares against the name `Pending` is stored under.
+    #[test]
+    fn queue_states_are_stored_under_their_old_names() {
+        let all = [
+            (QueueState::Pending, "pending"),
+            (QueueState::Held, "held"),
+            (QueueState::Digest, "digest"),
+            (QueueState::Delivered, "delivered"),
+            (QueueState::Revealed, "revealed"),
+        ];
+        for (state, name) in all {
+            assert_eq!(serde_json::to_value(state).unwrap(), json!(name));
+            assert_eq!(serde_json::from_value::<QueueState>(json!(name)).unwrap(), state);
+        }
+        assert!(
+            PENDING_SQL
+                .ends_with(&format!("'{}'", serde_json::to_value(QueueState::Pending).unwrap().as_str().unwrap()))
+        );
+        assert!(serde_json::from_value::<QueueState>(json!("later")).is_err());
+    }
 }

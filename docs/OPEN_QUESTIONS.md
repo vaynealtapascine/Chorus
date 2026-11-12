@@ -14,4 +14,8 @@ All questions from the 2026-09-23 spec round are answered (D-045 to D-054). Q14 
 Q18 (past-history corrections while following) was answered 2026-10-25: keep following (D-083).
 Q19 (additional-front follower access) was answered 2026-10-25: explicit grants are required (D-084).
 Q24 (a friend's member count) was answered 2026-11-08: only what is shared (D-138).
+Q25 (delivered notifications whose source is gone) was answered 2026-11-11: they leave the list while it is gone (D-149).
+Q26 (asking again after a no) was answered 2026-11-11: a silent 30-minute cooldown (D-150).
+Q27 (forwards) was answered 2026-11-11: they notify like messages (D-151).
+Q28 (a signed-out device's copy) was answered 2026-11-11: kept two days then erased, or erased at once if chosen; the device goes back to onboarding (D-152, D-153).
 Q20 (mentions, reading and chat availability) was answered 2026-10-25: separate per-front layer selections using the channel's selected front, preserving existing defaults (D-085).

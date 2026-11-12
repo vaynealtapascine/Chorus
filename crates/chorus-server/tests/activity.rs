@@ -6,7 +6,7 @@ use chorus_core::hlc::Hlc;
 use chorus_core::id::new_id;
 use chorus_core::op::Op;
 use chorus_core::time::{ClockSample, TimeSource};
-use chorus_server::{db, ingest, notifier};
+use chorus_server::{api_data, db, ingest, messages, notifier, posts, search, spaces};
 use rusqlite::Connection;
 use serde_json::{Value, json};
 
@@ -27,6 +27,11 @@ struct W {
 
 impl W {
     fn new() -> W {
+        W::with_space("shared")
+    }
+
+    /// A two-account space of `kind` (`shared`, `dm`) with a #general.
+    fn with_space(kind: &str) -> W {
         let mut c = db::open_memory().unwrap();
         db::migrate(&mut c).unwrap();
         let a = new_id(1, [1; 10]);
@@ -45,7 +50,7 @@ impl W {
             W { c, a: a.clone(), b: b.clone(), space: space.clone(), n: 0, last_op: String::new(), written: None };
         // a real shared space with a #general, so channel permissions (perms.rs) have rows to read
         let id = space.strip_prefix("space:").unwrap().to_string();
-        w.push(&a, "space.create", &space, &id, json!({"kind": "shared", "name": "Club"}));
+        w.push(&a, "space.create", &space, &id, json!({"kind": kind, "name": "Club"}));
         for who in [&a, &b] {
             w.push(&a, "space.join", &space, &id, json!({"account_id": who}));
         }
@@ -54,6 +59,13 @@ impl W {
     }
 
     fn push(&mut self, who: &str, kind: &str, scope: &str, entity: &str, payload: Value) {
+        if let Some(e) = self.try_push(who, kind, scope, entity, payload) {
+            panic!("{kind}: {e}");
+        }
+    }
+
+    /// [`W::push`], answering the refusal instead of failing on one.
+    fn try_push(&mut self, who: &str, kind: &str, scope: &str, entity: &str, payload: Value) -> Option<String> {
         self.n += 1;
         let at = NOW + i64::from(self.n) * 1000;
         let o = Op {
@@ -84,7 +96,7 @@ impl W {
         };
         self.last_op = o.id.clone();
         let (r, _) = ingest::accept(&self.c, &s, o, at, false).unwrap();
-        assert!(r.error.is_none(), "{kind}: {:?}", r.error);
+        r.error.map(|e| e.message)
     }
 
     fn inbox(&self, account: &str) -> Vec<(String, String)> {
@@ -773,4 +785,416 @@ fn chat_and_sender_icons_follow_space_channel_and_dm_rules() {
     assert_eq!(items[0]["chat"]["color"], "#8FB8E8");
     assert_eq!(items[0]["chat"]["avatar_blob"], chan_avatar);
     assert_eq!(items[0]["chat"]["direct"], false);
+}
+
+/// A thread is as private as its parent (`visibility::PUBLIC_MESSAGE_SQL`): what the Stars say in a
+/// thread under their own system-only aside never reaches Alex's account, as sync never sends it.
+#[test]
+fn a_thread_under_a_private_aside_notifies_nobody_else() {
+    let mut w = W::with_space("dm");
+    let (a, b, space) = (w.a.clone(), w.b.clone(), w.space.clone());
+    let space_id = space.strip_prefix("space:").unwrap().to_string();
+    let kai = new_id(NOW as u64, [40; 10]);
+    let june = new_id(NOW as u64, [41; 10]);
+    w.push(&a, "member.create", &format!("account:{a}"), &kai, json!({"name": "Kai"}));
+    w.push(&b, "member.create", &format!("account:{b}"), &june, json!({"name": "June"}));
+    let mention = json!([{"type": "mention", "offset": 0, "length": 5, "target_type": "member", "target_id": june}]);
+    let thread_under = |w: &mut W, parent: &str, n: u8| -> String {
+        let thread = new_id(NOW as u64, [n; 10]);
+        w.push(
+            &a,
+            "channel.create",
+            &space,
+            &thread,
+            json!({"space_id": space_id, "kind": "thread", "name": "t", "parent_message_id": parent}),
+        );
+        thread
+    };
+    let in_thread = |text: &str, thread: &str, entities: Value| {
+        let mut m = msg(text, &[&kai], entities);
+        m["channel_id"] = json!(thread);
+        m
+    };
+
+    let aside = new_id(NOW as u64, [50; 10]);
+    let mut p = msg("just us", &[&kai], json!([]));
+    p["visibility"] = json!({"mode": "system_only"});
+    w.push(&a, "message.send", &space, &aside, p);
+    let hidden = thread_under(&mut w, &aside, 60);
+    // a plain message (a DM's "dm" kind) and a mention of June, both inside the hidden thread
+    w.push(&a, "message.send", &space, &new_id(NOW as u64, [51; 10]), in_thread("thread chatter", &hidden, json!([])));
+    w.push(
+        &a,
+        "message.send",
+        &space,
+        &new_id(NOW as u64, [52; 10]),
+        in_thread("@June secret", &hidden, mention.clone()),
+    );
+    assert!(w.inbox(&b).is_empty(), "{:?}", w.inbox(&b));
+    let rows: i64 =
+        w.c.query_row("SELECT count(*) FROM notification WHERE recipient_account_id = ?1", [&b], |r| r.get(0)).unwrap();
+    assert_eq!(rows, 0);
+
+    // under a public message the thread notifies as usual
+    let open = new_id(NOW as u64, [53; 10]);
+    w.push(&a, "message.send", &space, &open, msg("hello", &[&kai], json!([])));
+    let shown = thread_under(&mut w, &open, 61);
+    w.push(&a, "message.send", &space, &new_id(NOW as u64, [54; 10]), in_thread("in the open", &shown, json!([])));
+    w.push(&a, "message.send", &space, &new_id(NOW as u64, [55; 10]), in_thread("@June look", &shown, mention));
+    let mut got = w.inbox(&b);
+    got.sort();
+    assert_eq!(
+        got,
+        [
+            ("dm".to_string(), "hello".to_string()),
+            ("dm".to_string(), "in the open".to_string()),
+            ("mention".to_string(), "@June look".to_string()),
+        ]
+    );
+}
+
+/// D-101/D-126/D-147: an author card in shared chat carries pronouns only where the profile and its
+/// `pronouns` part reach the reader; name, colour, sigil and avatar follow the member regardless.
+#[test]
+fn shared_chat_author_cards_carry_pronouns_only_under_the_profile_rule() {
+    let mut w = W::new();
+    let (a, b, space) = (w.a.clone(), w.b.clone(), w.space.clone());
+    let space_id = space.strip_prefix("space:").unwrap().to_string();
+    let kai = new_id(NOW as u64, [40; 10]);
+    w.push(&a, "member.create", &format!("account:{a}"), &kai, json!({"name": "Kai", "pronouns": "they/them"}));
+    w.push(&a, "message.send", &space, &new_id(NOW as u64, [50; 10]), msg("hello", &[&kai], json!([])));
+    let card = |w: &W| -> Value {
+        let all = spaces::authors(&w.c, &b, &space_id).unwrap();
+        all["members"].as_array().unwrap().iter().find(|m| m["id"] == kai.as_str()).cloned().unwrap()
+    };
+    // a private profile (the default): the card is there, its pronouns aren't
+    assert_eq!(card(&w)["name"], "Kai");
+    assert_eq!(card(&w)["pronouns"], Value::Null);
+    // the profile open to followers but pronouns kept private: still nothing
+    w.c.execute(
+        "INSERT INTO follow(id, follower_account_id, target_account_id, status, created_at) VALUES ('f', ?1, ?2, 'active', 0)",
+        [&b, &a],
+    )
+    .unwrap();
+    w.c.execute(
+        "UPDATE member SET visibility = '{\"mode\":\"followers\"}', field_visibility = '{\"pronouns\":{\"mode\":\"private\"}}' WHERE id = ?1",
+        [&kai],
+    )
+    .unwrap();
+    assert_eq!(card(&w)["pronouns"], Value::Null);
+    // and both shared with Alex's account: they appear
+    w.c.execute("UPDATE member SET field_visibility = '{\"pronouns\":{\"mode\":\"followers\"}}' WHERE id = ?1", [&kai])
+        .unwrap();
+    assert_eq!(card(&w)["pronouns"], "they/them");
+}
+
+/// One rule for a member's shown name: the display name unless it is blank, else the name, in
+/// notification titles and reaction lists alike (`profiles::shown_name_sql`).
+#[test]
+fn a_blank_display_name_falls_back_to_the_name() {
+    let mut w = W::new();
+    let (a, b, space) = (w.a.clone(), w.b.clone(), w.space.clone());
+    let kai = new_id(NOW as u64, [40; 10]);
+    let june = new_id(NOW as u64, [41; 10]);
+    w.push(&a, "member.create", &format!("account:{a}"), &kai, json!({"name": "Kai", "display_name": ""}));
+    w.push(
+        &b,
+        "member.create",
+        &format!("account:{b}"),
+        &june,
+        json!({"name": "June", "display_name": " ", "visibility": {"mode": "server"}}),
+    );
+    let mention = json!([{"type": "mention", "offset": 0, "length": 5, "target_type": "member", "target_id": june}]);
+    w.push(&a, "message.send", &space, &new_id(NOW as u64, [50; 10]), msg("@June hi", &[&kai], mention));
+    notifier::process_due(&w.c, NOW + 1_000_000).unwrap();
+    let items = notifier::list_for(&w.c, &b, None, 0, 10).unwrap()["items"].as_array().unwrap().clone();
+    assert_eq!(items[0]["title"], "Kai · Club");
+
+    // June (her profile open to all) hearts a post of the Stars: its reactions and the Stars'
+    // activity name her
+    let post = new_id(NOW as u64, [60; 10]);
+    w.push(
+        &a,
+        "post.create",
+        &format!("account:{a}"),
+        &post,
+        json!({"kind": "note", "authors": [kai], "text": "hello", "entities": [], "visibility": {"mode": "server"}}),
+    );
+    w.push(
+        &b,
+        "post.react",
+        &format!("account:{b}"),
+        &new_id(NOW as u64, [61; 10]),
+        json!({"target_type": "post", "target_id": post, "emoji": "💜", "member_id": june}),
+    );
+    let read = posts::one(&w.c, &a, &post).unwrap().unwrap();
+    assert_eq!(read["reactions"][0]["member_name"], "June");
+    let activity = posts::activity(&w.c, &a, None, 50).unwrap();
+    assert_eq!(activity["reactions"][&post][0]["member_name"], "June");
+}
+
+/// D-007/D-082: REST message reads keep authors in order (the first is the primary speaker), then
+/// any segment-only authors in segment order, each once; never in id order.
+#[test]
+fn rest_message_reads_keep_author_order() {
+    let mut w = W::new();
+    let (a, b, space) = (w.a.clone(), w.b.clone(), w.space.clone());
+    // ids that sort opposite to how they speak
+    let first = new_id(NOW as u64, [45; 10]);
+    let second = new_id(NOW as u64, [44; 10]);
+    let in_segment = new_id(NOW as u64, [38; 10]);
+    for (id, name) in [(&first, "Kai"), (&second, "Rin"), (&in_segment, "Ash")] {
+        w.push(&a, "member.create", &format!("account:{a}"), id, json!({"name": name}));
+    }
+    assert!(in_segment < second && second < first);
+    let m = new_id(NOW as u64, [50; 10]);
+    let mut p = msg(
+        "us
+Ash",
+        &[&first, &second],
+        json!([]),
+    );
+    p["segments"] = json!([
+        {"offset": 0, "length": 2, "authors": [first, second]},
+        {"offset": 3, "length": 3, "authors": [in_segment, first]}
+    ]);
+    w.push(&a, "message.send", &space, &m, p);
+    let want = json!([first, second, in_segment]);
+    for who in [&a, &b] {
+        let principal = api_data::Principal::owner(who);
+        let one = messages::one(&w.c, &principal, &m).unwrap().unwrap();
+        assert_eq!(one["authors"], want, "GET /messages/{{id}} for {who}");
+        let page = messages::list(&w.c, &principal, GENERAL, &Default::default()).unwrap().unwrap();
+        assert_eq!(page["items"][0]["authors"], want, "GET /channels/{{id}}/messages for {who}");
+    }
+}
+
+/// Q25/D-149: a delivered notification leaves the reader's list while its source is gone for
+/// them (deleted, or no longer theirs to read) and comes back with it; nothing is erased.
+#[test]
+fn a_delivered_notification_follows_its_source() {
+    let mut w = W::new();
+    let (a, b, space) = (w.a.clone(), w.b.clone(), w.space.clone());
+    let kai = new_id(NOW as u64, [40; 10]);
+    let june = new_id(NOW as u64, [41; 10]);
+    w.push(&a, "member.create", &format!("account:{a}"), &kai, json!({"name": "Kai"}));
+    w.push(&b, "member.create", &format!("account:{b}"), &june, json!({"name": "June"}));
+    let mention = json!([{"type": "mention", "offset": 0, "length": 5, "target_type": "member", "target_id": june}]);
+    let m = new_id(NOW as u64, [50; 10]);
+    w.push(&a, "message.send", &space, &m, msg("@June hi", &[&kai], mention));
+    assert_eq!(w.inbox(&b).len(), 1);
+    let rows = |w: &W| -> i64 {
+        w.c.query_row("SELECT count(*) FROM notification WHERE recipient_account_id = ?1", [&b], |r| r.get(0)).unwrap()
+    };
+
+    // deleted: gone from the list (and from what a phone without push asks for), not the table
+    w.push(&a, "message.delete", &space, &m, json!({}));
+    assert!(w.inbox(&b).is_empty());
+    assert!(notifier::list_for(&w.c, &b, Some("phone"), 0, 50).unwrap()["items"].as_array().unwrap().is_empty());
+    assert_eq!(rows(&w), 1);
+    w.push(&a, "message.restore", &space, &m, json!({}));
+    assert_eq!(w.inbox(&b).len(), 1, "restored, it is back");
+
+    // no longer allowed to view the channel: gone; allowed again: back
+    let deny =
+        |allow: Value, deny: Value| json!({"target_type": "account", "target_id": b, "allow": allow, "deny": deny});
+    w.push(&a, "channel.set_permission", &space, GENERAL, deny(json!([]), json!(["view"])));
+    assert!(w.inbox(&b).is_empty());
+    w.push(&a, "channel.set_permission", &space, GENERAL, deny(json!(["view"]), json!([])));
+    assert_eq!(w.inbox(&b).len(), 1);
+
+    // a reply to the Stars' post: gone while the reply can't be read by them, back after
+    let ash = new_id(NOW as u64, [42; 10]);
+    w.push(&b, "member.create", &format!("account:{b}"), &ash, json!({"name": "Ash"}));
+    let root = new_id(NOW as u64, [60; 10]);
+    let post = |authors: &str, extra: Value| {
+        let mut p = json!({"kind": "note", "authors": [authors], "text": "words", "entities": [],
+                           "visibility": {"mode": "server"}});
+        for (k, v) in extra.as_object().unwrap() {
+            p[k] = v.clone();
+        }
+        p
+    };
+    w.push(&a, "post.create", &format!("account:{a}"), &root, post(&kai, json!({})));
+    let reply = new_id(NOW as u64, [61; 10]);
+    w.push(&b, "post.create", &format!("account:{b}"), &reply, post(&ash, json!({"reply_to": root})));
+    let replies = |w: &W| w.inbox(&a).iter().filter(|(k, _)| k == "post_reply").count();
+    assert_eq!(replies(&w), 1);
+    w.push(&b, "post.set_visibility", &format!("account:{b}"), &reply, json!({"visibility": {"mode": "private"}}));
+    assert_eq!(replies(&w), 0);
+    w.push(&b, "post.set_visibility", &format!("account:{b}"), &reply, json!({"visibility": {"mode": "server"}}));
+    assert_eq!(replies(&w), 1);
+    w.push(&b, "post.delete", &format!("account:{b}"), &reply, json!({}));
+    assert_eq!(replies(&w), 0);
+}
+
+/// Q27/D-151: a forward notifies like a message. Its text is the forwarder's own comment, or a
+/// neutral line, never the forwarded text (the snapshot).
+#[test]
+fn forwards_notify_like_messages() {
+    let mut w = W::with_space("dm");
+    let (a, b, space) = (w.a.clone(), w.b.clone(), w.space.clone());
+    let kai = new_id(NOW as u64, [40; 10]);
+    let june = new_id(NOW as u64, [41; 10]);
+    w.push(&a, "member.create", &format!("account:{a}"), &kai, json!({"name": "Kai"}));
+    w.push(&b, "member.create", &format!("account:{b}"), &june, json!({"name": "June"}));
+    let original = new_id(NOW as u64, [50; 10]);
+    w.push(&a, "message.send", &space, &original, msg("the original words", &[&kai], json!([])));
+    let base = w.inbox(&b).len();
+    let forward = |text: &str, entities: Value| {
+        let mut p = msg(text, &[&kai], entities);
+        p["forward_of_id"] = json!(original);
+        p["forward_snapshot"] = json!([{"message_id": original, "authors": [kai], "text": "the original words",
+                                        "entities": [], "occurred_at": NOW}]);
+        p
+    };
+    w.push(&a, "message.forward", &space, &new_id(NOW as u64, [51; 10]), forward("", json!([])));
+    let got = w.inbox(&b);
+    assert_eq!(got.len(), base + 1);
+    assert_eq!(got[0], ("dm".to_string(), "Forwarded a message".to_string()));
+    // a comment is the text; a mention in it is a mention
+    let mention = json!([{"type": "mention", "offset": 0, "length": 5, "target_type": "member", "target_id": june}]);
+    w.push(&a, "message.forward", &space, &new_id(NOW as u64, [52; 10]), forward("@June see this", mention));
+    assert_eq!(w.inbox(&b)[0], ("mention".to_string(), "@June see this".to_string()));
+    // never from a system-only aside
+    let mut aside = forward("just us", json!([]));
+    aside["visibility"] = json!({"mode": "system_only"});
+    w.push(&a, "message.forward", &space, &new_id(NOW as u64, [53; 10]), aside);
+    assert_eq!(w.inbox(&b).len(), base + 2);
+
+    // in the system's own space, under each member's rule like a message
+    let home_id = new_id(1, [4; 10]);
+    let home = format!("space:{home_id}");
+    ingest::grant(&w.c, &a, &home).unwrap();
+    w.push(&a, "space.create", &home, &home_id, json!({"kind": "internal", "name": "Home"}));
+    let rin = new_id(NOW as u64, [42; 10]);
+    w.push(&a, "member.create", &format!("account:{a}"), &rin, json!({"name": "Rin"}));
+    let general = new_id(NOW as u64, [30; 10]);
+    w.push(&a, "channel.create", &home, &general, json!({"space_id": home_id, "kind": "text", "name": "general"}));
+    let mut own = forward(
+        "@Rin look",
+        json!([{"type": "mention", "offset": 0, "length": 4, "target_type": "member", "target_id": rin}]),
+    );
+    own["channel_id"] = json!(general);
+    w.push(&a, "message.forward", &home, &new_id(NOW as u64, [54; 10]), own);
+    assert_eq!(w.inbox(&a)[0], ("mention".to_string(), "@Rin look".to_string()));
+}
+
+/// D-154: a reaction from another account's member is always counted, but names its member only
+/// where that member's profile is open to the reader, and then by the shown name (display name),
+/// never a full name behind it. The reacting account sees its own members complete.
+#[test]
+fn reaction_names_follow_the_members_profile() {
+    let mut w = W::new();
+    let (a, b) = (w.a.clone(), w.b.clone());
+    let kai = new_id(NOW as u64, [40; 10]);
+    let hidden = new_id(NOW as u64, [41; 10]);
+    let open = new_id(NOW as u64, [42; 10]);
+    w.push(&a, "member.create", &format!("account:{a}"), &kai, json!({"name": "Kai"}));
+    w.push(&b, "member.create", &format!("account:{b}"), &hidden, json!({"name": "June Hidden"}));
+    w.push(
+        &b,
+        "member.create",
+        &format!("account:{b}"),
+        &open,
+        json!({"name": "Rin Fullname", "display_name": "Rin", "visibility": {"mode": "server"}}),
+    );
+    let post = new_id(NOW as u64, [60; 10]);
+    w.push(
+        &a,
+        "post.create",
+        &format!("account:{a}"),
+        &post,
+        json!({"kind": "note", "authors": [kai], "text": "hello", "entities": [], "visibility": {"mode": "server"}}),
+    );
+    for (n, member, emoji) in [(61u8, &hidden, "🌙"), (62, &open, "🌿")] {
+        w.push(
+            &b,
+            "post.react",
+            &format!("account:{b}"),
+            &new_id(NOW as u64, [n; 10]),
+            json!({"target_type": "post", "target_id": post, "emoji": emoji, "member_id": member}),
+        );
+    }
+    let by_emoji =
+        |list: &Value, emoji: &str| list.as_array().unwrap().iter().find(|r| r["emoji"] == emoji).cloned().unwrap();
+
+    // the Stars: both counted, the hidden one unnamed, the open one by display name
+    let read = posts::one(&w.c, &a, &post).unwrap().unwrap();
+    assert_eq!(read["reactions"].as_array().unwrap().len(), 2);
+    assert_eq!(by_emoji(&read["reactions"], "🌙"), json!({"emoji": "🌙", "member_id": null, "member_name": null}));
+    assert_eq!(by_emoji(&read["reactions"], "🌿"), json!({"emoji": "🌿", "member_id": open, "member_name": "Rin"}));
+    let activity = posts::activity(&w.c, &a, None, 50).unwrap();
+    assert_eq!(by_emoji(&activity["reactions"][&post], "🌙")["member_id"], Value::Null);
+    assert_eq!(by_emoji(&activity["reactions"][&post], "🌿")["member_name"], "Rin");
+    let items: Vec<&Value> = activity["items"].as_array().unwrap().iter().filter(|i| i["kind"] == "reaction").collect();
+    assert_eq!(items.len(), 2, "a hidden member's reaction still shows");
+    let moon = items.iter().find(|i| i["emoji"] == "🌙").unwrap();
+    assert_eq!((&moon["member_id"], &moon["member_name"]), (&Value::Null, &Value::Null));
+    let leaf = items.iter().find(|i| i["emoji"] == "🌿").unwrap();
+    assert_eq!((&leaf["member_id"], &leaf["member_name"]), (&json!(open), &json!("Rin")));
+
+    // Alex's account sees its own members complete
+    let own = posts::one(&w.c, &b, &post).unwrap().unwrap();
+    assert_eq!(
+        by_emoji(&own["reactions"], "🌙"),
+        json!({"emoji": "🌙", "member_id": hidden, "member_name": "June Hidden"})
+    );
+    assert_eq!(by_emoji(&own["reactions"], "🌿")["member_name"], "Rin");
+}
+
+/// D-155: a private chat (D-098) is a DM's. A channel kept to some members in a shared space
+/// is an ordinary channel: anyone speaks there, the front hides nothing, and it notifies under
+/// the ordinary rules; the same channel in a DM still is private.
+#[test]
+fn only_a_dm_has_private_chats() {
+    for kind in ["shared", "dm"] {
+        let dm = kind == "dm";
+        let mut w = W::with_space(kind);
+        let (a, b, space) = (w.a.clone(), w.b.clone(), w.space.clone());
+        let space_id = space.strip_prefix("space:").unwrap().to_string();
+        let kai = new_id(NOW as u64, [40; 10]);
+        let june = new_id(NOW as u64, [41; 10]);
+        let rin = new_id(NOW as u64, [42; 10]);
+        w.push(&a, "member.create", &format!("account:{a}"), &kai, json!({"name": "Kai"}));
+        w.push(&a, "member.create", &format!("account:{a}"), &june, json!({"name": "June"}));
+        w.push(&b, "member.create", &format!("account:{b}"), &rin, json!({"name": "Rin"}));
+        let chat = new_id(NOW as u64, [30; 10]);
+        w.push(
+            &a,
+            "channel.create",
+            &space,
+            &chat,
+            json!({"space_id": space_id, "kind": "member_dm", "name": "Kai", "member_ids": [kai, rin]}),
+        );
+        // titled before anyone writes, in a DM only
+        let cards = spaces::authors(&w.c, &b, &space_id).unwrap();
+        let carded = cards["members"].as_array().unwrap().iter().any(|m| m["id"] == kai.as_str());
+        assert_eq!(carded, dm, "{kind}: kept-to members' cards");
+
+        // June isn't listed: refused in a DM, an ordinary speaker in a shared space
+        let mut said = msg("June here", &[&june], json!([]));
+        said["channel_id"] = json!(chat);
+        let refused = w.try_push(&a, "message.send", &space, &new_id(NOW as u64, [50; 10]), said);
+        assert_eq!(refused.is_some(), dm, "{kind}: {refused:?}");
+
+        // Kai mentions Rin (who isn't fronting): a DM's private chat follows Rin's DM rule (only
+        // while fronting), a shared space's channel is a mention like anywhere else
+        let m = new_id(NOW as u64, [51; 10]);
+        let mut said = msg(
+            "@Rin hi",
+            &[&kai],
+            json!([{"type": "mention", "offset": 0, "length": 4, "target_type": "member", "target_id": rin}]),
+        );
+        said["channel_id"] = json!(chat);
+        w.push(&a, "message.send", &space, &m, said);
+        let inbox = w.inbox(&b);
+        assert_eq!(inbox.is_empty(), dm, "{kind}: {inbox:?}");
+        if !dm {
+            assert_eq!(inbox[0], ("mention".to_string(), "@Rin hi".to_string()));
+        }
+        // and search hides it by Rin's front only in a DM
+        let found = search::message_by_id(&w.c, &api_data::Principal::owner(&b), &m).unwrap();
+        assert_eq!(found.is_none(), dm, "{kind}: search");
+    }
 }

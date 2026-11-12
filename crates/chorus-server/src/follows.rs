@@ -68,6 +68,40 @@ pub fn request(
     target_ref: &str,
     now: i64,
 ) -> Result<(String, Option<ingest::Accepted>), FollowError> {
+    let a = ask(conn, follower, target_ref, now)?;
+    Ok((a.id, a.op))
+}
+
+/// How long after `target` declined `follower`'s request, or removed them as a follower, a new
+/// request from `follower` goes nowhere (D-150).
+pub const ASK_AGAIN_AFTER_MS: i64 = 30 * 60_000;
+
+/// When (server receipt time) `target` last ended a follow of `follower`'s: a `follow.end` on
+/// a follower → target follow made by `target`, by `by_account_id` when it says (the server
+/// writes the follower's own unfollow with theirs) and otherwise by the op's author (clients
+/// write an empty `follow.end` in their own scope).
+fn last_no(conn: &Connection, follower: &str, target: &str) -> rusqlite::Result<Option<i64>> {
+    conn.prepare_cached(
+        "SELECT max(o.received_at) FROM follow f JOIN op o ON o.entity_id = f.id
+         WHERE f.follower_account_id = ?1 AND f.target_account_id = ?2
+           AND o.kind = 'follow.end' AND o.status = 'applied' AND o.scope = 'account:' || ?2
+           AND coalesce(json_extract(o.payload, '$.by_account_id'), o.account_id) = ?2",
+    )?
+    .query_row(params![follower, target], |r| r.get(0))
+}
+
+/// What asking to follow answers: the follow's id, whether to say it is new (`201`), and the
+/// op written, if any.
+pub struct Asked {
+    pub id: String,
+    pub new: bool,
+    pub op: Option<ingest::Accepted>,
+}
+
+/// [`request`], with whether the answer is a new request (`POST /follows` answers `201`). Within
+/// [`ASK_AGAIN_AFTER_MS`] after `target` said no, the answer is a new request with a fresh id but
+/// no op, no follow and nobody told.
+pub fn ask(conn: &Connection, follower: &str, target_ref: &str, now: i64) -> Result<Asked, FollowError> {
     let target = find_account(conn, target_ref)?;
     if target == follower {
         return Err(FollowError::SelfFollow);
@@ -81,9 +115,15 @@ pub fn request(
         )
         .optional()?;
     if let Some(id) = open {
-        return Ok((id, None));
+        return Ok(Asked { id, new: false, op: None });
     }
     let id = chorus_core::id::new_id(now as u64, rand::random());
+    // turned down (or removed) by `target` a moment ago: answer as if asked, and do nothing (D-150)
+    if let Some(ended) = last_no(conn, follower, &target)?
+        && now < ended + ASK_AGAIN_AFTER_MS
+    {
+        return Ok(Asked { id, new: true, op: None });
+    }
     let o = ingest::server_op(
         conn,
         &target,
@@ -93,7 +133,7 @@ pub fn request(
         json!({"follower_account_id": follower, "target_account_id": target}),
         now,
     )?;
-    Ok((id, Some(o)))
+    Ok(Asked { id, new: true, op: Some(o) })
 }
 
 /// The follower's own notification preferences for this follow (NOTIFICATIONS.md §4).

@@ -1,7 +1,8 @@
 //! Post alerts (D-106): another account asks to hear about one member's new posts and journal
 //! entries; the member's account says yes or no. Once yes, each new top-level post or entry that
 //! member writes notifies the subscriber, if and only if the subscriber may read it then
-//! (`posts::readable_sql`: server-wide, followers, or a bucket they are in). Private posts,
+//! (`posts::readable_sql`: server-wide, followers, or a bucket they are in), checked when the post
+//! is written and again when the ping is delivered (`still_deliverable`). Private posts,
 //! replies and reposts never do, and nothing is said about fronting.
 //!
 //! Requests live in `post_alert` (server-written, like follow requests; not ops). Asking needs a
@@ -63,9 +64,11 @@ fn account_name(conn: &Connection, account: &str) -> anyhow::Result<String> {
 
 fn member_name(conn: &Connection, member: &str) -> anyhow::Result<String> {
     Ok(conn
-        .query_row("SELECT COALESCE(NULLIF(trim(display_name), ''), name) FROM member WHERE id = ?1", [member], |r| {
-            r.get::<_, Option<String>>(0)
-        })
+        .query_row(
+            concat!("SELECT ", crate::profiles::shown_name_sql!(""), " FROM member WHERE id = ?1"),
+            [member],
+            |r| r.get::<_, Option<String>>(0),
+        )
         .optional()?
         .flatten()
         .unwrap_or_else(|| "Someone".into()))
@@ -331,6 +334,36 @@ pub fn on_post(conn: &Connection, post_id: &str, alerts: Alerts, now: i64) -> an
         )?;
     }
     Ok(())
+}
+
+/// Whether a queued `post` / `post_reply` notification may still be delivered to `recipient`,
+/// judged when it falls due (D-106, D-147): the post (for `post_reply`, the reply) still exists
+/// undeleted and `recipient` may read it now (`posts::readable_sql`), and for `post` they still
+/// have an active alert for one of its authors. Immediate and delayed rows both pass through here.
+pub(crate) fn still_deliverable(
+    conn: &Connection,
+    recipient: &str,
+    kind: &str,
+    payload: &Value,
+) -> anyhow::Result<bool> {
+    let Some(post_id) = payload.get("post_id").and_then(Value::as_str) else { return Ok(false) };
+    let readable = crate::posts::readable_sql("?1");
+    let alert = if kind == "post" {
+        "AND EXISTS (SELECT 1 FROM post_alert pa JOIN post_author au ON au.member_id = pa.member_id
+                     WHERE au.post_id = p.id AND pa.subscriber_account_id = ?1
+                       AND pa.owner_account_id = p.account_id AND pa.status = 'active')"
+    } else {
+        ""
+    };
+    let sql =
+        format!("SELECT EXISTS(SELECT 1 FROM post p WHERE p.id = ?2 AND p.deleted_at IS NULL AND {readable} {alert})");
+    Ok(conn.prepare_cached(&sql)?.query_row(params![recipient, post_id], |r| r.get(0))?)
+}
+
+/// Whether `account` may read post `id` now: it exists undeleted and `posts::readable_sql` lets
+/// them (its author always may). Also what keeps a delivered notification listed (D-149).
+pub(crate) fn post_readable(conn: &Connection, account: &str, id: &str) -> anyhow::Result<bool> {
+    still_deliverable(conn, account, "post_reply", &json!({"post_id": id}))
 }
 
 /// A reply to another account's post tells that account (D-127, kind `post_reply`), if it may read
