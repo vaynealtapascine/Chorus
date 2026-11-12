@@ -75,7 +75,7 @@
 
 <div class="page">
   <div class="bar">
-    <a class="back" href="#/" aria-label="Back to Fronting"><Icon name="back" size={22} /></a>
+    <a class="back" href="#/fronting" aria-label="Back to Fronting"><Icon name="back" size={22} /></a>
     <div class="titles"><strong>Layers &amp; display</strong><span>{summary?.name ?? 'Body'}</span></div>
     <button class="icon-btn" aria-pressed={arranging} aria-label={arranging ? 'Done arranging' : 'Arrange layers'} onclick={() => (arranging = !arranging)}><Icon name={arranging ? 'check' : 'pencil'} size={22} /></button>
   </div>

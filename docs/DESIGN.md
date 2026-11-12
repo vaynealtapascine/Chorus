@@ -253,6 +253,8 @@ The shared spacing rhythm is a four-point scale from `spacing` in frontmatter. C
 - **Compact web (<1024 px):** fixed bottom navigation, a 72 px app bar, 16 px content padding and
   safe-area-aware bottom clearance. Destinations are Members · Fronting · Chat · Friends · More.
   Journal and secondary tools are reachable through More; desktop adds direct Journal/Search/Settings.
+  Chorus opens on Home (`#/`, D-130, the dashboard); Fronting is `#/fronting`. Home is first in the wide
+  sidebar, not in the compact bar, and listed in More; its Sections pill sits in the app bar.
 - **Android:** bottom navigation below 840 dp and a navigation rail from 840 dp. Defaults are
   Members · Fronting · Chat · Journal · More (D-089). Settings → This device → Bottom navigation
   opens a staged editor with preview, choose/reorder/remove controls and Restore defaults.

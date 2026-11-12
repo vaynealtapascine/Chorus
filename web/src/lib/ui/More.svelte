@@ -10,6 +10,7 @@
   <h1 class="display">More</h1>
   <nav aria-label="More pages">
     {#each [
+      { path: '', title: 'Home', icon: 'home' },
       { path: 'members', title: 'Members', icon: 'members' },
       { path: 'notifications', title: 'Notifications', icon: 'bell' },
       { path: 'history', title: 'Front history', icon: 'history' },

@@ -176,7 +176,7 @@
     sync.create('front.switch', sync.accountScope, sync.newId(), {
       entries: [{ subject_type: 'member', subject_id: id, level: 'front', is_primary: true }],
     });
-    router.go('/');
+    router.go('/fronting');
   }
 </script>
 

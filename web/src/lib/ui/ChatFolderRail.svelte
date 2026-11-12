@@ -11,7 +11,7 @@
   // a singlet has no members to talk among: their own channels stay under All chats
   const folders = $derived(person ? all.filter((f) => f.id !== 'internal') : all);
   const destinations = $derived([
-    ...(person ? [] : [{ href: '#/members', label: 'Members', icon: 'users' }, { href: '#/', label: 'Fronting', icon: 'target' }]),
+    ...(person ? [] : [{ href: '#/members', label: 'Members', icon: 'users' }, { href: '#/fronting', label: 'Fronting', icon: 'target' }]),
     ...(person ? [{ href: '#/journal', label: 'Journal', icon: 'journal' }] : []),
     { href: '#/people', label: 'Friends', icon: 'swap' },
     { href: '#/more', label: 'More', icon: 'more' },

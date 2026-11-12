@@ -4,7 +4,9 @@
   import { sync, type Projection, type Status } from './lib/sync/client';
   import Chat from './lib/ui/Chat.svelte';
   import History from './lib/ui/History.svelte';
-  import Home from './lib/ui/Home.svelte';
+  import HomeDashboard from './lib/ui/HomeDashboard.svelte';
+  import Fronting from './lib/ui/Fronting.svelte';
+  import { homeUi } from './lib/home-ui.svelte';
   import MemberEditor from './lib/ui/MemberEditor.svelte';
   import Members from './lib/ui/Members.svelte';
   import Onboarding from './lib/ui/Onboarding.svelte';
@@ -104,7 +106,8 @@
   // Figma F11: Notifications beside Fronting and Chat; on a phone-wide screen the bar keeps
   // Fronting · Notifications · Chat · Journal · More, and Members and Friends wait in More
   const allTabs = [
-    { path: '/', name: 'home', label: 'Fronting', icon: 'front' },
+    { path: '/', name: 'home', label: 'Home', icon: 'home', wide: true },
+    { path: '/fronting', name: 'fronting', label: 'Fronting', icon: 'front' },
     { path: '/notifications', name: 'notifications', label: 'Notifications', icon: 'bell' },
     { path: '/chat', name: 'chat', label: 'Chat', icon: 'chat' },
     { path: '/journal', name: 'journal', label: 'Journal', icon: 'journal' },
@@ -113,7 +116,7 @@
     { path: '/more', name: 'more', label: 'More', icon: 'more' },
   ];
   const tabs = $derived(person
-    ? [allTabs[3], allTabs[1], allTabs[2], { ...allTabs[5], wide: false }, allTabs[6]]
+    ? [allTabs[0], allTabs[4], allTabs[2], allTabs[3], { ...allTabs[6], wide: false }, allTabs[7]]
     : allTabs);
   // the Notifications badge: unread for whoever reads by default (D-127), checked every minute
   const ready = $derived(!!projection);
@@ -131,7 +134,7 @@
     return unreadCount(inbox.items, read, showsPref(projection.rows.pref, sync.accountId));
   });
   const active = $derived(['member', 'profile'].includes(router.route.name) ? 'members' : router.route.name === 'post' ? 'journal' :
-    router.route.name === 'stage' ? 'chat' : router.route.name === 'friend' ? 'people' : ['history', 'fronts', 'layers'].includes(router.route.name) ? 'home' :
+    router.route.name === 'stage' ? 'chat' : router.route.name === 'friend' ? 'people' : ['history', 'fronts', 'layers'].includes(router.route.name) ? 'fronting' :
     ['insights', 'data', 'trash', 'settings', 'computer', 'search', 'post-stage'].includes(router.route.name) ? 'more' : router.route.name);
   const account = $derived(projection?.rows.account?.[sync.accountId]?.fields);
   const system = $derived(projection?.rows.system?.[sync.accountId]?.fields);
@@ -154,7 +157,7 @@
     }
     return current.filter((e) => e.layer_id === 'front').map((e) => subjects.get(e.subject_id)?.name).filter(Boolean).join(' & ') || 'No one fronting';
   });
-  const routeTitle = $derived(({ home: person ? 'Home' : 'Fronting', notifications: 'Notifications', members: 'Members', member: 'Edit member', profile: 'Profile', journal: 'Journal', post: 'Post', chat: 'Chat', people: 'Friends', friend: 'Friends', history: 'Front history', fronts: 'Fronts', layers: 'Layers & display', insights: 'Insights', data: 'Your data', settings: 'Settings', search: 'Search', trash: 'Trash', more: 'More', computer: 'This computer' } as Record<string, string>)[router.route.name] ?? 'Chorus');
+  const routeTitle = $derived(({ home: 'Home', fronting: 'Fronting', notifications: 'Notifications', members: 'Members', member: 'Edit member', profile: 'Profile', journal: 'Journal', post: 'Post', chat: 'Chat', people: 'Friends', friend: 'Friends', history: 'Front history', fronts: 'Fronts', layers: 'Layers & display', insights: 'Insights', data: 'Your data', settings: 'Settings', search: 'Search', trash: 'Trash', more: 'More', computer: 'This computer' } as Record<string, string>)[router.route.name] ?? 'Chorus');
 </script>
 
 <svelte:document onclick={openOwnLink} />
@@ -194,15 +197,18 @@
     <div class="workspace">
       <!-- Fronting's subpages carry their own back-arrow bars (Figma F3.4, F3.5, F3.7, F3.9), as Friends' pages do (F7) -->
       <header class="app-bar" class:subpage={(['fronts', 'layers', 'history'].includes(router.route.name) && !person) || router.route.name === 'friend' || router.route.name === 'people'}>
-        <div><strong>{routeTitle}</strong><span class="account-subtitle">{accountName}{#if router.route.name === 'home' && !person}{' · '}{homeSimple ? 'simple view' : `${current.length} here now`}{/if}</span></div>
-        {#if router.route.name === 'home' && !person}
+        <div><strong>{routeTitle}</strong><span class="account-subtitle">{accountName}{#if router.route.name === 'fronting' && !person}{' · '}{homeSimple ? 'simple view' : `${current.length} here now`}{:else if router.route.name === 'home'}{' · '}{new Date().toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' })}{/if}</span></div>
+        {#if router.route.name === 'home'}
+          <button class="sections-pill" onclick={() => (homeUi.sections = true)}><Icon name="sliders" size={18} />Sections</button>
+          <a class="icon-button" href="#/search" aria-label="Search"><Icon name="search" /></a>
+        {:else if router.route.name === 'fronting' && !person}
           <!-- Fronting's own bar (Figma F3.1): history and Layers & display for the shown front -->
           <a class="icon-button" href="#/history" aria-label="Front history"><Icon name="history" /></a>
           <a class="icon-button" href="#/layers/{frontingUi.front ?? sync.accountId}" aria-label="Layers and display"><Icon name="sliders" /></a>
         {:else}
         <a class="icon-button" href="#/search" aria-label="Search"><Icon name="search" /></a>
         {/if}
-        {#if !person && router.route.name !== 'home'}<button class="icon-button mobile-switch" onclick={() => (switching = true)} aria-label="Open switcher"><Icon name="swap" /></button>{/if}
+        {#if !person && !['home', 'fronting'].includes(router.route.name)}<button class="icon-button mobile-switch" onclick={() => (switching = true)} aria-label="Open switcher"><Icon name="swap" /></button>{/if}
       </header>
     <ConnectionBanner {status} />
     {#if storageFull}
@@ -212,8 +218,8 @@
       </p>
     {/if}
     <main id="main-content" tabindex="-1">
-      {#if person && (router.route.name === 'members' || router.route.name === 'history' || router.route.name === 'fronts')}
-        <Home {projection} {dark} onswitch={() => {}} />
+      {#if person && ['fronting', 'members', 'history', 'fronts', 'layers'].includes(router.route.name)}
+        <HomeDashboard {projection} {dark} onswitch={() => {}} />
       {:else if router.route.name === 'members'}
         <Members {projection} {dark} />
       {:else if router.route.name === 'member' && router.route.id}
@@ -267,8 +273,10 @@
         <People {projection} {dark} />
       {:else if router.route.name === 'trash'}
         <Trash {projection} channelId={router.route.id} />
+      {:else if router.route.name === 'fronting'}
+        <Fronting {projection} {dark} onswitch={(front?: string, addTo?: string) => { switchFront = front; switchAddTo = addTo; switching = true; }} />
       {:else}
-        <Home {projection} {dark} onswitch={(front?: string, addTo?: string) => { switchFront = front; switchAddTo = addTo; switching = true; }} />
+        <HomeDashboard {projection} {dark} onswitch={(front?: string, addTo?: string) => { switchFront = front; switchAddTo = addTo; switching = true; }} />
       {/if}
     </main>
     </div>
@@ -311,6 +319,7 @@
   .app-bar strong { display: block; font-size: 20px; line-height: 26px; }
   .account-subtitle { display: block; color: var(--ink-3); font-size: var(--fs-xs); }
   .mobile-switch { display: none; }
+  .sections-pill { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 14px; border: 0; border-radius: var(--r-full); background: var(--surface-2); color: var(--ink); font: inherit; font-size: var(--fs-sm); font-weight: 600; cursor: pointer; }
   @media (max-width: 1023px) { .app-bar.subpage { display: none; } }
   main { padding: 24px; max-width: 1200px; margin-inline: auto; min-width: 0; outline: none; }
   .chat-page main { padding: 0; max-width: none; }

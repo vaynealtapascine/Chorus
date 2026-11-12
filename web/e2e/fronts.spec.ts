@@ -11,7 +11,7 @@ test('fronts can be created, follow Body, be overridden and resume following', a
   for (const name of ['Kai', 'Moon']) await addMember(page, name);
 
   // a custom layer, from Layers & display
-  await go(page, '');
+  await go(page, 'fronting');
   await page.getByRole('link', { name: 'Layers and display' }).click();
   await page.getByRole('button', { name: /^Add a layer/ }).click();
   await page.getByLabel('Name', { exact: true }).fill('Quiet');
@@ -27,7 +27,7 @@ test('fronts can be created, follow Body, be overridden and resume following', a
   // Body switches; Headspace mirrors it
   const tab = (name: RegExp) => page.getByRole('tablist', { name: 'Fronts' }).getByRole('tab', { name });
   const shown = (name: string) => page.getByRole('region', { name, exact: true });
-  await go(page, '');
+  await go(page, 'fronting');
   await tab(/^Body/).click();
   await switchSheet(page, ['Kai']);
   await expect(shown('Body')).toContainText('Kai');

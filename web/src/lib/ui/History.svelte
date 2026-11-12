@@ -106,7 +106,7 @@
 {:else}
 <section class="page">
   <div class="bar">
-    <a class="back" href="#/" aria-label="Back to Fronting"><Icon name="back" size={22} /></a>
+    <a class="back" href="#/fronting" aria-label="Back to Fronting"><Icon name="back" size={22} /></a>
     <div class="titles"><strong>Front history</strong><span>{new Date(dayStart).toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' })}</span></div>
     <button class="icon-btn" aria-label="Log a past switch" onclick={() => (logging = true)}><Icon name="plus" size={22} /></button>
   </div>
