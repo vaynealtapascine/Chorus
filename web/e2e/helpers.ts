@@ -80,7 +80,7 @@ export async function addMember(page: Page, name: string, sigil?: string): Promi
 export async function newChannel(page: Page, name: string): Promise<void> {
   await go(page, 'chat');
   await page.getByRole('button', { name: 'New chat' }).click();
-  await page.getByRole('dialog', { name: 'New chat' }).getByRole('button', { name: /^New channel/ }).click();
+  await page.getByRole('dialog', { name: 'New message' }).getByRole('button', { name: /^New internal group/ }).click();
   const editor = page.getByRole('dialog', { name: 'New channel' });
   await editor.getByLabel('Name', { exact: true }).fill(name);
   await editor.getByRole('button', { name: 'Create' }).click();

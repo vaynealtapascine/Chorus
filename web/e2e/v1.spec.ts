@@ -110,14 +110,16 @@ test('an edited message keeps its history (SPEC §5.3)', async () => {
 
 test('a shared space between two accounts', async () => {
   const name = `Book club ${run}`;
-  // shared spaces start from New chat › New group (the old People form is gone, UI20)
+  // shared spaces start from New chat › New shared space: friends first, then a name (F5.10)
   await go(stars.page, 'chat');
   await stars.page.getByRole('button', { name: 'New chat' }).click();
-  const dialog = stars.page.getByRole('dialog', { name: 'New chat' });
-  await dialog.getByRole('button', { name: /^New group/ }).click();
-  await dialog.getByLabel('Group name').fill(name);
-  await dialog.locator('label.person', { hasText: 'Robin' }).locator('input').check();
-  await dialog.getByRole('button', { name: 'Create group' }).click();
+  await stars.page.getByRole('dialog', { name: 'New message' }).getByRole('button', { name: /^New shared space/ }).click();
+  const dialog = stars.page.getByRole('dialog', { name: 'New shared space' });
+  await dialog.getByRole('checkbox', { name: /Robin/ }).click();
+  await dialog.getByRole('button', { name: 'Name the space' }).click();
+  const naming = stars.page.getByRole('dialog', { name: 'Name' });
+  await naming.getByLabel('Name', { exact: true }).fill(name);
+  await naming.getByRole('button', { name: 'Create' }).click();
   const welcome = `welcome to the club ${run}`;
   const box = stars.page.getByLabel('Message', { exact: true });
   await expect(box).toBeVisible();

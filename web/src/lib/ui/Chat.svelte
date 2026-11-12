@@ -36,6 +36,7 @@
   import SpaceRoles from './SpaceRoles.svelte';
   import ChannelEditor from './ChannelEditor.svelte';
   import NewChat from './NewChat.svelte';
+  import { startFrom } from '../new-chat';
   import SpacePanel from './SpacePanel.svelte';
   import { profileHref } from '../profile-link';
   import { chatShown, privacyChannel } from '../chat-visible';
@@ -265,7 +266,7 @@
   let showPins = $state(false);
   let menuOpen = $state(false);
   // New chat, and editing this chat (D-099)
-  let newChat = $state(false);
+  let newChat = $state<false | 'message' | 'space'>(false);
   let editingChannel = $state(false);
   let editingGroup = $state(false);
   let dirTick = $state(0);
@@ -1172,7 +1173,7 @@
     onedit={() => (foldersAt = '')} {onmenu} /></div>
   <div class="desk-list"><ChatList {projection} {dark} currentId={current?.id} folder={openFolder} folders={folderSettings} {foldersAt}
     onfolders={(at) => (foldersAt = at)} {directory} person={!!self} {onswitch} {viewingAs}
-    onnewchat={() => (newChat = true)} tabs={railFolders} counts={folderCounts} onfolder={(f) => (folder = f)} /></div>
+    onnewchat={() => (newChat = startFrom(openFolder, folderSettings))} tabs={railFolders} counts={folderCounts} onfolder={(f) => (folder = f)} /></div>
 
   <section class="room" aria-label={current ? `#${current.name}` : 'Chat'} ondragover={(e) => { if (e.dataTransfer?.types.includes('Files')) e.preventDefault(); }} ondrop={dropFiles}>
     <header class="room-head" inert={searchHere}>
@@ -1676,7 +1677,7 @@
     </aside>
   {/if}
 </div>
-{#if newChat}<NewChat {projection} {dark} onclose={() => (newChat = false)} />{/if}
+{#if newChat}<NewChat {projection} {dark} start={newChat} onclose={() => (newChat = false)} />{/if}
 {#if editingGroup && space && !lockedOut}
   <ChannelEditor {projection} {dark} spaceId={space.id} spaceKind={space.kind} group={space}
     channel={spaceChannels.length <= 1 ? spaceChannels[0] : undefined} onclose={() => (editingGroup = false)} />
