@@ -87,11 +87,10 @@
 
   const stageDark = $derived(def.render.theme === 'custom' ? plan.palette?.dark === true : def.render.theme === 'dark' || (def.render.theme === 'auto' && dark));
   $effect(() => {
-    const root = document.documentElement;
-    if (def.render.theme === 'auto' || def.render.theme === 'custom') delete root.dataset.theme;
-    else root.dataset.theme = def.render.theme;
+    // dark or light is the stage's own choice; auto and custom keep the app's theme (deleting the attribute left the dark default)
+    document.documentElement.dataset.theme = def.render.theme === 'dark' || def.render.theme === 'light' ? def.render.theme : dark ? 'dark' : 'light';
   });
-  onDestroy(() => { delete document.documentElement.dataset.theme; });
+  onDestroy(() => { document.documentElement.dataset.theme = dark ? 'dark' : 'light'; });
 
   const nameOf = (id: string) => plan.names[id]?.label ?? people.get(id)?.display_name ?? people.get(id)?.name ?? 'Someone';
   const colorOf = (id: string) => core.adaptColor(plan.names[id] ? (plan.names[id].color ?? '#A09184') : (people.get(id)?.color ?? '#A09184'), stageDark);

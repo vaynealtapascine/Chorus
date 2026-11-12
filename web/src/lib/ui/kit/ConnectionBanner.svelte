@@ -36,10 +36,17 @@
     return () => clearTimeout(t);
   });
   const text = $derived(connectionText(shown, home));
+  // the strip is in the page's flow: tell the full-height screens (Chat) how much of the window it takes
+  let strip: HTMLDivElement | undefined = $state();
+  $effect(() => {
+    const root = document.documentElement;
+    if (strip) root.style.setProperty('--banner-h', `${strip.offsetHeight}px`);
+    return () => root.style.removeProperty('--banner-h');
+  });
 </script>
 
 {#if text}
-  <div class="banner" class:asleep={shown === 'asleep'} role="status">
+  <div class="banner" bind:this={strip} class:asleep={shown === 'asleep'} role="status">
     <Icon name={shown === 'asleep' ? 'moon' : 'cloud-off'} size={18} />
     <span>{text}</span>
     {#if shown === 'asleep'}<button onclick={() => sync.reconnectNow()}>Retry</button>{/if}

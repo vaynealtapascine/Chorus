@@ -1857,15 +1857,17 @@
     display: grid;
     grid-template-columns: 260px minmax(0, 1fr);
     gap: 0;
-    height: calc(100dvh - 76px);
+    height: calc(100dvh - 76px - var(--banner-h, 0px));
     min-width: 0;
   }
   @media (max-width: 1023px) {
     .chat {
       grid-template-columns: minmax(0, 1fr);
       grid-template-rows: minmax(0, 1fr);
-      height: calc(100dvh - 144px - env(safe-area-inset-bottom));
+      height: calc(100dvh - 144px - env(safe-area-inset-bottom) - var(--banner-h, 0px));
     }
+    /* an open chat carries its own head: no app bar above it (App.svelte), only the tab bar below */
+    .chat:not(.listing) { height: calc(100dvh - 72px - env(safe-area-inset-bottom) - var(--banner-h, 0px)); }
     .chat.listing .desk-list { display: grid; grid-template-columns: minmax(0, 1fr); min-height: 0; min-width: 0; }
     .chat.listing .desk-list > :global(*) { min-height: 0; }
     .chat.listing .room, .chat.listing .room-info { display: none; }
@@ -2050,7 +2052,7 @@
   .desk-rail, .desk-list { display: none; }
   /* desktop (Figma F5.21): folder rail, chat list, conversation and, when open, info */
   @media (min-width: 1024px) {
-    .chat { grid-template-columns: 76px 344px minmax(0, 1fr); height: 100dvh; }
+    .chat { grid-template-columns: 76px 344px minmax(0, 1fr); height: calc(100dvh - var(--banner-h, 0px)); }
     .desk-rail, .desk-list { display: grid; grid-template-columns: minmax(0, 1fr); min-height: 0; min-width: 0; }
     .desk-rail > :global(*), .desk-list > :global(*) { min-height: 0; }
   }

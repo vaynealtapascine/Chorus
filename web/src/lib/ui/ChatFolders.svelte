@@ -112,7 +112,7 @@
     <DragList items={rows} onreorder={reorder} label="Reorder folders">
       {#snippet row({ id })}
         {@const shown = !settings.hidden.includes(id)}
-        <Icon name={ICONS[id] ?? 'folder'} size={20} />
+        <span class="ico"><Icon name={ICONS[id] ?? 'folder'} size={20} /></span>
         {#if isBuiltIn(id)}
           <span class="name" class:off={!shown}><strong>{label(settings, id)}</strong><small>{summary(id)}</small></span>
         {:else}
@@ -145,6 +145,7 @@
 {/snippet}
 
 <style>
+  .ico { display: inline-flex; margin-right: var(--s-3); color: var(--ink-2); }
   .name { flex: 1; display: grid; min-width: 0; text-align: left; }
   .name strong { color: var(--ink); font-weight: 600; font-size: var(--fs-md); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .name small { color: var(--ink-3); font-size: var(--fs-sm); }
