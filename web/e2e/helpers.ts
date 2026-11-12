@@ -116,10 +116,10 @@ export function message(page: Page, text: string) {
   return page.locator('.msg', { hasText: text });
 }
 
-/** Set an audience chip ("This post", "This feed") to Friends: everyone who follows us. */
+/** Set an audience chip ("This post", "This feed") to Followers: everyone who follows us (it read "Friends" before D-129). */
 export async function shareWithFriends(page: Page, chip: string): Promise<void> {
   await page.getByRole('button', { name: new RegExp(`^${chip}: .*Change who can see it$`) }).click();
-  await page.getByRole('menuitemradio', { name: /^Friends/ }).click();
+  await page.getByRole('menuitemradio', { name: /^Followers/ }).click();
 }
 
 /** A new front from Fronts › New front › Custom; leaves its card open for editing (F3.4). */
@@ -161,6 +161,12 @@ export async function acceptRequest(page: Page, preset: 'Close — instant' | 'G
   await sheet.getByRole('radio', { name: new RegExp(`^${preset}`) }).click();
   await sheet.getByRole('button', { name: /^Accept/ }).click();
   await expect(sheet).toBeHidden();
+  // accepting offers to follow back (D-129); these flows stay one-way
+  const back = page.getByRole('dialog', { name: /^Follow .+ back\?$/ });
+  if (await back.waitFor({ state: 'visible', timeout: 5_000 }).then(() => true, () => false)) {
+    await back.getByRole('button', { name: 'Not now' }).click();
+    await expect(back).toBeHidden();
+  }
 }
 
 /** A friend's row on Friends, by name. */
