@@ -98,7 +98,7 @@
       {/if}
     </div>
   {:else}
-    <div class="card"><EmptyState icon="globe" label="No webhooks" action="Add webhook" onaction={() => (adding = true)} /></div>
+    <div class="card"><EmptyState icon="globe" label="No webhooks" /></div>
   {/each}
 </section>
 

@@ -97,7 +97,7 @@
         <button class="revoke" onclick={() => (revoking = t)}>Revoke</button>
       </div>
     {:else}
-      <EmptyState icon="globe" label="No tokens" action="New token" onaction={() => (adding = true)} />
+      <EmptyState icon="globe" label="No tokens" />
     {/each}
   </div>
 </section>
