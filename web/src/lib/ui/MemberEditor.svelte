@@ -3,6 +3,7 @@
   // Description, then the More rows (Groups, Who can see, Custom fields, Handles, Banner, ...), and
   // Archive at the foot. The top fields are a draft that Save writes; the rows open their own sheets
   // or pages and save as they are used.
+  import Segmented from './kit/Segmented.svelte';
   import Pill from './kit/Pill.svelte';
   import Button from './kit/Button.svelte';
   import { onDestroy, untrack } from 'svelte';
@@ -347,9 +348,9 @@
   {#if notifying}
     <Sheet title="Chat notifications" subtitle={shownName} onclose={() => (notifying = false)}>
       <p class="label">When someone mentions {shownName}</p>
-      <div class="seg" role="radiogroup" aria-label="Mentions">{#each RULES as r (r.id)}<button role="radio" aria-checked={(notifyRule.mentions ?? 'always') === r.id} onclick={() => setNotifyRule('mentions', r.id)}>{r.label}</button>{/each}</div>
+      <Segmented label="Mentions" options={RULES} value={notifyRule.mentions ?? 'always'} onchange={(id) => setNotifyRule('mentions', id)} />
       <p class="label">Member DMs to {shownName}</p>
-      <div class="seg" role="radiogroup" aria-label="Member DMs">{#each RULES as r (r.id)}<button role="radio" aria-checked={(notifyRule.dms ?? 'fronting') === r.id} onclick={() => setNotifyRule('dms', r.id)}>{r.label}</button>{/each}</div>
+      <Segmented label="Member DMs" options={RULES} value={notifyRule.dms ?? 'fronting'} onchange={(id) => setNotifyRule('dms', id)} />
       {#snippet footer()}<button class="save" onclick={() => (notifying = false)}>Done</button>{/snippet}
     </Sheet>
   {/if}
@@ -421,7 +422,4 @@
   .tag-row input { width: 7em; font: inherit; color: var(--ink); background: var(--surface-2); border: 0; border-radius: var(--r-sm); padding: var(--s-2) 10px; }
   .dashed { display: flex; align-items: center; justify-content: center; gap: var(--s-2); min-height: 48px; border: 1.5px dashed var(--line); border-radius: var(--r-md); background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
   .label { margin: var(--s-1) 0 0; color: var(--ink-2); font-size: 14px; }
-  .seg { display: flex; gap: 3px; padding: 3px; border-radius: var(--r-row); background: var(--surface-2); }
-  .seg button { flex: 1; min-height: 34px; border: 0; border-radius: 9px; background: none; color: var(--ink-3); font: inherit; font-size: var(--fs-sm); font-weight: 500; cursor: pointer; }
-  .seg button[aria-checked='true'] { background: var(--accent); color: var(--on-accent); font-weight: 600; }
 </style>
