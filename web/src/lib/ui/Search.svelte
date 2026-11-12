@@ -161,7 +161,6 @@
   {#if !channelId}<nav aria-label="Search scope">{#each [['messages','All chats'],['posts','Journal'],['saved','Saved'],['switches','Switches']] as [id,label]}<button aria-pressed={scope===id} onclick={()=>tab=id as typeof tab}>{label}</button>{/each}</nav>{/if}
   <input type="search" aria-label={channelId ? 'Search this chat' : `Search ${scope==='messages'?'all chats':scope==='saved'?'saved posts':scope==='posts'?'Journal':'switches'}`} placeholder="Search words or filters" bind:value={query}/>
   <p class="hint">{scope==='messages' ? 'Current front · from:, in:, has:, before:, after:, is:pinned. Context shows only messages available now.' : scope==='switches' ? 'Switch names and notes · before: and after:.' : `${scope==='saved'?'Bookmarked posts':'Journal posts and entries'} · titles, text and tags; before: and after:.`}</p>
-  {#if connection.status!=='live'}<p class="hint" role="status">Offline · searching what is on this device. Shared posts need a connection.</p>{/if}
   {#if error}<p role="status">Server search unavailable. Local results are below. {error}</p>{/if}
   {#if scope==='messages' && parsedMessage.error}<p role="alert">{parsedMessage.error}</p>{/if}
   {#if !available}<EmptyState icon="lock" label="Private chat" />

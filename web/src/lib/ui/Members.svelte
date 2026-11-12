@@ -8,6 +8,7 @@
   import AvatarImage from './AvatarImage.svelte';
   import MemberBanner from './MemberBanner.svelte';
   import Icon from './Icon.svelte';
+  import EmptyState from './kit/EmptyState.svelte';
   import { orderedMembers } from '../member-order';
   import {
     addFolder, bioLine, FOLDER_OF, FOLDERS, memberListPrefs, memberSections, moveFolder, pillsFor, removeFolder,
@@ -249,7 +250,7 @@
             <button class="ghost" onclick={() => sync.create('group.delete', sync.accountScope, g.id, {})}>Remove</button>
           </li>
         {:else}
-          <li class="muted">No subsystems or groups yet.</li>
+          <li><EmptyState icon="users" label="No subsystems or groups yet" /></li>
         {/each}
       </ul>
       <form onsubmit={addGroup}>
