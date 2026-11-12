@@ -26,6 +26,7 @@
   import Sheet from './Sheet.svelte';
   import LogPastSwitch from './LogPastSwitch.svelte';
   import PlaceSheet from './PlaceSheet.svelte';
+  import MemberState from './MemberState.svelte';
   import HomeSections from './HomeSections.svelte';
   import SectionLabel from './kit/SectionLabel.svelte';
   import { cap, parseWords } from '../words';
@@ -67,6 +68,7 @@
   const named = $derived.by(() => { void projection.front_systems; return configured ? sync.frontHistory(accountId) : null; });
   let logging = $state(false);
   let placing = $state<Who | null>(null);
+  let stating = $state<Who | null>(null);
 
   // ---- quick switch: one tap replaces the front with that member
   let width = $state(720);
@@ -332,7 +334,8 @@
 {#if logging}
   <LogPastSwitch {projection} {dark} front={accountId} {named} onclose={() => (logging = false)} />
 {/if}
-{#if placing}<PlaceSheet {projection} {dark} front={accountId} who={placing} since={since.get(placing.id) ?? null} onclose={() => (placing = null)} />{/if}
+{#if placing}<PlaceSheet {projection} {dark} front={accountId} who={placing} since={since.get(placing.id) ?? null} onclose={() => (placing = null)} onstate={() => { stating = placing; placing = null; }} />{/if}
+{#if stating}<MemberState {projection} {dark} who={stating} onclose={() => (stating = null)} />{/if}
 {#if following}
   <Sheet title="Follow someone" onclose={() => (following = false)}>
     <form class="follow" onsubmit={follow}>

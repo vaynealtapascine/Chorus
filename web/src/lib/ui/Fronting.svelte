@@ -3,7 +3,7 @@
   // as nested containers, separately listed layers, Away, the other fronts and a Switch button.
   // Each front shows Simple, Detailed or Complete (F3.9, `fronting.display`, D-122).
   import { sync, type Projection } from '../sync/client';
-  import { resumeFollowing } from '../front.svelte';
+  import { place, resumeFollowing } from '../front.svelte';
   import { frontLayers, frontList } from '../front-view';
   import type { FrontPresence } from '../core/fronts';
   import * as fd from '../fronting-display';
@@ -13,6 +13,9 @@
   import Icon from './Icon.svelte';
   import Face from './Face.svelte';
   import PlaceSheet from './PlaceSheet.svelte';
+  import MemberState from './MemberState.svelte';
+  import MenuSheet from './kit/MenuSheet.svelte';
+  import MenuRow from './kit/MenuRow.svelte';
 
   let { projection, dark, onswitch }: { projection: Projection; dark: boolean; onswitch: (front?: string, addTo?: string) => void } = $props();
 
@@ -58,6 +61,8 @@
   let simpleMore = $state(false);
   let menu = $state(false);
   let placing = $state<Who | null>(null);
+  let stating = $state<Who | null>(null);
+  let rowMenu = $state<Who | null>(null);
 
   const whoOf = (e: FrontPresence) => who.get(whoKey(e.subject_type, e.subject_id));
   function line(e: FrontPresence): string {
@@ -67,6 +72,10 @@
     return [whoOf(e)?.pronouns, t ? `since ${time(t)}` : null].filter(Boolean).join(' · ');
   }
   const took = (e: FrontPresence) => (view.showTime && since.has(e.subject_id) ? fd.duration(now - since.get(e.subject_id)!) : '');
+  function removeFrom(w: Who) {
+    const name = selected?.name ?? 'Body';
+    place([{ type: w.type, id: w.id, layer: null, present: true }], `${w.name} left ${name}`, configured ? frontId : null, selected?.entries ?? [], scene.nested[0]?.id);
+  }
   const open = (e: FrontPresence) => { const w = whoOf(e); if (w) placing = w; };
   function otherSummary(f: (typeof fronts)[number]): string {
     const named = projection.front_systems?.[sync.accountId];
@@ -82,6 +91,17 @@
   }
   const simpleRest = $derived(scene.all.filter((l) => l.id !== scene.nested[0]?.id && !l.hidden).flatMap((l) => l.entries.map((e) => ({ e, l }))));
 </script>
+
+{#snippet memberRow(e: FrontPresence, simple: boolean)}
+  <div class="row" class:simple>
+    <button class="main" onclick={() => open(e)}>
+      <Face who={whoOf(e)} size={40} {dark} />
+      <span class="info"><strong>{whoOf(e)?.name ?? 'Someone'}</strong>{#if line(e)}<span>{line(e)}</span>{/if}</span>
+      {#if took(e)}<span class="took">{took(e)}</span>{/if}
+    </button>
+    <button class="icon-btn" aria-label="{whoOf(e)?.name ?? 'Someone'} options" onclick={() => { const w = whoOf(e); if (w) rowMenu = w; }}><Icon name="more-vert" size={18} /></button>
+  </div>
+{/snippet}
 
 <div class="home">
     <div class="tabs" role="tablist" aria-label="Fronts">
@@ -110,11 +130,7 @@
       <section class="card" aria-label="Fronting now">
         <header class="card-head"><Icon name="target" size={18} /><strong>{inner?.name ?? 'Fronting'} now</strong><span class="since">{frontSince ? `since ${time(frontSince)}` : ''}</span></header>
         {#each inner?.entries ?? [] as e (whoKey(e.subject_type, e.subject_id))}
-          <button class="row simple" onclick={() => open(e)}>
-            <Face who={whoOf(e)} size={40} {dark} />
-            <span class="info"><strong>{whoOf(e)?.name ?? 'Someone'}</strong>{#if line(e)}<span>{line(e)}</span>{/if}</span>
-            {#if took(e)}<span class="took">{took(e)}</span>{/if}<Icon name="more-vert" size={18} />
-          </button>
+          {@render memberRow(e, true)}
         {:else}<p class="none">No one in {inner?.name ?? 'front'}</p>{/each}
         {#if simpleRest.length}
           {@const names = simpleRest.map(({ e }) => whoOf(e)).filter((w): w is Who => !!w)}
@@ -154,11 +170,7 @@
                 <div class="layer-label"><strong>{l.name}</strong><span>{[fd.shortAbout(l.about), l.entries.length > 1 ? `${l.entries.length} co-${l.name.toLowerCase()}` : null].filter(Boolean).join(' · ')}</span>
                   <button class="icon-btn add" aria-label="Add someone to {l.name}" onclick={() => onswitch(frontId, l.id)}><Icon name="plus" size={18} /></button></div>
                 {#each l.entries as e (whoKey(e.subject_type, e.subject_id))}
-                  <button class="row" onclick={() => open(e)}>
-                    <Face who={whoOf(e)} size={40} {dark} />
-                    <span class="info"><strong>{whoOf(e)?.name ?? 'Someone'}</strong>{#if line(e)}<span>{line(e)}</span>{/if}</span>
-                    {#if took(e)}<span class="took">{took(e)}</span>{/if}<Icon name="more-vert" size={18} />
-                  </button>
+                  {@render memberRow(e, false)}
                 {:else}<p class="none">No one in {l.name}</p>{/each}
               </div>
             {:else}
@@ -224,7 +236,15 @@
   </section></details>
 </div>
 
-{#if placing}<PlaceSheet {projection} {dark} front={frontId} who={placing} since={since.get(placing.id) ?? null} onclose={() => (placing = null)} />{/if}
+{#if placing}<PlaceSheet {projection} {dark} front={frontId} who={placing} since={since.get(placing.id) ?? null} onclose={() => (placing = null)} onstate={() => { stating = placing; placing = null; }} />{/if}
+{#if stating}<MemberState {projection} {dark} who={stating} onclose={() => (stating = null)} />{/if}
+{#if rowMenu}
+  <MenuSheet title={rowMenu.name} onclose={() => (rowMenu = null)}>
+    {#if rowMenu.type === 'member'}<MenuRow icon="smile" label="Set state" onclick={() => { stating = rowMenu; rowMenu = null; }} />{/if}
+    <MenuRow icon="swap" label="Move to another layer" onclick={() => { placing = rowMenu; rowMenu = null; }} />
+    <MenuRow icon="delete" danger label="Remove from {selected?.name ?? 'Body'}" onclick={() => { if (rowMenu) removeFrom(rowMenu); rowMenu = null; }} />
+  </MenuSheet>
+{/if}
 
 <style>
   .home { display: grid; gap: 10px; max-width: 720px; padding-bottom: 96px; }
@@ -257,9 +277,9 @@
   .layer-label { display: flex; align-items: center; gap: 6px; padding: 0 0 2px 4px; min-width: 0; }
   .layer-label strong { color: var(--l-label); font-size: 12px; font-weight: 700; }
   .layer-label span { flex: 1; min-width: 0; color: var(--ink-3); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .row { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 8px 4px 8px 8px; border: 0; border-radius: 12px; background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; }
+  .row { display: flex; align-items: center; width: 100%; border-radius: 12px; background: var(--surface); color: var(--ink); }
   .row.simple { background: var(--accent-soft); }
-  .row > :global(.icon) { color: var(--ink-3); margin-right: 6px; }
+  .row .main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 8px 4px 8px 8px; border: 0; border-radius: 12px; background: none; color: inherit; font: inherit; cursor: pointer; text-align: left; }
   .info { flex: 1; min-width: 0; display: grid; gap: 1px; text-align: left; }
   .info strong { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .info > span { color: var(--ink-3); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

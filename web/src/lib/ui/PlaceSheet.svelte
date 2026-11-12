@@ -9,10 +9,9 @@
   import { sync, type Projection } from '../sync/client';
   import Face from './Face.svelte';
   import Icon from './Icon.svelte';
-  import Switch from './kit/Switch.svelte';
 
-  let { projection, dark, front, who, since, onclose }: {
-    projection: Projection; dark: boolean; front: string; who: Who; since: number | null; onclose: () => void;
+  let { projection, dark, front, who, since, onclose, onstate }: {
+    projection: Projection; dark: boolean; front: string; who: Who; since: number | null; onclose: () => void; onstate: () => void;
   } = $props();
   const configured = $derived(!!projection.front_systems?.[sync.accountId]);
   const display = $derived(fd.displayPrefs(projection.rows.pref, sync.accountId));
@@ -27,25 +26,6 @@
   const states = $derived(fd.customStates(projection.rows.custom_state));
   const current = $derived(fd.memberStatuses(projection.rows.pref, sync.accountId).get(who.id) ?? null);
   const status = $derived(current && fd.statusShowing(current, entry ? since : null) ? fd.statusLine(current, states) : null);
-  // the state picker (F3.10; Android MemberStatePage): any of the common states, the system's own, own words, a note
-  let stateView = $state(false);
-  let picked = $state<string[]>([]);
-  let offered = $state<string[]>([]);
-  let note = $state('');
-  let clear = $state(true);
-  let typing = $state(false);
-  let words = $state('');
-  function openState() {
-    picked = [...(current?.tags ?? [])]; offered = fd.statusChoices(states, current);
-    note = current?.note ?? ''; clear = current?.clearOnLeave ?? true; typing = false; words = ''; stateView = true;
-  }
-  const ready = $derived(picked.length > 0 || !!note.trim());
-  const toggleTag = (t: string) => (picked = picked.includes(t) ? picked.filter((x) => x !== t) : [...picked, t]);
-  function addWords() {
-    const t = words.trim().slice(0, fd.MAX_STATUS_TAG);
-    if (t) { if (!offered.includes(t)) offered = [...offered, t]; if (!picked.includes(t)) picked = [...picked, t]; }
-    words = ''; typing = false;
-  }
   const time = (t: number) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const frontName = $derived(here?.name ?? 'Body');
 
@@ -64,43 +44,12 @@
     const present = f.entries.some((e) => e.subject_type === who.type && e.subject_id === who.id);
     place([{ type: who.type, id: who.id, layer: on ? nested[0]?.id ?? 'front' : null, present }], on ? `${who.name} is in ${f.name}` : `${who.name} left ${f.name}`, f.id, f.entries, nested[0]?.id);
   }
-  function setState(clearIt = false) {
-    if (!clearIt && !ready) return;
-    fd.setStatus(who.id, clearIt ? null : { ...current, tags: picked, note: note.trim() || null, at: Date.now(), clearOnLeave: clear }, states);
-    stateView = false;
-  }
 </script>
 
 <svelte:window onkeydown={(e) => e.key === 'Escape' && onclose()} />
 <div class="scrim" onclick={onclose} role="presentation"></div>
-<div class="sheet" role="dialog" aria-modal="true" aria-label={stateView ? `${who.name}'s state` : `Place ${who.name}`}>
+<div class="sheet" role="dialog" aria-modal="true" aria-label="Place {who.name}">
   <div class="handle" aria-hidden="true"></div>
-  {#if stateView}
-    <header><button class="icon-btn" aria-label="Back" onclick={() => (stateView = false)}><Icon name="back" size={22} /></button>
-      <div class="titles"><h2>{who.name}'s state</h2></div>
-      <button class="icon-btn" class:accent={ready} aria-label="Set state" disabled={!ready} onclick={() => setState()}><Icon name="check" size={22} /></button></header>
-    <div class="who"><Face {who} size={56} {dark} />
-      <div class="titles"><strong>{who.name}</strong>
-        {#if picked.length}<span class="picked">{#each picked as t (t)}<span>{fd.statusLabel(t, states)}</span>{/each}</span>{/if}</div></div>
-    <p class="section">How are things?</p>
-    <div class="states" role="group" aria-label="How are things?">
-      {#each offered as t (t)}
-        {@const on = picked.includes(t)}
-        <button role="checkbox" aria-checked={on} class:on onclick={() => toggleTag(t)}>{#if on}<Icon name="check" size={14} />{/if}{fd.statusLabel(t, states)}</button>
-      {/each}
-      <button class="add" onclick={() => (typing = true)}><Icon name="plus" size={14} />Custom</button>
-    </div>
-    <!-- svelte-ignore a11y_autofocus -->
-    {#if typing}<input class="own" bind:value={words} maxlength={fd.MAX_STATUS_TAG} placeholder="Custom" aria-label="Custom" autofocus
-      onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addWords(); } }} onblur={addWords} />{/if}
-    <textarea class="own" bind:value={note} maxlength={fd.MAX_STATUS_NOTE} rows="2" placeholder="Note (optional)" aria-label="Note (optional)"></textarea>
-    <p class="section">Options</p>
-    <div class="opts"><Switch label="Clear when {who.name} stops fronting" bind:checked={clear} /></div>
-    <div class="buttons">
-      <button class="outline" disabled={!current} onclick={() => setState(true)}>Clear</button>
-      <button class="primary grow" disabled={!ready} onclick={() => setState()}>Set state</button>
-    </div>
-  {:else}
     <header><Face {who} size={52} {dark} />
       <div class="titles"><h2>{who.name}</h2><p>{layerName(entry?.layer_id ?? null).toLowerCase()} in {frontName}{entry && since ? ` · since ${time(since)}` : ''}</p></div>
       <button class="icon-btn" aria-label="Close" onclick={onclose}><Icon name="close" size={22} /></button></header>
@@ -122,7 +71,7 @@
       {/each}
     </div>
     {#if who.type === 'member'}
-      <button class="setting" onclick={openState}><span><strong>State</strong><span>{status ?? ''}</span></span><Icon name="chevron-right" size={18} /></button>
+      <button class="setting" onclick={onstate}><span><strong>State</strong><span>{status ?? ''}</span></span><Icon name="chevron-right" size={18} /></button>
     {/if}
     {#if configured && fronts.length > 1}
       <p class="section">Also present in</p>
@@ -139,7 +88,6 @@
       <button class="primary grow" onclick={save}>{chosen === (entry?.layer_id ?? null) ? (entry ? `Keep ${layerName(chosen).toLowerCase()}` : 'Keep away')
         : chosen === null ? 'Set away' : `Move to ${layerName(chosen).toLowerCase()}`}</button>
     </div>
-  {/if}
 </div>
 
 {#snippet choiceLine(id: string | null, title: string, about: string, hidden = false)}
@@ -188,19 +136,4 @@
   .grow { flex: 1; }
   .outline { background: none; border: 1px solid var(--line); color: var(--ink-2); }
   .danger { color: var(--danger); }
-  .states { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 20px; }
-  .states button { display: inline-flex; align-items: center; padding: 8px 14px; border-radius: 999px; border: 0; background: var(--surface-2); color: var(--ink); font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; }
-  .states button.on { background: var(--accent-soft); color: var(--accent); }
-  .states button :global(.icon) { margin-right: 6px; }
-  .states .add { color: var(--ink-2); }
-  .opts { padding: 0 6px; }
-  .who { display: flex; align-items: center; gap: 14px; padding: 4px 20px 0; }
-  .who strong { font-size: 18px; font-weight: 600; }
-  .picked { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
-  .picked span { padding: 3px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 500; }
-  .icon-btn.accent { color: var(--accent); }
-  .icon-btn:disabled { color: var(--ink-3); cursor: default; }
-  .outline:disabled { opacity: 0.5; cursor: default; }
-  textarea.own { margin-top: 10px; resize: vertical; }
-  .own { margin: 0 20px; font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
 </style>
