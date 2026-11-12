@@ -405,6 +405,7 @@ test('a device signed out from another one goes back to onboarding, and can be l
     await erase.click();
   }
   await live(desk.page);
+  await go(desk.page, 'fronting'); // it lands on Home (D-130)
   await expect(fronting(desk.page)).toContainText('Kai'); // the suite's last switch, above
 
   // signed out again, asking for its copy to go at once (D-152)
