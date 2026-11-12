@@ -1,6 +1,7 @@
 <script lang="ts">
   // Custom fronts (F4.1's third tab): the states that can front instead of a member, e.g. "Blurry".
   // Removing one keeps its history.
+  import TextField from './kit/TextField.svelte';
   import Button from './kit/Button.svelte';
   import { sync, type Projection } from '../sync/client';
   import Icon from './Icon.svelte';
@@ -57,8 +58,8 @@
 
 {#if open}
   <Sheet title={current?.name ?? 'New custom front'} onclose={close}>
-    <input class="field" bind:value={name} placeholder="Name" aria-label="Name" maxlength="40" />
-    <input class="field" bind:value={about} placeholder="Description" aria-label="Description" maxlength="200" />
+    <TextField bind:value={name} placeholder="Name" aria-label="Name" maxlength={40} />
+    <TextField bind:value={about} placeholder="Description" aria-label="Description" maxlength={200} />
     <Swatches value={color} onpick={(c) => (color = c)} />
     {#if current}<button class="remove" onclick={() => (removing = true)}><Icon name="delete" size={20} />Remove {current.name}</button>{/if}
     {#snippet footer()}<Button variant="primary" grow class="go" disabled={!name.trim()} onclick={save}>{current ? 'Save' : 'Add'}</Button>{/snippet}
@@ -80,6 +81,5 @@
   .info strong { font-size: var(--fs-base); font-weight: 600; }
   .info span { color: var(--ink-3); font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .dashed { display: flex; align-items: center; justify-content: center; gap: var(--s-2); min-height: 52px; margin-top: var(--s-2); border: 1.5px dashed var(--line); border-radius: var(--r-md); background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
-  .field { font: inherit; color: var(--ink); background: var(--surface-2); border: 0; border-radius: var(--r-row); padding: var(--s-3) 14px; }
   .remove { display: flex; align-items: center; gap: var(--s-3); min-height: 48px; border: 0; background: none; color: var(--danger); font: inherit; cursor: pointer; padding: 0 var(--s-1); }
 </style>

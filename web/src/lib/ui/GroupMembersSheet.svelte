@@ -1,5 +1,6 @@
 <script lang="ts">
   // Who is in a group: tap to put someone in or take them out. One op per tap, so it works offline.
+  import TextField from './kit/TextField.svelte';
   import Button from './kit/Button.svelte';
   import { fuzzy, groupPath, groups } from '../data';
   import { sync, type Projection } from '../sync/client';
@@ -19,7 +20,7 @@
 
 {#if group}
   <Sheet title={groupPath(group, gs)} subtitle={groupLine(groupMembers(projection, groupId).length, group.visibility)} {onclose} {layer}>
-    {#if all.length > 8}<input class="search" bind:value={query} placeholder="Search members" aria-label="Search members" />{/if}
+    {#if all.length > 8}<TextField bind:value={query} placeholder="Search members" aria-label="Search members" />{/if}
     <FormCard>
       {#each shown as c (c.member.id)}
         <MemberPickRow member={c.member} {dark} on={c.inside} disabled={c.loops} sub={c.loops ? 'Inside them already' : null} onclick={() => toggle(c.member.id, c.inside)} />
@@ -30,5 +31,4 @@
 {/if}
 
 <style>
-  .search { font: inherit; color: var(--ink); background: var(--surface-2); border: 0; border-radius: var(--r-row); padding: 10px 14px; }
 </style>

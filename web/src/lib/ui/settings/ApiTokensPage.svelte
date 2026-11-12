@@ -1,6 +1,7 @@
 <script lang="ts">
   // Personal API tokens (API.md §2.3, §3, §6; Figma F9.3): read-only or log-a-switch, limited to your
   // own account. The secret is shown once.
+  import TextField from '../kit/TextField.svelte';
   import Button from '../kit/Button.svelte';
   import Icon from '../Icon.svelte';
   import Sheet from '../Sheet.svelte';
@@ -104,7 +105,7 @@
 {#if adding}
   <Sheet title="New token" onclose={() => (adding = false)}>
     <form id="new-token" onsubmit={create}>
-      <input bind:value={name} placeholder="What it's for (e.g. OBS overlay)" aria-label="Token name" required />
+      <TextField outlined bind:value={name} placeholder="What it's for (e.g. OBS overlay)" aria-label="Token name" required />
       <FormCard label="What it can do">
         {#each SCOPES as s (s.id)}
           <Switch label={s.label} checked={chosen.includes(s.id)} onchange={(on) => (chosen = on ? [...chosen, s.id] : chosen.filter((c) => c !== s.id))} />
@@ -140,5 +141,4 @@
   .hint { margin: 0; color: var(--ink-3); font-size: var(--fs-sm); }
   .error { margin: 0; color: var(--danger); }
   form { display: grid; gap: var(--s-3); }
-  input { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-row); padding: var(--s-3) 14px; }
 </style>

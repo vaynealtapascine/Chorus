@@ -2,6 +2,7 @@
   // "Make X a subsystem" and "Inside X" (D-092): a member linked to a subsystem group, whose members
   // are inside them. The link is the account pref `member_subsystem:<member>`; the parts are ordinary
   // group membership. Nobody can be put inside themselves, or inside someone they hold.
+  import TextField from './kit/TextField.svelte';
   import Button from './kit/Button.svelte';
   import { fuzzy, groupPath, groups, membership, type MemberRow } from '../data';
   import { sync, type Projection } from '../sync/client';
@@ -51,7 +52,7 @@
       </FormCard>
     {/if}
   {:else}
-    {#if all.length > 8 || query}<input class="search" bind:value={query} placeholder="Search members" aria-label="Search members" />{/if}
+    {#if all.length > 8 || query}<TextField bind:value={query} placeholder="Search members" aria-label="Search members" />{/if}
     <FormCard>
       {#each shown as c (c.member.id)}
         <MemberPickRow member={c.member} {dark} on={c.inside} disabled={c.loops} sub={c.loops ? `${name} is inside them` : null}
@@ -69,6 +70,5 @@
   .existing { display: flex; align-items: center; gap: var(--s-3); min-height: 56px; padding: var(--s-2) 14px; border: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
   .existing span { display: grid; }
   .existing span span { color: var(--ink-3); font-size: var(--fs-xs); }
-  .search { font: inherit; color: var(--ink); background: var(--surface-2); border: 0; border-radius: var(--r-row); padding: 10px 14px; }
   .stop { display: flex; align-items: center; gap: var(--s-3); min-height: 48px; border: 0; background: none; color: var(--danger); font: inherit; cursor: pointer; padding: 0 var(--s-1); }
 </style>

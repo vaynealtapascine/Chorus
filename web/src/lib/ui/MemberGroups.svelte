@@ -1,6 +1,7 @@
 <script lang="ts">
   // The Groups tab (F4.4): every group as a card that opens on its members. Any group, plain or
   // subsystem, can be filled and emptied here; edit, recolour or remove from the card.
+  import TextField from './kit/TextField.svelte';
   import Button from './kit/Button.svelte';
   import { groupPath, groups } from '../data';
   import { actingOpts } from '../front-view';
@@ -75,7 +76,7 @@
 {#if adding}<GroupMembersSheet {projection} {dark} groupId={adding} onclose={() => (adding = null)} />{/if}
 {#if editGroup}
   <Sheet title={editGroup.name} subtitle={groupLine(groupMembers(projection, editGroup.id).length, editGroup.visibility)} onclose={() => (editing = null)}>
-    <input class="field" bind:value={name} aria-label="Name" maxlength="60" />
+    <TextField bind:value={name} aria-label="Name" maxlength={60} />
     <Swatches value={color} onpick={(c) => (color = c)} />
     <button class="remove" onclick={() => (removing = true)}><Icon name="delete" size={20} />Remove {editGroup.name}</button>
     {#snippet footer()}<Button variant="primary" grow class="go" disabled={!name.trim()} onclick={save}>Save</Button>{/snippet}
@@ -103,6 +104,5 @@
   .foot { display: flex; align-items: center; padding: 0 var(--s-1) 6px 18px; }
   .link { display: inline-flex; align-items: center; gap: var(--s-2); flex: 1; justify-content: flex-start; min-height: 40px; border: 0; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
   .dashed { display: flex; align-items: center; justify-content: center; gap: var(--s-2); min-height: 52px; border: 1.5px dashed var(--line); border-radius: var(--r-md); background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
-  .field { font: inherit; color: var(--ink); background: var(--surface-2); border: 0; border-radius: var(--r-row); padding: var(--s-3) 14px; }
   .remove { display: flex; align-items: center; gap: var(--s-3); min-height: 48px; border: 0; background: none; color: var(--danger); font: inherit; cursor: pointer; padding: 0 var(--s-1); }
 </style>

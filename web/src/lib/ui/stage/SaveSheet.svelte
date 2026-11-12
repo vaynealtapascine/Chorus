@@ -5,6 +5,7 @@
 <script lang="ts">
   // F8.9: name this stage and save it; the saved ones below reopen with a tap. Saving under a name
   // already used here replaces that stage.
+  import TextField from '../kit/TextField.svelte';
   import Button from '../kit/Button.svelte';
   import Icon from '../Icon.svelte';
   import Sheet from '../Sheet.svelte';
@@ -20,7 +21,7 @@
 </script>
 
 <Sheet title="Save this stage" subtitle="Saves the setup, not a copy of the messages. Deleted messages drop out." {onclose} layer={3}>
-  <label class="name"><span>Name</span><input bind:value={name} onkeydown={(e) => e.key === 'Enter' && name.trim() && onsave(name.trim())} /></label>
+  <label class="name"><span>Name</span><TextField outlined tall bind:value={name} onkeydown={(e) => e.key === 'Enter' && name.trim() && onsave(name.trim())} /></label>
   {#if saved.length}
     <h3>Saved stages</h3>
     <FormCard>
@@ -49,7 +50,6 @@
 
 <style>
   .name { display: grid; gap: var(--s-1); color: var(--ink-3); font-size: var(--fs-sm); }
-  .name input { height: 48px; padding: 0 14px; border: 1px solid var(--line); border-radius: var(--r-row); background: var(--surface-2); color: var(--ink); font: inherit; font-size: var(--fs-base); }
   h3 { margin: var(--s-1) var(--s-1) 0; color: var(--ink-3); font-size: var(--fs-sm); font-weight: 500; }
   .saved { display: flex; align-items: center; min-height: 56px; }
   .open { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--s-3); padding: var(--s-2) 0 var(--s-2) 14px; border: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }

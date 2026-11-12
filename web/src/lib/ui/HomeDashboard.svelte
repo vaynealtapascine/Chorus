@@ -3,6 +3,7 @@
   // past one, Quick switch, chats waiting, friends right now, Today and new posts from friends; a
   // person gets a composer row, friends, chats and posts, and a first day of Welcome and Try. Each
   // reader chooses and orders the sections (`home.sections`, shared with Android, F0.3).
+  import TextField from './kit/TextField.svelte';
   import Button from './kit/Button.svelte';
   import { channels, latestMessage, members, selfMember, spaces, unread, type ChannelRow, type SpaceRow } from '../data';
   import { chatPrefs, chatTime, discColor, groupsInto, previewOf, privateVisible, stillArchived } from '../chat-list';
@@ -340,7 +341,7 @@
 {#if following}
   <Sheet title="Follow someone" onclose={() => (following = false)}>
     <form class="follow" onsubmit={follow}>
-      <input bind:value={target} placeholder="@handle" autocomplete="off" aria-label="Their handle" />
+      <TextField outlined bind:value={target} placeholder="@handle" autocomplete="off" aria-label="Their handle" />
       <Button variant="primary" class="primary" disabled={!target.trim()}>Send request</Button>
     </form>
   </Sheet>
@@ -416,5 +417,4 @@
   .try .card > span { flex: 1; display: grid; }
   .try small { color: var(--ink-3); font-size: var(--fs-xs); }
   .follow { display: grid; gap: var(--s-3); }
-  .follow input { padding: var(--s-3); border: 1px solid var(--line); border-radius: var(--r-row); background: var(--bg); color: var(--ink); font: inherit; }
 </style>

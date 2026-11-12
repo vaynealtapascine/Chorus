@@ -1,6 +1,7 @@
 <script lang="ts">
   // Trash (Figma F9.5): what this account deleted or made, newest first, "This week" then "Earlier",
   // each with Restore. No Empty trash: nothing is purged from here (D-053).
+  import TextField from './kit/TextField.svelte';
   import Icon from './Icon.svelte';
   import EmptyState from './kit/EmptyState.svelte';
   import PageHeader from './kit/PageHeader.svelte';
@@ -47,7 +48,7 @@
   {#if !channelId}
     <UnderlineTabs label="Item type" bind:value={tab} tabs={[{ id: 'all', label: 'All' }, { id: 'messages', label: 'Messages' }, { id: 'posts', label: 'Posts' }, { id: 'members', label: 'Members' }]} />
   {/if}
-  {#if searching}<input type="search" bind:value={query} placeholder="Search Trash" aria-label="Search Trash" />{/if}
+  {#if searching}<TextField outlined type="search" bind:value={query} placeholder="Search Trash" aria-label="Search Trash" />{/if}
   {#each sections as section (section.label)}
     <div>
       <SectionLabel label={section.label} />
@@ -68,7 +69,6 @@
   .trash-page { display: grid; gap: var(--s-2); max-width: 720px; align-content: start; }
   .back { display: inline-flex; align-items: center; gap: var(--s-1); color: var(--accent); text-decoration: none; font-size: 14px; }
   .icon { display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 50%; background: none; color: var(--ink); cursor: pointer; }
-  input { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-row); padding: 10px 14px; }
   .row { display: flex; align-items: center; gap: var(--s-3); min-height: 60px; padding: 10px var(--s-1); }
   .tile { display: grid; place-items: center; width: 40px; height: 40px; border-radius: var(--r-row); flex: none; color: var(--tone); background: color-mix(in srgb, var(--tone) 16%, transparent); }
   .text { flex: 1; min-width: 0; display: grid; }

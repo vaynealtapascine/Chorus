@@ -74,3 +74,11 @@ it('chips toggle and link, pills only label', async () => {
   const pill = render(Pill, { props: { tone: 'accent', children: createRawSnippet(() => ({ render: () => 'System' })) } }).body;
   expect(pill).toMatch(/<span class="pill accent[^"]*"[^>]*>System/);
 });
+
+it('text fields are filled, outlined or multiline, and keep what the caller passes', async () => {
+  const { default: TextField } = await import('./TextField.svelte');
+  const field = render(TextField, { props: { value: 'Kai', placeholder: 'Name', maxlength: 40, outlined: true } }).body;
+  expect(field).toMatch(/<input class="field[^"]*outlined[^"]*"/);
+  expect(field).toContain('placeholder="Name"');
+  expect(render(TextField, { props: { value: 'Hello', multiline: true, rows: 3 } }).body).toMatch(/<textarea class="field/);
+});

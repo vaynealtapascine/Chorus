@@ -1,5 +1,6 @@
 <script lang="ts">
   // Webhooks (API.md §7; Figma F9.4): signed JSON events posted to your own URL.
+  import TextField from '../kit/TextField.svelte';
   import Button from '../kit/Button.svelte';
   import Icon from '../Icon.svelte';
   import Sheet from '../Sheet.svelte';
@@ -104,7 +105,7 @@
 {#if adding}
   <Sheet title="Add webhook" onclose={() => (adding = false)}>
     <form id="new-hook" onsubmit={add}>
-      <input bind:value={url} type="url" placeholder="https://…" aria-label="Webhook URL" required />
+      <TextField outlined bind:value={url} type="url" placeholder="https://…" aria-label="Webhook URL" required />
       <FormCard label="Send when">
         {#each EVENTS as ev (ev.id)}
           <Switch label={ev.label} checked={events.includes(ev.id)} onchange={(on) => (events = on ? [...events, ev.id] : events.filter((c) => c !== ev.id))} />
@@ -141,5 +142,4 @@
   .error { color: var(--danger); font-size: var(--fs-sm); margin: 0; }
   .link { border: 0; background: none; padding: 0; color: var(--accent); font: inherit; cursor: pointer; justify-self: start; }
   form { display: grid; gap: var(--s-3); }
-  input { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-row); padding: var(--s-3) 14px; }
 </style>

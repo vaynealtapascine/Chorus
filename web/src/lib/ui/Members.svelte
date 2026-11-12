@@ -1,6 +1,7 @@
 <script lang="ts">
   // Members (F4.1): a title row, tabs, counted chips and flat rows. The view options, folders, Select,
   // Reorder and Import sit behind one filter icon.
+  import TextField from './kit/TextField.svelte';
   import Button from './kit/Button.svelte';
   import { core } from '../core';
   import { fieldDefs, fieldValues, fuzzy, groups, type MemberRow } from '../data';
@@ -178,7 +179,7 @@
     <CustomFields {projection} bind:creating={creatingField} />
   {:else}
     {#if searching}
-      <input class="search" type="search" placeholder="Search {active.length} members" bind:value={query} aria-label="Search members" />
+      <TextField type="search" placeholder="Search {active.length} members" bind:value={query} aria-label="Search members" />
     {/if}
     <div class="chips" role="tablist" aria-label="Show">
       <button role="tab" aria-selected={filter === 'all'} class:on={filter === 'all'} onclick={() => (filter = 'all')}>All <span>{n.all}</span></button>
@@ -304,7 +305,7 @@
     {/each}
     <MenuRow label="Not in a folder" onclick={() => moveTo(null)} />
     <form class="new-folder" onsubmit={(e) => { e.preventDefault(); newFolderAndMove(); }}>
-      <input bind:value={newFolder} placeholder="New folder" aria-label="New folder name" maxlength="40" />
+      <TextField style="flex: 1" bind:value={newFolder} placeholder="New folder" aria-label="New folder name" maxlength={40} />
       <Button variant="primary" size="sm" class="go" disabled={!newFolder.trim()}>Add</Button>
     </form>
   </MenuSheet>
@@ -319,7 +320,6 @@
   .bar-icon { display: inline-grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: 50%; background: none; color: var(--ink); cursor: pointer; flex: none; }
   .bar-icon:hover { background: var(--surface-2); }
   .bar-icon[aria-pressed='true'] { color: var(--accent); }
-  .search { font: inherit; color: var(--ink); background: var(--surface-2); border: 0; border-radius: var(--r-row); padding: 10px 14px; }
   .chips { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; }
   .chips > button:not(.filter) { display: inline-flex; gap: 6px; border: 0; border-radius: var(--r-full); background: var(--surface-2); color: var(--ink-2); font: inherit; font-size: 14px; padding: 6px 14px; cursor: pointer; }
   .chips > button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
@@ -353,5 +353,4 @@
   .badge { min-width: 24px; text-align: center; border-radius: var(--r-full); background: var(--surface-2); font-size: var(--fs-xs); font-weight: 600; padding: 2px var(--s-2); }
   .selbar { position: sticky; bottom: 12px; display: flex; align-items: center; gap: 10px; padding: var(--s-2) var(--s-3) var(--s-2) 18px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-full); box-shadow: var(--shadow-pop); justify-self: center; z-index: 5; }
   .new-folder { display: flex; gap: var(--s-2); padding: var(--s-2) var(--s-3); }
-  .new-folder input { flex: 1; min-width: 0; font: inherit; color: var(--ink); background: var(--surface-2); border: 0; border-radius: var(--r-row); padding: var(--s-2) var(--s-3); }
 </style>
