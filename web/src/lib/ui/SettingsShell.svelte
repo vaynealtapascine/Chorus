@@ -9,6 +9,7 @@
   import Trash from './Trash.svelte';
   import ThisComputer from './ThisComputer.svelte';
   import SyncIssuesPage from './settings/SyncIssuesPage.svelte';
+  import UpdatesPage from './settings/UpdatesPage.svelte';
   import ThisDevice from './ThisDevice.svelte';
   import AccountPage from './settings/AccountPage.svelte';
   import AdvancedPage from './settings/AdvancedPage.svelte';
@@ -77,6 +78,7 @@
       {:else if current === 'issues'}<SyncIssuesPage {projection} />
       {:else if current === 'device'}<ThisDevice />
       {:else if current === 'computer'}<ThisComputer />
+      {:else if current === 'updates'}<UpdatesPage />
       {:else if current === 'health'}<ServerHealthPage />
       {:else}<AccountPage {projection} />{/if}
     </div>

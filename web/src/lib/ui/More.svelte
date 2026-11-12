@@ -1,5 +1,6 @@
 <script lang="ts">
   import Icon from './Icon.svelte';
+  import InstallCard from './kit/InstallCard.svelte';
 </script>
 
 <section class="more">
@@ -18,6 +19,7 @@
       <a href="#/{item.path}"><span class="destination-icon"><Icon name={item.icon} /></span><span class="text"><strong>{item.title}</strong></span><Icon name="chevron" size={16} /></a>
     {/each}
   </nav>
+  <InstallCard />
 </section>
 <style>
   .more { display: grid; gap: 20px; max-width: 720px; margin: auto; }

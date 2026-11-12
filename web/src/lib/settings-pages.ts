@@ -13,6 +13,7 @@ export const SETTINGS_PAGES: SettingsPage[] = [
   { id: 'trash', label: 'Trash', icon: 'delete', group: 'Data' },
   { id: 'issues', label: 'Sync issues', icon: 'target', group: 'Data' },
   { id: 'devices', label: 'Devices', icon: 'users', group: 'This computer' },
+  { id: 'updates', label: 'Updates', icon: 'history', group: 'This computer' },
   { id: 'device', label: 'This device', icon: 'monitor', group: 'This computer' },
   { id: 'computer', label: 'This computer', icon: 'home', group: 'This computer' },
   { id: 'health', label: 'Server health', icon: 'target', group: 'This computer' },

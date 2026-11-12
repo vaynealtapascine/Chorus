@@ -49,3 +49,8 @@ it('a drag list draws a grip on each row, in the given order', () => {
   expect(html.match(/class="grip/g)).toHaveLength(2);
   expect(html.indexOf('row a')).toBeLessThan(html.indexOf('row b'));
 });
+
+it('the install card shows nothing where the browser cannot install', async () => {
+  const { default: InstallCard } = await import('./InstallCard.svelte');
+  expect(render(InstallCard).body).not.toContain('Install Chorus');
+});

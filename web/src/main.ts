@@ -6,6 +6,7 @@ import { loadCore } from './lib/core';
 import { sync } from './lib/sync/client';
 
 import { pathTarget } from './lib/share-links';
+import { watchUpdates } from './lib/updates.svelte';
 import { warmIcons } from './lib/icons';
 
 // a shared link (D-109) loads the app at /post/<id> or /message/<id>: open what it points at
@@ -24,5 +25,5 @@ warmIcons();
 
 // offline app shell in production builds (plugins/service-worker.ts)
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js').catch((e) => console.warn('service worker failed', e));
+  navigator.serviceWorker.register('/sw.js').then(watchUpdates).catch((e) => console.warn('service worker failed', e));
 }

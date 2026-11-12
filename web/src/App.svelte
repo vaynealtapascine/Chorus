@@ -11,6 +11,7 @@
   import Members from './lib/ui/Members.svelte';
   import Onboarding from './lib/ui/Onboarding.svelte';
   import People from './lib/ui/People.svelte';
+  import UpdateSheet from './lib/ui/UpdateSheet.svelte';
   import SettingsShell from './lib/ui/SettingsShell.svelte';
   import Stage from './lib/ui/Stage.svelte';
   import Search from './lib/ui/Search.svelte';
@@ -280,6 +281,7 @@
   {/if}
   <UndoToast />
   <SlowDownToast />
+  <UpdateSheet />
 {/if}
 
 <style>
