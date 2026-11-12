@@ -1,5 +1,6 @@
 import { render } from 'svelte/server';
 import { expect, it } from 'vitest';
+import DragListHost from './DragListHost.test.svelte';
 import ConfirmSheet from './ConfirmSheet.svelte';
 import EmptyState from './EmptyState.svelte';
 import FormNote from './FormNote.svelte';
@@ -41,4 +42,10 @@ it('labels, notes and confirmations', () => {
   expect(confirm).toContain('Archive Nairon?');
   expect(confirm).toMatch(/class="go[^"]*danger[^"]*"[^>]*>Archive<\/button>/);
   expect(confirm).toContain('Cancel');
+});
+
+it('a drag list draws a grip on each row, in the given order', () => {
+  const html = render(DragListHost, { props: { items: [{ id: 'a' }, { id: 'b' }], onreorder: () => {} } }).body;
+  expect(html.match(/class="grip/g)).toHaveLength(2);
+  expect(html.indexOf('row a')).toBeLessThan(html.indexOf('row b'));
 });
