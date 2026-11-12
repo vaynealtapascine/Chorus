@@ -39,6 +39,7 @@ test('a switch reaches a second device', async () => {
   const code = link.match(/\/i\/([A-Za-z0-9_-]+)/)?.[1];
   expect(code).toBeTruthy();
   await enrol(desk.page, code!);
+  await go(desk.page, 'fronting'); // a new device lands on Home (D-130)
   await expect(fronting(desk.page)).toContainText('Kai');
   await switchIn(stars.page, 'Rin');
   await expect(fronting(desk.page)).toContainText('Rin', { timeout: 5_000 });
@@ -242,9 +243,8 @@ test('a post with a reply and a reaction across accounts', async () => {
   const text = `tomatoes are in ${run}`;
   await go(stars.page, 'journal');
   await stars.page.getByLabel('Post text').fill(text);
-  await stars.page.getByText('Post options', { exact: true }).click();
-  await stars.page.getByLabel('Tags').fill('garden');
-  await stars.page.getByText('Post options', { exact: true }).click();
+  await stars.page.getByRole('button', { name: 'Tags and mood', exact: true }).click();
+  await stars.page.getByLabel('Tags', { exact: true }).fill('garden');
   await shareWithFriends(stars.page, 'This post');
   await stars.page.getByRole('button', { name: 'Post', exact: true }).click();
   await expect(stars.page.locator('article.post', { hasText: text })).toBeVisible();
@@ -277,7 +277,7 @@ test('a post with a reply and a reaction across accounts', async () => {
   const thread = stars.page.getByRole('region', { name: 'Post thread' });
   await expect(thread.getByText(/Replying to/)).toBeVisible();
   await expect(async () => {
-    await thread.getByRole('button', { name: 'More options' }).click();
+    await thread.getByRole('button', { name: 'More options', exact: true }).click();
     await stars.page.getByRole('menuitem', { name: 'Refresh' }).click();
     await expect(thread.locator('article.row', { hasText: reply })).toBeVisible({ timeout: 2_000 });
     await expect(thread.getByText('1 like')).toBeVisible({ timeout: 2_000 });
@@ -294,7 +294,7 @@ test('search finds messages and posts', async () => {
     page.getByRole('tablist', { name: 'Search scope' }).getByRole('tab', { name, exact: true }).click();
   await go(stars.page, 'search');
   await stars.page.getByLabel('Search all chats').fill(`Robin ${run}`);
-  await expect(stars.page.locator('article', { hasText: `hello from Robin ${run}` }).first()).toBeVisible();
+  await expect(stars.page.getByRole('link', { name: 'Message search result' }).filter({ hasText: `hello from Robin ${run}` }).first()).toBeVisible();
 
   // posts: the follower finds the followers-only post; the server checks who may read it
   await go(friend.page, 'search');
@@ -370,8 +370,7 @@ test('no console errors, CSP included', async () => {
 
 // last: it signs `desk` out, then links it again (D-148, D-153)
 test('a device signed out from another one goes back to onboarding, and can be linked again', async () => {
-  await go(stars.page, '');
-  await stars.page.getByText('Devices and data', { exact: true }).click();
+  await go(stars.page, 'settings/devices');
   const devices = stars.page.locator('section[aria-label="Your devices"]');
   await devices.getByRole('button', { name: 'Sign out', exact: true }).click();
   const asking = devices.getByRole('group', { name: /^Sign out / });
@@ -398,7 +397,7 @@ test('a device signed out from another one goes back to onboarding, and can be l
   // the copy up; one that doesn't (older) asks to erase it first
   await stars.page.getByRole('button', { name: 'Link another device…' }).click();
   const link = await stars.page.locator('section[aria-label="Link another device"] code').innerText();
-  await desk.page.getByLabel('Invite link or code').fill(link);
+  await desk.page.getByLabel(/^Invite code/).fill(link);
   await desk.page.getByRole('button', { name: 'Link', exact: true }).click();
   const erase = desk.page.getByRole('button', { name: 'Erase and continue' });
   if (await erase.waitFor({ timeout: 3_000 }).then(() => true, () => false)) {
@@ -410,7 +409,7 @@ test('a device signed out from another one goes back to onboarding, and can be l
 
   // signed out again, asking for its copy to go at once (D-152)
   await stars.page.reload();
-  await stars.page.getByText('Devices and data', { exact: true }).click();
+  await live(stars.page);
   await devices.getByRole('button', { name: 'Sign out', exact: true }).click();
   await asking.getByLabel('Erase its copy now instead').check();
   const wiped = stars.page.waitForRequest((r) => r.url().endsWith('/revoke'));
