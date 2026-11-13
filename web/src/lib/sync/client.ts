@@ -4,7 +4,7 @@ import { WebReplica, newId } from '../core/pkg/chorus_wasm.js';
 import type { SwitchRow } from '../front.svelte';
 import { loadHead, loadOps, mergeJournal, save, saveDevice, saveSnapshot, type Changes, type DeviceRecord, type SignedOut, type Snapshot } from './persist';
 import { eraseKeptCopy, erasedHere, forgetErased, forgetTab } from './erase';
-import { renew } from './device';
+import { apiBase, renew } from './device';
 import { slowDown } from '../notices';
 import { applyDelta, type Delta } from './delta';
 import { readSnapshot } from './snapshot';
@@ -12,8 +12,10 @@ import { FrontHistoryCache, type NamedHistory } from '../front-history';
 import { flushUploads, stageBlob } from './uploads';
 import { keepStorage, loadBlob } from './blobs';
 import { fillFiles, keepEverything } from './keep';
-import type { Entity } from '../core';
+import type { Entity, ReadMark } from '../core';
 import { TypingState, TypingThrottle, type TypingEntry, type TypingFrame, type TypingInput } from './typing';
+import { ReadReceipts, type ReadFrame, type Receipt } from '../read-receipts';
+import { apiFetch } from '../http';
 import type { CurrentFrontSystem } from '../core/fronts';
 import { heartbeat, MOVES, signedOutBy, WELCOME_WITHIN_MS, wipeIn, type Status } from './lifecycle';
 
@@ -71,6 +73,7 @@ export interface Interval {
 type BusMessage =
   | { t: 'typing-send'; frame: TypingInput }
   | { t: 'typing-receive'; frame: TypingFrame; offset: number }
+  | { t: 'read-receive'; frame: ReadFrame }
   | { t: 'hello' }
   | { t: 'status'; status: Status }
   | { t: 'ops'; ops: { id: string }[] }
@@ -147,6 +150,9 @@ export class SyncClient {
   private typingThrottle = new TypingThrottle();
   private typingTimer: ReturnType<typeof setTimeout> | null = null;
   private typingOffset = 0;
+  private readReceipts = new ReadReceipts();
+  /** Changes whenever what is held of other accounts' reads does (a cheap thing to watch). */
+  receiptsVersion = 0;
   // The connection (lifecycle.ts): `move` is the only place that changes `status` in the syncing
   // tab, and the only one that opens or drops `ws` and sets or clears the two timers below.
   private backoff = 1000;
@@ -356,6 +362,12 @@ export class SyncClient {
     if (m.t === 'typing-receive' && !this.leader) {
       this.typingOffset = m.offset;
       this.receiveTyping(m.frame);
+      return;
+    }
+    if (m.t === 'read-receive' && !this.leader) {
+      this.readReceipts.receive(m.frame);
+      this.receiptsVersion++;
+      this.emit();
       return;
     }
     if (this.leader) {
@@ -841,7 +853,32 @@ export class SyncClient {
     expire();
   }
 
+  /** Other accounts' reads of our messages in a chat (D-131), as marks for `ticksFor`. */
+  receipts(channelId: string): ReadMark[] {
+    return this.readReceipts.marks(channelId);
+  }
+
+  /** Ask the server what other accounts have read here: when a shared or direct chat opens. Nothing
+   * is shown for a chat the server won't talk about, and a failed fetch keeps what is held. */
+  async fetchReceipts(channelId: string): Promise<void> {
+    if (!this.device) return;
+    try {
+      const r = await apiFetch(`${apiBase()}/channels/${encodeURIComponent(channelId)}/reads`, {
+        headers: { authorization: `Bearer ${this.device.session}` },
+      });
+      if (r.status === 404) this.readReceipts.drop(channelId);
+      else if (r.ok) this.readReceipts.replace(channelId, ((await r.json()) as { reads: Receipt[] }).reads);
+      else return;
+      this.receiptsVersion++;
+      this.emit();
+    } catch { /* offline: the ticks stay as they were */ }
+  }
+
   private clearTyping(): void {
+    if (this.status === 'signed-out') {
+      this.readReceipts.clear();
+      this.receiptsVersion++;
+    }
     if (this.typingTimer) clearTimeout(this.typingTimer);
     this.typingTimer = null;
     this.typingState.clear();
@@ -883,6 +920,14 @@ export class SyncClient {
         this.receiveTyping(frame as TypingFrame);
         // Same browser tabs are this device: only fan incoming other-device presence to them.
         this.bus?.postMessage({ t: 'typing-receive', frame: frame as TypingFrame, offset: this.typingOffset } satisfies BusMessage);
+        return;
+      }
+      if (frame.t === 'read') {
+        // another account's read of our messages (D-131): memory only, like typing
+        this.readReceipts.receive(frame as ReadFrame);
+        this.receiptsVersion++;
+        this.bus?.postMessage({ t: 'read-receive', frame: frame as ReadFrame } satisfies BusMessage);
+        this.emit();
         return;
       }
       if (frame.t === 'error' && frame.code === 'rate_limited') slowDown(null);

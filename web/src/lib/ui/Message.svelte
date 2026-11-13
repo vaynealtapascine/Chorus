@@ -1,8 +1,10 @@
 <script lang="ts" module>
-  import type { MemberColors } from '../core';
+  import type { MemberColors, Tick } from '../core';
   // one formatter and one adapted colour per value for every message on the page (R24)
   const clock = new Intl.DateTimeFormat([], { hour: '2-digit', minute: '2-digit' });
   const adapted = new Map<string, MemberColors>();
+  const TICK_ICON = { pending: 'clock', saved: 'check', read: 'read' } as const;
+  const TICK_TITLE = { pending: 'Waiting to sync', saved: 'Sent', read: 'Read' } as const;
   /** A forward's header: the forwarder may have left out who wrote it (F5.20), and the source chat's name
    * stays hidden in another space (ChatForward). */
   export function forwardedFrom(authors: string[], nameOf: (id: string) => string, channel?: string | null): string {
@@ -47,6 +49,7 @@
     onreplyin,
     onreplyprivately,
     unseen = [],
+    tick,
     onquote,
     onedit,
     ondelete,
@@ -117,6 +120,8 @@
     extra?: import('svelte').Snippet<[string]>;
     /** Members who haven't read this yet ("track reading per member"). */
     unseen?: string[];
+    /** Ours only (D-131): on its way, saved, or read by someone but its authors. */
+    tick?: Tick;
     onquote: (q: Quote) => void;
     onedit: () => void;
     ondelete: () => void;
@@ -176,6 +181,8 @@
   // the one speaking here writes on the right; this account's other members on the left, named
   // (a message still waiting to sync has no account yet: it's ours)
   const out = $derived(right ?? ((mine || !m.account_id) && (!speaker || m.authors.includes(speaker))));
+  /** Ticks sit on our side's bubbles only (D-103). */
+  const shownTick = $derived(out ? tick : undefined);
 
   const color = (id: string) => {
     const hex = people.get(id)?.color ?? '#A09184';
@@ -404,10 +411,10 @@
         </button>
       {/if}
     </div>{/if}
-    {#if unseen.length || out}
+    {#if unseen.length || shownTick}
       <div class="meta">
         {#if unseen.length}<span class="unseen" title="Not seen by {unseen.join(', ')}" aria-label="Not seen by {unseen.join(', ')}">●</span>{/if}
-        {#if out}<span class="sent" class:pending={!m.account_id} title={m.account_id ? 'Sent' : 'Waiting to sync'}><Icon name={m.account_id ? 'read' : 'history'} size={14} /></span>{/if}
+        {#if shownTick}<span class="sent" class:pending={shownTick === 'pending'} class:saved={shownTick === 'saved'} title={TICK_TITLE[shownTick]}><Icon name={TICK_ICON[shownTick]} size={14} /></span>{/if}
       </div>
     {/if}
     {#if palette}
@@ -588,7 +595,7 @@
   .msg-row:global(.swiping) .swipe-hint, .msg-row:global(.returning) .swipe-hint { display: grid; }
   .msg-row:global(.armed) .swipe-hint { transform: scale(1.2); }
   .sent { display: inline-grid; color: var(--accent); }
-  .sent.pending { color: var(--ink-3); }
+  .sent.pending, .sent.saved { color: var(--ink-3); }
   .unseen { color: var(--accent); font-size: 9px; }
   button.edited { background: none; border: 0; padding: 0; font: inherit; font-size: 11px; color: var(--ink-3); cursor: pointer; text-decoration: underline dotted; }
   .history { margin: var(--s-1) 0; padding: var(--s-2) var(--s-3); list-style: none; border-left: 2px solid var(--line); display: grid; gap: var(--s-1); color: var(--ink-2); font-size: var(--fs-sm); }

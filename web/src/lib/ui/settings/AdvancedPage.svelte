@@ -3,7 +3,7 @@
   import FormCard from '../kit/FormCard.svelte';
   import PageHeader from '../kit/PageHeader.svelte';
   import Switch from '../kit/Switch.svelte';
-  import { contentWarningsAutoExpand, readPerMember, segmentParsing, selfMember } from '../../data';
+  import { contentWarningsAutoExpand, readPerMember, segmentParsing, selfMember, shareReads } from '../../data';
   import { prefOf, savePref } from '../../settings-api';
   import { sync, type Projection } from '../../sync/client';
 
@@ -16,6 +16,7 @@
   <PageHeader title="Advanced" />
   <FormCard>
     <Switch label="Show when we're typing in shared chats" checked={pref('share_typing') === true} onchange={(on) => savePref('share_typing', on)} />
+    <Switch label="Show friends when we've read" checked={shareReads(projection, sync.accountId)} onchange={(on) => savePref('share_reads', on)} />
     {#if isSystem}<Switch label="Private chats only while their member is here" checked={pref('chat.hide_private') !== false} onchange={(on) => savePref('chat.hide_private', on)} />{/if}
     <Switch label="Expand content warnings automatically" checked={contentWarningsAutoExpand(projection, sync.accountId)} onchange={(on) => savePref('chat.cw_auto_expand', on)} />
     <Switch label="Parse speaker annotations in chat" checked={segmentParsing(projection, sync.accountId)} onchange={(on) => savePref('chat.segment_parsing', on)} />

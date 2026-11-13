@@ -811,6 +811,13 @@ export function readPerMember(p: Projection, accountId: string): boolean {
   return row?.fields.value === true;
 }
 
+/** Advanced "Show friends when we've read" (D-131), an account pref, off unless chosen. */
+export function shareReads(p: Projection, accountId: string): boolean {
+  const prefs = (p.rows.pref ?? {}) as Rows;
+  const row = prefs['||share_reads'] ?? prefs[`${accountId}||share_reads`];
+  return row?.fields.value === true;
+}
+
 /** Each member's read mark in a channel (the account's own is `lastRead`). */
 export function memberMarks(p: Projection, channelId: string, accountId: string): { member: string; at: number; id: string }[] {
   const best = new Map<string, { member: string; at: number; id: string }>();

@@ -4,7 +4,7 @@
   import { onDestroy, tick, untrack } from 'svelte';
   import { core, type Composed, type Entity } from '../core';
   import RichText from './RichText.svelte';
-  import { channels, contentWarningsAutoExpand, customEmojis, lastRead, latestMessage, memberMarks, members, messageById, messagePage, pinnedMessages, reactions, readPerMember, segmentParsing, spaces, threadSummaries, unread, type MessageRow, type QuoteValue, type SnapshotItem, type TextRange } from '../data';
+  import { channels, contentWarningsAutoExpand, customEmojis, lastRead, latestMessage, memberMarks, members, messageById, messagePage, pinnedMessages, reactions, readPerMember, segmentParsing, shareReads, spaces, threadSummaries, unread, type MessageRow, type QuoteValue, type SnapshotItem, type TextRange } from '../data';
   import { activeViewers, memberVisible } from '../hidden';
   import { router } from '../router.svelte';
   import { quoteForTarget, snapshot } from '../selection';
@@ -12,6 +12,7 @@
   import { canWriteAs, posts } from '../posts';
   import { channelFrontChoices, channelFrontId, channelFrontKey, channelReaders, channelSpeaker } from '../channel-front';
   import { typingLabel, typingName } from '../sync/typing';
+  import { ownTicks } from '../ticks';
   import { sync, type Projection } from '../sync/client';
   import { bodyPresence, frontLayers } from '../front-view';
   import { flushUploads, imageThumbnail, stageBlob } from '../sync/uploads';
@@ -284,6 +285,7 @@
   // messages waiting out slow mode (D-076): not in the projection, so follow the sync client
   let held = $state(sync.heldUntil);
   let typingRevision = $state(0);
+  let receiptsRevision = $state(sync.receiptsVersion);
   const typingSubtitle = $derived.by(() => {
     void typingRevision;
     return typingLabel(sync.typing(current?.id ?? ''), (entry) =>
@@ -295,6 +297,7 @@
   const unheld = sync.subscribe(() => {
     held = sync.heldUntil;
     typingRevision++;
+    receiptsRevision = sync.receiptsVersion;
     syncLive = sync.status === 'live';
     windowed = sync.windowed;
   });
@@ -1097,6 +1100,16 @@
   const perMember = $derived(readPerMember(projection, sync.accountId));
   const marksHere = $derived(current ? memberMarks(projection, current.id, sync.accountId) : []);
   const unseenBy = (m: MessageRow): string[] => perMember && marksHere.length ? core.readUnseenBy(m.occurred_at, m.id, marksHere) : [];
+  // ticks on our messages (D-131): other accounts' reads only with our switch on and in a shared or direct chat
+  const receiptsOn = $derived(shareReads(projection, sync.accountId) && !!current && !!space && space.kind !== 'internal');
+  const ticks = $derived.by(() => {
+    void receiptsRevision; // other accounts' reads arrive on the sync client's socket
+    return ownTicks(visibleMsgs, sync.accountId, perMember ? marksHere : [], receiptsOn && current ? sync.receipts(current.id) : []);
+  });
+  $effect(() => {
+    const id = current?.id;
+    if (id && receiptsOn && syncLive) void sync.fetchReceipts(id);
+  });
   const color = (id: string) => core.adaptColor(people.get(id)?.color ?? '#A09184', dark);
 
   // notifications for this channel (NOTIFICATIONS §7): all · mentions · none, kept as an account
@@ -1478,6 +1491,7 @@
           onreply={() => { replyTo = m; quoting = null; editing = null; editingParts = null; box?.focus(); }}
           onreplyin={() => (replyIn = m)}
           unseen={unseenBy(m).map((id) => people.get(id)?.name ?? '?')}
+          tick={ticks.get(m.id)}
           onreplyprivately={(space?.kind === 'internal' ? m.authors[0] !== speaker : m.account_id !== sync.accountId) ? () => void replyPrivately(m) : undefined}
           onquote={(q) => { quoting = q; forwarding = null; quoteSourceSpaceId = current?.space_id ?? ''; quoteSourceChannelId = current?.id ?? ''; quoteSensitive = !!privacyRoot?.member_ids?.length || !!m.visibility && m.visibility.mode !== 'all'; replyTo = m; editing = null; editingParts = null; box?.focus(); }}
           onedit={() => startEdit(m)}

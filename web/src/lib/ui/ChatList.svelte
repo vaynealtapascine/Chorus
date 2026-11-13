@@ -1,9 +1,11 @@
 <script lang="ts">
   // The desktop chat list (Figma F5.21): search, who is here now, then every conversation across
   // spaces, newest first, with its last message, time and unread count. Muted chats keep a grey badge.
-  import { core } from '../core';
+  import { onDestroy } from 'svelte';
+  import { core, type Tick } from '../core';
+  import { ownTicks } from '../ticks';
   import { chatMembers } from '../subsystems';
-  import { channels, latestMessage, members, spaces, unread, fuzzy, type ChannelRow, type MemberRow, type SpaceRow } from '../data';
+  import { channels, latestMessage, memberMarks, members, readPerMember, shareReads, spaces, unread, fuzzy, type ChannelRow, type MemberRow, type MessageRow, type SpaceRow } from '../data';
   import { ARCHIVED, chatPrefs, chatTime, discColor, dmFace, folderOf, groupsInto, HIDDEN, isSpaceEntry, movePin, orderChats, PINS, previewOf, privateVisible, stillArchived, togglePin, withSpaces, type Folder, type SpaceEntry } from '../chat-list';
   import { contains, holds, PREF as FOLDERS_PREF, setChat, toJson, withCustom, type Settings as FolderSettings } from '../chat-folders';
   import ChatFolders from './ChatFolders.svelte';
@@ -46,10 +48,13 @@
   const nameOf = (id: string) => { const m = people.get(id); return m?.display_name ?? m?.name ?? 'Someone'; };
   const ss = $derived(spaces(projection));
 
+  const TICK_ICON = { pending: 'clock', saved: 'check', read: 'read' } as const;
   interface Row {
     channel: ChannelRow; space: SpaceRow | undefined; folder: Exclude<Folder, 'all'>; title: string; icon: string | null;
     at: number; unread: number; muted: boolean; who: string | null; text: string; disc: { glyph: string; color: string; blob?: string };
     id: string; pinned: boolean;
+    /** our last message here: on its way, saved or read (D-131) */
+    tick?: Tick;
     /** archived for us (D-111) with nothing newer since: listed under Archived chats */
     stowed: boolean;
     /** in a shared space with several channels: listed under the space's entry, by its own name */
@@ -58,8 +63,20 @@
      * chat with someone isn't mistaken for another's */
     whose: string | null;
   }
+  // other accounts' reads come in on the sync socket (D-131); the list is derived, so it follows a counter
+  let receiptsRevision = $state(sync.receiptsVersion);
+  onDestroy(sync.subscribe(() => { receiptsRevision = sync.receiptsVersion; }));
+  /** The tick on our last message in a chat; read only where something could have read it. */
+  function tickOf(c: ChannelRow, last: MessageRow | undefined, space: SpaceRow | undefined): Tick | undefined {
+    if (!last || last.deleted || (last.account_id && last.account_id !== sync.accountId)) return undefined;
+    if (!last.account_id) return 'pending';
+    const members = readPerMember(projection, sync.accountId) ? memberMarks(projection, c.id, sync.accountId) : [];
+    const accounts = shareReads(projection, sync.accountId) && space && space.kind !== 'internal' ? sync.receipts(c.id) : [];
+    return members.length || accounts.length ? ownTicks([last], sync.accountId, members, accounts).get(last.id) : 'saved';
+  }
   const organize = $derived(chatPrefs(projection.rows.pref ?? {}, sync.accountId));
   const rows: Row[] = $derived.by(() => {
+    void receiptsRevision;
     const all = channels(projection).filter((c) => !c.archived && c.kind !== 'thread');
     const prefs = projection.rows.pref ?? {};
     // members inside a fronting subsystem count as here (D-092)
@@ -107,6 +124,7 @@
       return {
         channel: c, space, folder: f, title, icon: sides ? 'lock' : c.kind === 'member_dm' || space?.kind === 'dm' ? null : f === 'internal' ? (c.member_ids?.length ? 'lock' : 'hash') : 'globe',
         at: latest?.occurred_at ?? 0, unread: c.id === currentId ? 0 : unread(projection, c.id, sync.accountId),
+        tick: tickOf(c, latest, space),
         muted: notify === 'none', who: preview.who, text: preview.text, disc, id: c.id, pinned: organize.pins.includes(c.id),
         stowed: stillArchived(organize.archived.get(c.id), latest?.occurred_at),
         grouped,
@@ -315,6 +333,7 @@
             <span class="title" class:fit={r.whose}>{inSpace ? r.channel.name : r.title}</span>
             {#if r.whose}<span class="whose">• {r.whose}</span>{/if}
             {#if r.muted}<span class="muted-icon" title="Muted"><Icon name="muted" size={14} /></span>{/if}
+            {#if r.tick}<span class="tick" class:read={r.tick === 'read'}><Icon name={TICK_ICON[r.tick]} size={14} /></span>{/if}
             {#if r.at}<time>{chatTime(r.at)}</time>{/if}
           </span>
           <span class="bottom">
@@ -405,6 +424,8 @@
   .title.fit { flex: 0 1 auto; }
   .whose { flex: 1 1 0; min-width: 40px; color: var(--ink-3); font-size: var(--fs-sm); line-height: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .muted-icon { display: grid; color: var(--ink-3); }
+  .tick { display: grid; color: var(--ink-3); }
+  .tick.read { color: var(--accent); }
   time { flex: none; font-size: var(--fs-xs); line-height: 16px; color: var(--ink-3); }
   .bottom { gap: var(--s-1); font-size: 14px; line-height: 19px; }
   .who { flex: none; color: var(--ink); max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
