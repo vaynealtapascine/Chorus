@@ -38,6 +38,8 @@ test.use({ baseURL: base, serviceWorkers: 'allow' });
 let dir = '';
 let config = '';
 let server: ChildProcess | null = null;
+/** Puts back the sw.js the new-version test replaced (dist is shared with the other specs). */
+let restoreSw: (() => void) | null = null;
 
 async function start(): Promise<void> {
   const log = openSync(join(dir, 'server.log'), 'a');
@@ -83,6 +85,7 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
+  restoreSw?.();
   await kill();
   if (process.env.CHORUS_E2E_KEEP !== '1') rmSync(dir, { recursive: true, force: true });
 });
@@ -132,7 +135,8 @@ async function openChat(page: Page): Promise<void> {
       await page.goto('/', { waitUntil: 'commit' });
     } catch (e) {
       if (tries >= 2 || !String(e).includes('ERR_ABORTED')) throw e;
-      await page.waitForTimeout(500);
+      // a timer of our own: the page's wait can hang behind the navigation that replaced ours
+      await new Promise((r) => setTimeout(r, 500));
     }
   }
   await page.getByRole('link', { name: 'Chat', exact: true }).click();
@@ -220,8 +224,26 @@ test('a file queued offline goes up after a reload and a new version of the app'
       return res.ok ? await res.text() : `blob ${res.status}`;
     }, hash);
     expect(bytes).toBe(`tomatoes ${run}`);
+    // the new worker has taken over (its first act is to drop the old version's cache). The browser
+    // activates it once the old one is idle, and under this suite it then sat in `activating` for
+    // minutes in about half the full runs unless something was sent to it; the tests after this
+    // one open a second tab, whose navigation hung behind that (NOTES, Web)
+    await expect
+      .poll(
+        () =>
+          page.evaluate(async (run) => {
+            const reg = await navigator.serviceWorker.getRegistration();
+            reg?.active?.postMessage('wake');
+            await reg?.update().catch(() => {});
+            return (await caches.keys()).filter((k) => k.startsWith('chorus-') && !k.endsWith(run)).length;
+          }, run),
+        { timeout: 90_000 },
+      )
+      .toBe(0);
   } finally {
-    writeFileSync(sw, original);
+    // the first sw.js goes back when this file is done: put back now, it would be one more new
+    // version, and the browser would start swapping workers again under the tests that follow
+    restoreSw = () => writeFileSync(sw, original);
   }
 });
 
