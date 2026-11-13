@@ -22,9 +22,9 @@ History: this file and `docs/NOTES.md` were compacted on 2026-11-05. The full lo
 
 ## Now
 
-- **In progress:** UI21
+- **In progress:** UI24
 - **Owner:** claude-fable-5.2, 2026-11-13
-- **Next concrete step:** UI21 wave 8 (docs/handoff/ui21-plan.md): D-131 (done on core, server, web and Android 2026-11-13, D-157 records the choices; still needs a look on a device and with two real accounts), D-138, D-137, D-132, D-133, custom emoji on Android, the tablet three-pane; then the web leftovers in ui21-web-plan.md §6. The owner questions at the end of ui21-plan.md (Web, 2026-11-13) are not yet answered; their defaults are in use.
+- **Next concrete step:** Slice 1 of docs/handoff/journal-feel.md: the composer model and its three surfaces (Opus agent), pure helpers and right rail (Sonnet agents)
 - **Notes:** Android waves 1-7 live (0.1.922). Web work happens in worktrees under C:/Users/pcuser/.t3/worktrees/Chorus (`ui21-web`, `ui21-web-home`, `ui21-docs`), each pushing to main after a rebase; a fresh one needs `npm ci` in web/, web/src/lib/core/pkg copied from the main checkout, and for the Android gate the uniffi bindings generated (NOTES, Android). The PC was short of commit on 2026-11-13: the Gradle daemon crashed until run with `GRADLE_OPTS=-Dorg.gradle.jvmargs=-Xmx2g -Dorg.gradle.workers.max=2`, and the Linux build in Docker took WSL down once, so do not start it with under ~8 GB of commit free. Plan: docs/handoff/ui21-plan.md; web status and leftovers: ui21-web-plan.md §6; consistency pass: ui21-web-consistency.md.
 
 ### SEC1: what is done and what is left
@@ -101,6 +101,7 @@ UI4, UI5, UI8, UI9, UI10, UI11a–c, UI12a–d, UI13.
 
 ### UI — Owner's Figma redesign
 
+- [~] UI24 Journal on web feels like Android's (owner, 2026-11-13): one composer model as a quick box, a full composer (F6.2) and a reply box; drafts kept; keys; feed feel (pencil button, new-posts pill, right rail F6.13). Plan: `docs/handoff/journal-feel.md`.
 - [x] UI23 Hold to act as several members (owner, 2026-11-09, D-142): hold a heart, a message reaction or a poll option for a drawer/sheet of our members (Everyone · Fronting · Nobody, Save) on Android and web; each member's part is its own ordinary op. Branch `t3/multi-member-action-drawer`; web checked on an isolated demo, Android compiled and unit-tested but not seen on a device.
 - [x] UI22 Lock Members list banner backgrounds to two-thirds of each row panel, anchored bottom-right (owner, 2026-11-08), on web and Android.
 - [~] UI21 Figma parity pass, Android then web (owner, 2026-11-08): every current Flows frame (F0–F11) checked against both apps; missing features and looks built; screens without a frame get the same styling; trim explanatory text, cut taps. Reference images: `F:/DunBuild/figma-cache` (no Figma connector needed). Audits in `docs/handoff/ui21-*.md`.
