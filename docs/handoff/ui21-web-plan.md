@@ -242,9 +242,9 @@ deploy or on its own through `deploy-linux.ps1` when the owner asks.
 
 ## 6. Status (2026-11-13)
 
-All ten slices and both stages of the design consistency pass (ui21-web-consistency.md) are on main; the bundle for 06e066f is built and waits to be uploaded (PROGRESS, Now).
+All ten slices and both stages of the design consistency pass (ui21-web-consistency.md) are on main and deployed (06e066f, 2026-11-13).
 The full gate passes; the browser suite passes 31 of 31 except when the service-worker takeover in
-failure.spec stalls (NOTES, Web: it does so on the build before the slices too). Rarely opened
+failure.spec stalls, which is Playwright's debugger on the worker and not the app (NOTES, Web). Rarely opened
 screens load on demand so the opening script stays in budget (D-156).
 
 Left over, for wave 8 or after:

@@ -217,20 +217,22 @@ perf and review write-ups, are in `git show a9c3c2e:docs/NOTES.md`.
 - e2e: `page.goto` waits only for `commit` (the app rewrites its address while loading, and a new
   tab can be taken over by the service worker); a spec that restarts its server fires `online`.
   Run one spec with `bash scripts/e2e-web.sh --no-build -- e2e/<spec>.ts --max-failures=1`.
-- Service worker takeover in the e2e suite (2026-11-13, Chrome under Playwright; not root-caused).
-  A new worker installs at once and activates when the old one is idle. In about half the full
-  runs (never when failure.spec ran alone) the new worker of the new-version test then sat in
-  `activating` for minutes, its `activate` not finished (the old version's cache still there),
-  whatever the page did. A second tab opened meanwhile hung: its first `goto` came back ERR_ABORTED, the next
-  never committed, and `page.waitForTimeout` hung behind it until the 2-minute timeout. It did so
-  before and after the lazy screens of D-156, one full run in three. The spec now waits for the takeover in the
-  new-version test, posting to the worker and calling `registration.update()` as it polls, puts
-  `sw.js` back only in `afterAll` (putting it back at once queued a third worker), and waits on a
-  timer of its own. That made it rarer, not gone: 7 of 9 full runs passed all 31, and the other
-  two failed at that wait after 90 s (`expect(...).toBe(0)` in failure.spec), which is this and
-  not a regression in what the spec is about. Rerun before reading anything into it. Open: whether a browser
-  outside Playwright can leave a worker in `activating`, where the next reload would hang; check
-  the update path by hand in Chrome after a deploy if a page ever fails to come back.
+- Service worker takeover stalls under Playwright, not in a plain Chrome (2026-11-13). Playwright
+  attaches its debugger to service workers, and with it attached a new worker can sit in
+  `waiting` or `activating` for minutes; a navigation that needs it then hangs. Seen three ways:
+  failure.spec's second tab after the new-version test (first `goto` ERR_ABORTED, the next never
+  committed, `page.waitForTimeout` hung behind it until the 2-minute timeout; about one full run
+  in three, on the build before D-156 too, never when the spec ran alone); the same test's wait
+  for the takeover (`expect(...).toBe(0)` after 90 s, two of nine full runs); and a Playwright
+  page on the live site across the 06e066f deploy, whose reload timed out after 60 s with the
+  new worker `installed`. The same steps in a Chrome driven over raw CDP attached to the page
+  only (a private server on a copy of `dist`, its `sw.js` cache name changed to make a new
+  version, three rounds each way): the new worker installs in 2-5 s, activates about 30 s later
+  when the old one goes idle or at once when the page reloads, and every reload took 60-110 ms.
+  So a failure at those two places in failure.spec is the tool: rerun before reading anything
+  into it. The spec waits for the takeover, posts to the worker and calls
+  `registration.update()` as it polls, puts `sw.js` back only in `afterAll` (putting it back at
+  once queued a third worker), and waits on a timer of its own; that made it rarer, not gone.
 - `activate` in `plugins/service-worker.ts` deletes every `chorus-*` cache but its own, so with
   three versions in quick succession the second one's late activation deletes the cache the third
   has just filled (seen in the spec: `waiting=installed`, its cache gone); that page then has no
