@@ -85,10 +85,10 @@
   let switchAddTo = $state<string | undefined>(undefined);
   // the full composer loads when first asked for
   let ComposerDialog = $state<typeof import('./lib/ui/journal/ComposerDialog.svelte').default | null>(null);
-  $effect(() => { if (journalCompose.open && !ComposerDialog) void import('./lib/ui/journal/ComposerDialog.svelte').then((m) => (ComposerDialog = m.default)); });
+  $effect(() => { if (journalCompose.open && !ComposerDialog) void screens.composerDialog().then((m) => (ComposerDialog = m.default)); });
   addEventListener('keydown', (e: KeyboardEvent) => {
     // n: a new post on the Journal, unless typing or something is open over it
-    if (e.key === 'n' && !e.ctrlKey && !e.metaKey && !e.altKey && router.route.name === 'journal' && !journalCompose.open) {
+    if (e.key === 'n' && !e.isComposing && !e.ctrlKey && !e.metaKey && !e.altKey && router.route.name === 'journal' && !journalCompose.open) {
       const t = e.target as HTMLElement | null;
       if (!t?.closest?.('input, textarea, select, [contenteditable]:not([contenteditable="false"])') && !document.querySelector('.sheet, dialog[open], [role="dialog"]')) {
         e.preventDefault();
@@ -185,7 +185,7 @@
 {:else if projection && setupName !== null}
   <Setup {projection} name={setupName} ondone={() => { setupOwed.done(sync.accountId); setupDone++; }} />
 {:else if projection}
-  <div class="shell" data-status={status} class:chat-page={router.route.name === 'chat'} class:journal-page={router.route.name === 'journal'} class:nav-open={navOpen}>
+  <div class="shell" data-status={status} class:chat-page={router.route.name === 'chat'} class:journal-page={router.route.name === 'journal' || router.route.name === 'post'} class:nav-open={navOpen}>
     <a class="skip" href="#main-content" onclick={(e) => { e.preventDefault(); document.getElementById('main-content')?.focus(); }}>Skip to content</a>
     <aside class="app-nav" aria-label="App navigation">
       <a class="identity" href="#/" title={accountName}>
@@ -356,8 +356,8 @@
   @media (min-width: 1024px) { .app-bar.own-head-wide { display: none; } }
   main { padding: var(--s-6); max-width: 1200px; margin-inline: auto; min-width: 0; outline: none; }
   .chat-page main { padding: 0; max-width: none; }
-  /* the Journal column runs from the app bar down, edge to edge on a phone */
-  .journal-page main { padding-top: 0; }
+  /* the Journal column (and a post's thread) runs from the top down, edge to edge on a phone */
+  .journal-page main { padding-top: 0; padding-bottom: 0; }
   @media (max-width: 640px) { .journal-page main { padding-inline: 0; } }
   /* a page fades in when you go to it (owner, 2026-11-07) */
   main > :global(*) { animation: chorus-fade-in var(--t-fast) var(--ease); }

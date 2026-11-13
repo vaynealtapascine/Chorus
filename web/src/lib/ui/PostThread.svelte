@@ -238,8 +238,10 @@
 <style>
   .thread-page { max-width: 760px; margin: 0 auto; display: grid; gap: 0; }
   /* one bordered column, as the Journal's (F6.13) */
-  @media (min-width: 641px) { .thread-page { border-inline: 1px solid var(--line); } }
-  header { display: flex; align-items: center; gap: var(--s-2); padding-bottom: var(--s-3); border-bottom: 1px solid var(--line); }
+  @media (min-width: 641px) { .thread-page { border-inline: 1px solid var(--line); min-height: 100dvh; align-content: start; } }
+  @media (min-width: 641px) and (max-width: 1023px) { .thread-page { min-height: calc(100dvh - 72px - env(safe-area-inset-bottom)); } }
+  /* the column's first cell, as the Journal's tabs (the page has no padding above it) */
+  header { display: flex; align-items: center; gap: var(--s-2); min-height: 56px; padding: 0 var(--s-2); border-bottom: 1px solid var(--line); }
   h1 { margin: 0; flex: 1; font-size: var(--fs-lg, 1.25rem); }
   .back { display: grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: 50%; background: none; color: var(--ink); cursor: pointer; transform: rotate(180deg); }
   .back:hover { background: var(--surface-2); }
@@ -276,10 +278,13 @@
   .detail strong { color: var(--ink); }
   /* the reply cell sits between hairlines under the post, its face in line with the replies' */
   .reply-box { display: grid; border-top: 1px solid var(--line); }
+  /* our own post ends at the reply cell's hairline: one line under its actions, not three */
+  .focus > :global(.post) { border-bottom: 0; }
+  .focus :global(.actions.large) { border-bottom: 0; }
   .replying { padding: var(--s-3) var(--s-4) 0 calc(var(--s-4) + 52px); color: var(--ink-3); font-size: var(--fs-sm); }
   .reply-box :global(.composer.reply .cell) { padding-top: var(--s-2); }
   /* a phone's reply bar lies over the end of the page */
-  @media (max-width: 640px) { .thread-page { padding-bottom: 64px; } .replying { display: none; } .reply-box { border-top: 0; } }
+  @media (max-width: 640px) { .thread-page { padding-bottom: 64px; } .replying { display: none; } }
   .replying strong { color: var(--accent); font-weight: 600; }
   .note { padding: var(--s-4); color: var(--ink-3); font-size: var(--fs-sm); }
   .stat { border: 0; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; }

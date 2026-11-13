@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { afterEach, beforeAll, expect, it, vi } from 'vitest';
 import { loadCore } from './core';
 import { sync, type Projection } from './sync/client';
-import { emptyDraft } from './journal-draft';
+import { draftKey, emptyDraft } from './journal-draft';
 import { Composer, composerFor, contextOf, hasContent, postPayload } from './journal-composer.svelte';
 
 vi.mock('./sync/uploads', () => ({ flushUploads: vi.fn(), imageThumbnail: vi.fn(async () => null), stageBlob: vi.fn(async (_b: Blob, mime: string) => ({ hash: 'h', mime })) }));
@@ -92,4 +92,75 @@ it('refuses a poll with too few options and keeps the draft', async () => {
   expect(c.error).not.toBe('');
   expect(c.draft.body).toBe('which?');
   expect(create).not.toHaveBeenCalled();
+});
+
+class FakeStorage {
+  [key: string]: unknown;
+  writes = 0;
+  getItem(k: string) { return Object.hasOwn(this, k) ? String(this[k]) : null; }
+  setItem(k: string, v: string) { this.writes++; this[k] = String(v); }
+  removeItem(k: string) { this.writes++; delete this[k]; }
+}
+
+it('writes the draft only when this tab changed it, and takes another tab’s copy', () => {
+  const local = new FakeStorage();
+  vi.stubGlobal('localStorage', local);
+  try {
+    const a = new Composer('acct', 'main'), b = new Composer('acct', 'main');
+    a.attach(fixture()); b.attach(fixture());
+    a.draft.body = 'typed in the first tab';
+    a.persist();
+    const key = draftKey('acct', 'main');
+    expect(local.getItem(key)).toContain('typed in the first tab');
+    // the second tab re-persisting its untouched copy (a sync, a re-render) must not put its stale words back
+    const writes = local.writes;
+    b.persist();
+    expect(local.writes).toBe(writes);
+    b.adopt(local.getItem(key));
+    expect(b.draft.body).toBe('typed in the first tab');
+    b.persist();
+    expect(local.writes).toBe(writes);
+    // posted or cleared elsewhere: this tab empties too
+    b.adopt(null);
+    expect(b.draft.body).toBe('');
+  } finally { vi.unstubAllGlobals(); }
+});
+
+it('asks before an opener changes a draft that holds words (Android)', () => {
+  const c = new Composer('acct', 'main');
+  c.attach(fixture(), { authors: ['kai'] });
+  expect(c.asksFirst({ quote: 'q1' })).toBe(false); // empty: just apply
+  c.draft.body = 'half a thought';
+  expect(c.asksFirst({ quote: 'q1' })).toBe(true);
+  expect(c.asksFirst({ kind: 'entry' })).toBe(true);
+  expect(c.asksFirst({ kind: 'note' })).toBe(false);
+  expect(c.asksFirst({})).toBe(false);
+  c.apply({ quote: 'q1' });
+  expect(c.asksFirst({ quote: 'q1' })).toBe(false);
+});
+
+it('posts what the composer shows once the files are staged: words typed meanwhile go, files added meanwhile wait', async () => {
+  const create = vi.spyOn(sync, 'create').mockImplementation(() => undefined as never);
+  vi.spyOn(sync, 'newId').mockReturnValue('id');
+  const c = new Composer('acct', 'main');
+  c.attach(fixture(), { authors: ['kai'] });
+  c.draft.body = 'first words';
+  c.addFiles([new File(['a'], 'a.txt', { type: 'text/plain' })]);
+  const sending = c.send();
+  c.draft.body = 'first words, and more';
+  c.addFiles([new File(['b'], 'b.txt', { type: 'text/plain' })]);
+  expect(await sending).toBe(true);
+  const payload = create.mock.calls.find(([kind]) => kind === 'post.create')![3] as { text: string; attachments: string[] };
+  expect(payload.text).toBe('first words, and more');
+  expect(payload.attachments).toHaveLength(1);
+  expect(c.pending.map((p) => p.file.name)).toEqual(['b.txt']);
+  expect(c.draft.body).toBe('');
+});
+
+it('does not post as a member who can no longer write', () => {
+  const c = new Composer('acct', 'main');
+  c.attach(fixture());
+  c.draft.body = 'hi';
+  c.setAuthors(['gone']);
+  expect(c.canPost).toBe(false);
 });

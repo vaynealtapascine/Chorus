@@ -102,6 +102,8 @@
 
 <style>
   .profile { max-width: 760px; margin: 0 auto; display: grid; gap: var(--s-4); }
+  /* the quick box is a cell between hairlines, as at the top of the Journal */
+  .profile > :global(form.composer.quick) { border-top: 1px solid var(--line); }
   p { margin: 0; }
   .bio { color: var(--ink-2); }
   .action { background: none; font: inherit; cursor: pointer; padding: 7px var(--s-4); border: 1px solid var(--line); border-radius: var(--r-full); color: var(--ink); font-weight: 600; text-decoration: none; }

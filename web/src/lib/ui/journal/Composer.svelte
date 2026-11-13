@@ -116,7 +116,7 @@
 {/snippet}
 
 {#snippet postButton()}
-  <Button variant="primary" size="sm" type="submit" class="post-pill" disabled={!c.canPost}>{postLabel}</Button>
+  <Button variant="primary" size="sm" type="button" class="post-pill" disabled={!c.canPost} onclick={post}>{postLabel}</Button>
 {/snippet}
 
 {#snippet extras()}
@@ -133,8 +133,9 @@
   {#if c.error}<p class="error" role="alert">{c.error}</p>{/if}
 {/snippet}
 
-<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<form bind:this={root} class="composer {surface}" class:revealed class:drag={dragDepth > 0} onsubmit={post} onfocusin={openOnFocus} onclick={() => (opened = true)} onfocusout={focusOut}
+<!-- only Post and Ctrl/⌘+Enter post: Enter in a field (title, warning, poll option) or a sheet's untyped button must not -->
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions, a11y_click_events_have_key_events -->
+<form bind:this={root} class="composer {surface}" class:revealed class:drag={dragDepth > 0} onsubmit={(e) => e.preventDefault()} onfocusin={openOnFocus} onclick={() => (opened = true)} onfocusout={focusOut}
   ondragenter={dragEnter} ondragleave={dragLeave} ondragover={(e) => e.preventDefault()} ondrop={drop} aria-label={reply ? 'Reply' : 'New post'}>
   {#if full}
     <header class="top">

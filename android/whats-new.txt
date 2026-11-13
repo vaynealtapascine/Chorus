@@ -1,5 +1,5 @@
 # What's new in the next Android build: up to three short lines, shown in the update drawer (F10.5).
 # Rewrite them for each deploy; lines starting with # are skipped.
-Chorus in the browser now looks and works like the phone app
-Home, Members, Journal, Chat and Settings follow the same screens
-Menus open as sheets, and nothing hides behind the tab bar
+Ticks on your messages show when they are sent and read
+Friends see your reads only if you both turn it on (Settings, Advanced)
+In the browser, writing in the Journal is one tap away and keeps drafts

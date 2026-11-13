@@ -3,6 +3,7 @@
 export const screens = {
   insights: () => import('./ui/Insights.svelte'),
   composer: () => import('./ui/journal/Composer.svelte'),
+  composerDialog: () => import('./ui/journal/ComposerDialog.svelte'),
   postThread: () => import('./ui/PostThread.svelte'),
   postStage: () => import('./ui/PostStage.svelte'),
   settings: () => import('./ui/SettingsShell.svelte'),

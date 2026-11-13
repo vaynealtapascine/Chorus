@@ -11,7 +11,7 @@ import { sync, type Projection } from './sync/client';
 import { bodyAuthors } from './front-view';
 import { pollPayload } from './polls';
 import { flushUploads, imageThumbnail, stageBlob } from './sync/uploads';
-import { emptyDraft, loadDraft, occupied, saveDraft, type JournalDraft } from './journal-draft';
+import { decodeDraft, draftKey, emptyDraft, encodeDraft, loadDraft, occupied, saveDraft, type JournalDraft } from './journal-draft';
 import { shelve as shelveDraft, unshelve as unshelveDraft } from './journal-drafts';
 import { handleMentions, memberHandles, shownHandle } from './handles';
 import { stepIndex, suggest, suggestionAt, applySuggestion, type Suggestion } from './compose-suggest';
@@ -19,6 +19,7 @@ import { inline, link, linkProblem, type Sel } from './format-text';
 
 export const MAX_FILES = 10;
 type ReplyVisibility = 'private' | 'followers' | 'server';
+type Launch = { kind?: JournalDraft['kind']; quote?: string; author?: string; audience?: Audience };
 
 export interface PendingFile { file: File; alt: string; spoiler: boolean; url: string }
 export interface Attach {
@@ -62,6 +63,9 @@ export class Composer {
   error = $state('');
   busy = $state(false);
   loaded = false;
+  // what this tab last read or wrote for the draft: only a change made here is written, so a second
+  // tab doesn't put its stale copy back over the first's on every sync
+  private kept = '';
 
   constructor(accountId: string, context: string) {
     this.accountId = accountId;
@@ -98,8 +102,10 @@ export class Composer {
 
   readonly hasContent = $derived(hasContent(this.draft, this.pending.length));
   readonly isOccupied = $derived(occupied(this.draft, this.start.mode, this.startBuckets) || this.pending.length > 0);
-  readonly canPost = $derived(!this.busy && this.authors.length > 0 && (!!this.draft.body.trim() || this.pending.length > 0) &&
-    validBucketAudience(this.audience, this.availableBuckets));
+  // every author must still be ours to write as (a picked member since archived disables Post, not a silent no-op)
+  readonly postable = $derived(this.authors.length > 0 && this.authorMembers.length === this.authors.length &&
+    (!!this.draft.body.trim() || this.pending.length > 0) && validBucketAudience(this.audience, this.availableBuckets));
+  readonly canPost = $derived(!this.busy && this.postable);
 
   /** A surface showing this draft: hands over the live projection, and loads the draft the first time. */
   attach(projection: Projection, opts: Attach = {}) {
@@ -109,6 +115,7 @@ export class Composer {
     if (this.loaded) return;
     const saved = loadDraft(this.accountId, this.context);
     this.draft = saved ?? emptyDraft(this.start.mode, this.startBuckets);
+    this.kept = saved ? encodeDraft(saved) : '';
     // only words, files or a quote count as something to restore; a remembered author or audience is quiet
     this.restored = !!saved && hasContent(saved, 0);
     this.loaded = true;
@@ -118,7 +125,22 @@ export class Composer {
   persist() {
     if (!this.loaded) return;
     const value = { ...$state.snapshot(this.draft), lostFiles: this.draft.lostFiles + this.pending.length };
-    saveDraft(this.accountId, this.context, occupied(value, this.start.mode, this.startBuckets) ? value : null);
+    const keep = occupied(value, this.start.mode, this.startBuckets) ? value : null;
+    const enc = keep ? encodeDraft(keep) : '';
+    if (enc === this.kept) return;
+    this.kept = enc;
+    saveDraft(this.accountId, this.context, keep);
+  }
+
+  /** Another tab wrote the main draft: take it, unless this tab holds files of its own or is posting. */
+  adopt(raw: string | null) {
+    if (!this.loaded || this.busy || this.pending.length) return;
+    const next = decodeDraft(raw);
+    const enc = next ? encodeDraft(next) : '';
+    if (enc === this.kept) return;
+    this.kept = enc;
+    this.draft = next ?? emptyDraft(this.start.mode, this.startBuckets);
+    this.restored = !!next?.lostFiles;
   }
 
   setAudience(a: Audience | null) {
@@ -178,8 +200,17 @@ export class Composer {
     this.persist();
   }
 
+  /** Would applying an opener's ask change a draft that holds something? Then the writer is asked first (Android's "You have a Journal draft"). */
+  asksFirst(o: Launch): boolean {
+    if (!this.hasContent) return false;
+    const d = this.draft;
+    return (!!o.quote && o.quote !== d.quote) || (!!o.kind && o.kind !== d.kind) ||
+      (!!o.author && (this.authors.length !== 1 || this.authors[0] !== o.author)) ||
+      (!!o.audience && JSON.stringify(o.audience) !== JSON.stringify($state.snapshot(this.audience)));
+  }
+
   /** Apply what an opener asked for (a quote, a kind, an author, an audience). */
-  apply(o: { kind?: JournalDraft['kind']; quote?: string; author?: string; audience?: Audience }) {
+  apply(o: Launch) {
     if (o.kind) this.draft.kind = o.kind;
     if (o.quote) this.draft.quote = o.quote;
     if (o.author) this.draft.authors = [o.author];
@@ -190,17 +221,18 @@ export class Composer {
   async send(): Promise<boolean> {
     const projection = this.projection;
     if (!projection || !this.canPost || this.authors.some((id) => !canWriteAs(projection, id, this.accountId))) return false;
-    const authors = this.authors;
-    const closes = this.draft.pollCloses ? new Date(this.draft.pollCloses).getTime() : null;
-    const pollDraft = this.draft.pollOn ? pollPayload(this.draft.pollOptions, this.draft.pollMultiple, Number.isFinite(closes) ? closes : null) : {};
-    if (pollDraft.error) { this.error = pollDraft.error; return false; }
+    const poll = (d: JournalDraft) => {
+      const closes = d.pollCloses ? new Date(d.pollCloses).getTime() : null;
+      return d.pollOn ? pollPayload(d.pollOptions, d.pollMultiple, Number.isFinite(closes) ? closes : null) : {};
+    };
+    const checked = poll(this.draft);
+    if (checked.error) { this.error = checked.error; return false; }
     this.busy = true;
     this.error = '';
-    const sending = $state.snapshot(this.draft);
     const files = this.pending;
     try {
       // files first: a post never names an attachment that isn't queued on this device
-      const attachmentIds: string[] = [];
+      const staged = new Map<File, string>();
       for (const item of files) {
         const original = await stageBlob(item.file, item.file.type, this.accountId);
         const thumb = await imageThumbnail(item.file);
@@ -212,7 +244,18 @@ export class Composer {
           ...(thumbnail ? { thumb_blob_hash: thumbnail.hash } : {}),
           alt_text: item.alt.trim(), is_spoiler: item.spoiler,
         });
-        attachmentIds.push(id);
+        staged.set(item.file, id);
+      }
+      // what the composer shows once the files are staged is what goes (words typed meanwhile are not lost,
+      // a file removed meanwhile stays out, one added meanwhile waits in the tray)
+      const sent = this.pending.filter((p) => staged.has(p.file));
+      const attachmentIds = sent.map((p) => staged.get(p.file)!);
+      const sending = $state.snapshot(this.draft);
+      const authors = $state.snapshot(this.authors);
+      const pollDraft = poll(sending);
+      if (!this.postable || (!sending.body.trim() && !attachmentIds.length) || pollDraft.error || authors.some((id) => !canWriteAs(projection, id, this.accountId))) {
+        this.error = pollDraft.error ?? 'Could not post. Your draft is kept.';
+        return false;
       }
       // our members' @handles become mentions (D-126)
       const mentions = Object.fromEntries([...handleMentions(memberHandles(projection, this.accountId), members(projection))]
@@ -223,7 +266,7 @@ export class Composer {
       // keep who is writing and where it goes, unless new posts have a default; clear what was said
       this.draft = { ...(this.savedDefault && !this.replyTo ? emptyDraft(this.start.mode, this.startBuckets) : emptyDraft(sending.visibility, sending.bucketIds)), authors: sending.authors };
       for (const item of files) if (item.url) URL.revokeObjectURL(item.url);
-      this.pending = [];
+      this.pending = this.pending.filter((p) => !staged.has(p.file));
       this.restored = false;
       this.persist();
       return true;
@@ -240,8 +283,16 @@ export function composerFor(context: string, accountId = sync.accountId): Compos
   const key = `${accountId.length}:${accountId}:${context}`;
   let c = registry.get(key);
   if (!c) registry.set(key, (c = new Composer(accountId, context)));
+  if (!listening && typeof window !== 'undefined') {
+    listening = true;
+    // the main draft lives in localStorage: another tab's edit shows here too, so neither puts back a stale copy
+    window.addEventListener('storage', (e) => {
+      for (const one of registry.values()) if (one.context === 'main' && e.key === draftKey(one.accountId, 'main')) one.adopt(e.newValue);
+    });
+  }
   return c;
 }
+let listening = false;
 export const contextOf = (replyTo?: string | null) => (replyTo ? `reply:${replyTo}` : 'main');
 
 /** One surface's text field: its selection, and the formatting that acts on it. Each surface has its own

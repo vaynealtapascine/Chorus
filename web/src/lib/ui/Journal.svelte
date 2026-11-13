@@ -181,7 +181,9 @@
   .journal-layout > :global(.journal-context) { margin-top: var(--s-6); }
   /* one column: tabs, the quick box and the posts are cells that stack with no gaps, bordered at the sides as F6.13's */
   .journal { width: 100%; max-width: 760px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; align-content: start; min-width: 0; }
-  @media (min-width: 641px) { .journal { border-inline: 1px solid var(--line); min-height: calc(100dvh - 76px - var(--s-6)); } }
+  /* down to the screen's foot (under the app bar; above the tab bar below 1024 px) */
+  @media (min-width: 641px) { .journal { border-inline: 1px solid var(--line); min-height: calc(100dvh - 76px); } }
+  @media (min-width: 641px) and (max-width: 1023px) { .journal { min-height: calc(100dvh - 144px - env(safe-area-inset-bottom)); } }
   p { margin: 0; }
   /* switching sections fades the new one in */
   .timeline { animation: chorus-fade-in var(--t-fast) var(--ease); }

@@ -91,6 +91,8 @@
   .glyph:focus-visible, .chip:focus-visible { outline-offset: -2px; }
   .saved { margin-left: auto; color: var(--ink-3); font-size: var(--fs-sm); }
   .tools { gap: 0; }
+  /* two lit tools side by side stay two chips, not one blob */
+  .attach:not(.docked) { gap: 2px; }
   .glyph { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: var(--r-sm); background: none; color: var(--ink-2); cursor: pointer;
     transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
   .attach .glyph { color: var(--accent); }

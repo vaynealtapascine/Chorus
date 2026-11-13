@@ -6,7 +6,8 @@
   import Sheet from '../Sheet.svelte';
   import Button from '../kit/Button.svelte';
   import Composer from './Composer.svelte';
-  import { closeComposer, journalCompose, noteSent } from '../../journal-compose.svelte';
+  import { closeComposer, journalCompose, noteSent, type ComposeOptions } from '../../journal-compose.svelte';
+  import { journalUi } from '../../journal-ui.svelte';
   import { composerFor, contextOf } from '../../journal-composer.svelte';
   import type { Projection } from '../../sync/client';
 
@@ -18,16 +19,20 @@
   let drafts = $state(false);
   let dialog = $state<HTMLDivElement | undefined>();
 
-  // what the opener asked for lands once per opening
+  // what the opener asked for lands once per opening; a draft holding words is asked about first (Android)
   let applied = 0;
+  let launch = $state<ComposeOptions | null>(null);
   $effect(() => {
     if (!journalCompose.open || journalCompose.seq === applied) return;
     applied = journalCompose.seq;
     untrack(() => {
-      c.attach(projection, { replyVisibility: options.replyVisibility });
-      c.apply(options);
+      c.attach(projection, { authors, replyVisibility: options.replyVisibility });
+      if (c.asksFirst(options)) launch = options; else c.apply(options);
     });
   });
+  const launchText = $derived(launch?.quote ? 'Use this draft to quote the selected post? Your text and author choices will stay.'
+    : launch?.kind === 'entry' ? 'Continue this draft as a journal entry? Your text, author choices and other details will stay.'
+    : 'Continue your draft with this? Your text will stay.');
 
   // the page is as tall as what the on-screen keyboard leaves (visualViewport), so the bars ride on it
   let vv = $state<{ top: number; height: number } | null>(null);
@@ -52,7 +57,7 @@
     };
   });
 
-  function close() { asking = false; drafts = false; closeComposer(); }
+  function close() { asking = false; drafts = false; launch = null; closeComposer(); }
   function cancel() {
     // a reply, an untouched draft, or one handed back to the inline box it came from closes as it is
     if (options.inline || c.replyTo || !c.hasContent) close();
@@ -77,7 +82,8 @@
     else if (!e.shiftKey && (document.activeElement === last || !box.contains(document.activeElement))) { e.preventDefault(); first.focus(); }
   }
   const replyNames = $derived(options.replyNames);
-  const authors = $derived(options.author ? [options.author] : undefined);
+  // an inline box's expand keeps its suggestion (a profile's member); a fresh start suggests the header's "Posting as"
+  const authors = $derived(options.author ? [options.author] : options.inline || options.replyTo ? undefined : journalUi.as ? [journalUi.as] : []);
   let DraftsSheet = $state<typeof import('./DraftsSheet.svelte').default | null>(null);
   $effect(() => { if (drafts && !DraftsSheet) void import('./DraftsSheet.svelte').then((m) => (DraftsSheet = m.default)); });
 </script>
@@ -99,6 +105,15 @@
         <Button variant="primary" onclick={() => { c.shelve(); close(); }}>Save draft</Button>
         <Button variant="danger-soft" onclick={() => { c.discard(); close(); }}>Discard</Button>
         <Button variant="quiet" onclick={() => (asking = false)}>Keep writing</Button>
+      </div>
+    </Sheet>
+  {/if}
+  {#if launch}
+    {@const asked = launch}
+    <Sheet title="You have a draft" subtitle={launchText} onclose={() => (launch = null)}>
+      <div class="ask">
+        <Button variant="primary" onclick={() => { c.apply(asked); launch = null; }}>Use draft</Button>
+        <Button variant="quiet" onclick={() => (launch = null)}>Keep draft as it is</Button>
       </div>
     </Sheet>
   {/if}
