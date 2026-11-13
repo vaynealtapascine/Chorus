@@ -57,3 +57,18 @@ F1.2 words (default in use): one word per row (the Figma shows two ticks per row
 word to show), stored as `system.terminology.system` / `.front` (DATA_MODEL §4.3 gains `system`). Only
 setup's titles, Home's "Fronting now", More's Fronting row and System settings read them so far;
 the rest of the app still says system/fronting. Everything else in the audits' question sections: use the audit's default.
+
+Web, 2026-11-13 (not yet asked; the default named is in use):
+
+1. The web JS budget (D-156): it now measures the script that opens the app (285 of 300 KB), with Stage, Insights
+   and Settings loaded on demand; all JS is 325 KB. Default: keep D-116's 300 for the opening script. The other
+   choice is a higher number for all JS.
+2. Fronting's "Devices and data" block repeats Settings > Devices (sign out, link a device, Trash, API tokens).
+   Default: kept (two e2e specs use its Link another device button). Remove it?
+3. Offline, a DM in the chat list reads "Direct message" until the server answers, since friend names come from
+   it. Default: left. Keep the last known name on the device?
+4. On this device says "This app uses … MB on this device of …" under a Space used row that says the same.
+   Default: kept (an e2e spec reads the sentence).
+5. Type and radius steps the tokens lack: 14 px text (62 uses) and 8 px corners stay literals, and small tags and
+   bars use 4, 6, 9, 18 and 20 px corners. Default: left; a new step means a tokens.json change Android shares.
+6. Stage on a phone: the Style tab's Width control is below the fold of the drawer and scrolls. Default: left.
