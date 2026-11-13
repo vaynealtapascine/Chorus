@@ -67,3 +67,37 @@ export function decodeDraft(raw: string | null): JournalDraft | null {
 export function encodeDraft(d: JournalDraft): string {
   return JSON.stringify({ v: 1, ...d });
 }
+
+const store = (name: 'localStorage' | 'sessionStorage'): Storage | null => {
+  try { return globalThis[name] ?? null; } catch { return null; }
+};
+
+/** The 'main' context is kept in localStorage (it survives the tab, D-158); reply contexts ('reply:<post>') stay in sessionStorage. */
+export function loadDraft(accountId: string, context: string): JournalDraft | null {
+  const key = draftKey(accountId, context);
+  try {
+    if (context !== 'main') return decodeDraft(store('sessionStorage')?.getItem(key) ?? null);
+    const local = store('localStorage'), session = store('sessionStorage');
+    const kept = decodeDraft(local?.getItem(key) ?? null);
+    if (kept) return kept;
+    // an older build kept it in the tab: move it
+    const old = session?.getItem(key) ?? null;
+    const draft = decodeDraft(old);
+    if (draft && old && local) {
+      local.setItem(key, old);
+      session?.removeItem(key);
+    }
+    return draft;
+  } catch { return null; }
+}
+
+/** Keep (or, with null, remove) the draft of a composer context. */
+export function saveDraft(accountId: string, context: string, draft: JournalDraft | null): void {
+  const key = draftKey(accountId, context);
+  try {
+    const s = store(context === 'main' ? 'localStorage' : 'sessionStorage');
+    if (!s) return;
+    if (draft) s.setItem(key, encodeDraft(draft)); else s.removeItem(key);
+    if (context === 'main') store('sessionStorage')?.removeItem(key);
+  } catch { /* storage full or blocked: the draft is simply not kept */ }
+}

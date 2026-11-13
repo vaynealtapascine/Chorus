@@ -23,7 +23,7 @@
   import MenuRow from './kit/MenuRow.svelte';
   import PollVotes from './PollVotes.svelte';
   import { pollOf } from '../polls';
-  import PostComposer from './PostComposer.svelte';
+  import ReplyBox from './journal/ReplyBox.svelte';
   import RemotePostActions from './RemotePostActions.svelte';
   import RemotePostPoll from './RemotePostPoll.svelte';
   import RichText from './RichText.svelte';
@@ -105,7 +105,12 @@
   function rowClick(event: MouseEvent, next: string) {
     if (opensPost(event)) open(next);
   }
-  const focusReply = () => document.getElementById('thread-reply')?.querySelector('textarea')?.focus();
+  // the reply box's field, or on a phone its bar, which opens the full composer
+  const focusReply = () => {
+    const box = document.getElementById('thread-reply');
+    const field = box?.querySelector('textarea');
+    if (field) field.focus(); else box?.querySelector<HTMLButtonElement>('.bar button')?.click();
+  };
   // a server copy of a post, usually another account's: their picture and profile only where that
   // profile is shared with us
   function look(post: ThreadPost) {
@@ -200,8 +205,8 @@
     <div class="reply-box" id="thread-reply">
       <p class="replying">Replying to <strong>{focusedNames || 'this post'}</strong></p>
       <!-- another account's reader must be able to read the reply, so it starts server-wide -->
-      {#key id}<PostComposer {projection} initialAuthors={speaker ? [speaker] : []} replyTo={id}
-        defaultVisibility={own ? 'private' : 'server'} onsent={() => void load()} />{/key}
+      {#key id}<ReplyBox {projection} {dark} replyTo={id} authors={speaker ? [speaker] : []} replyNames={focusedNames || 'this post'}
+        replyVisibility={own ? 'private' : 'server'} onsent={() => void load()} />{/key}
     </div>
   {/if}
 
@@ -232,6 +237,8 @@
 
 <style>
   .thread-page { max-width: 760px; margin: 0 auto; display: grid; gap: 0; }
+  /* one bordered column, as the Journal's (F6.13) */
+  @media (min-width: 641px) { .thread-page { border-inline: 1px solid var(--line); } }
   header { display: flex; align-items: center; gap: var(--s-2); padding-bottom: var(--s-3); border-bottom: 1px solid var(--line); }
   h1 { margin: 0; flex: 1; font-size: var(--fs-lg, 1.25rem); }
   .back { display: grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: 50%; background: none; color: var(--ink); cursor: pointer; transform: rotate(180deg); }
@@ -267,8 +274,12 @@
   .focus.remote .text { font-size: 1.125rem; line-height: 1.55; }
   .detail { padding: var(--s-2) var(--s-4); color: var(--ink-3); font-size: var(--fs-sm); }
   .detail strong { color: var(--ink); }
-  .reply-box { display: grid; gap: var(--s-2); padding: var(--s-3) var(--s-4); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-  .replying { color: var(--ink-3); font-size: var(--fs-sm); }
+  /* the reply cell sits between hairlines under the post, its face in line with the replies' */
+  .reply-box { display: grid; border-top: 1px solid var(--line); }
+  .replying { padding: var(--s-3) var(--s-4) 0 calc(var(--s-4) + 52px); color: var(--ink-3); font-size: var(--fs-sm); }
+  .reply-box :global(.composer.reply .cell) { padding-top: var(--s-2); }
+  /* a phone's reply bar lies over the end of the page */
+  @media (max-width: 640px) { .thread-page { padding-bottom: 64px; } .replying { display: none; } .reply-box { border-top: 0; } }
   .replying strong { color: var(--accent); font-weight: 600; }
   .note { padding: var(--s-4); color: var(--ink-3); font-size: var(--fs-sm); }
   .stat { border: 0; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; }

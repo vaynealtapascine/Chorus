@@ -33,6 +33,7 @@
   import SectionLabel from './kit/SectionLabel.svelte';
   import { cap, parseWords } from '../words';
   import { core } from '../core';
+  import { openComposer } from '../journal-compose.svelte';
 
   let { projection, dark, onswitch }: { projection: Projection; dark: boolean; onswitch: (front?: string, addTo?: string) => void } = $props();
   const accountId = $derived(sync.accountId);
@@ -213,7 +214,7 @@
   {#each shown as id (id)}
     {#if id === 'write'}
       {#if !firstDay?.welcome}
-        <a class="card write" href="#/journal" aria-label="Write a post">
+        <a class="card write" href="#/journal" aria-label="Write a post" onclick={(e) => { e.preventDefault(); openComposer(); }}>
           <span class="face-sm"><Face who={self ? who.get(whoKey('member', self.id)) : undefined} size={32} {dark} /></span>
           <span class="ph">Write something{self ? `, ${self.display_name ?? self.name}` : ''}…</span>
           <Icon name="image" size={20} /><Icon name="poll" size={20} />

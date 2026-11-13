@@ -20,6 +20,12 @@ shots in `shots/`; start commands in §5). References: Android `ui/Journal.kt:36
 - A new post just appears; posts arriving while scrolled down move the page (M7.2's "new posts" pill was never built).
 - Right rail is five static shortcuts (F6.13 draws search, tags, feeds, formatting).
 
+Owner, same day, after seeing this list: "it's more of a visual thing where its lack of borders/separation makes
+it feel like an out-of-place composer, which the desktop Twitter experience does not have." So the first rule of §2:
+the quick box and the reply box are **cells of the feed column**, on the post cards' grid (face column, text x,
+right edge), between hairlines, with the tabs, composer and timeline stacked without gaps and the column bordered
+left and right at ≥ 641 px as F6.13 draws it. The text field itself has no box; the cell's lines separate it.
+
 ## 2. Target
 
 One composer model, three surfaces, every control one tap away but not on screen until wanted.

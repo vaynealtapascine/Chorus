@@ -35,12 +35,13 @@ test('chat and journal polls take one editable vote per member', async ({ browse
     await expect(again).toContainText('0 votes', { timeout: 15_000 });
     await page.screenshot({ path: info.outputPath('chat-poll.png'), fullPage: true });
 
+    await page.setViewportSize({ width: 1360, height: 900 }); // the timeline's inline box is the wide layout's (UI24)
     await go(page, 'journal');
     const composer = page.locator('form.composer').first();
     await composer.getByRole('button', { name: 'Poll', exact: true }).click();
     await composer.getByLabel('Poll option 1').fill('Walk');
     await composer.getByLabel('Poll option 2').fill('Read');
-    await composer.getByRole('switch', { name: 'Allow more than one choice' }).click();
+    await composer.getByRole('switch', { name: 'Pick several' }).click();
     await composer.getByLabel('Post text').fill('Plans for later');
     await composer.getByRole('button', { name: 'Post', exact: true }).click();
     const board = page.locator('article', { hasText: 'Plans for later' }).getByRole('group', { name: 'Poll' });

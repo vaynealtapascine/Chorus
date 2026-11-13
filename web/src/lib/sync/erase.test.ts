@@ -32,7 +32,10 @@ describe('erasing a signed-out copy', () => {
     local.setItem('chorus.members.collapsed', '["g"]');
     local.setItem('chorus.journal.name-notice', '1');
     local.setItem('chorus.theme', 'dark');
+    local.setItem('chorus.journal-draft.v1:2:a1:main', '{"v":1,"body":"hi"}'); // the Journal draft (D-158)
+    local.setItem('chorus.journal-shelf.v1:2:a1', '{"v":1,"drafts":[]}'); // and the drafts shelf
     local.setItem('other-site-thing', 'kept');
+    session.setItem('chorus.journal-draft.v1:2:a1:reply:p', '{"v":1,"body":"hi"}');
     session.setItem('chorus.chat.draft:a1:c1', '{"text":"hi"}');
     session.setItem('chorus.chat.folder', 'all');
     await eraseKeptCopy();

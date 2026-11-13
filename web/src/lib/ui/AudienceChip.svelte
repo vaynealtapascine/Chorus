@@ -18,6 +18,7 @@
     onchange,
     defaultAudience,
     onusedefault,
+    up = false,
   }: {
     /** What it's actually shared with now. */
     value: Audience;
@@ -34,6 +35,8 @@
     /** A new post's chip (D-117): the audience new posts start with, and making the one shown it. */
     defaultAudience?: Audience;
     onusedefault?: (on: boolean) => void;
+    /** the menu opens upwards (a chip docked at the bottom of the screen) */
+    up?: boolean;
   } = $props();
 
   let open = $state(false);
@@ -72,7 +75,7 @@
     <span>{text}</span>
   </button>
   {#if open}
-    <div class="menu" class:from-left={fromLeft} role="menu" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
+    <div class="menu" class:from-left={fromLeft} class:up role="menu" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
       <p class="menu-title">Who can see {label.toLowerCase()}</p>
       {#if inherit}
         <button role="menuitemradio" aria-checked={!own} onclick={() => pick(null)}>{inherit}</button>
@@ -105,6 +108,7 @@
   .chip:not(.own) { border-style: dashed; }
   .menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; width: 250px; display: grid; gap: 2px; padding: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-control); box-shadow: var(--shadow-pop); }
   .menu.from-left { left: 0; right: auto; }
+  .menu.up { top: auto; bottom: calc(100% + 4px); max-height: min(70vh, 520px); overflow: auto; }
   .menu-title { margin: 6px var(--s-2) 2px; font-size: var(--fs-xs); color: var(--ink-3); }
   .menu > button { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-2); text-align: left; border: 0; background: none; color: var(--ink); font: inherit; font-size: var(--fs-sm); padding: var(--s-2); border-radius: 8px; cursor: pointer; }
   .menu > button:hover { background: var(--surface-2); }

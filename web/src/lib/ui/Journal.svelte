@@ -4,14 +4,17 @@
   import { sync, type Projection } from '../sync/client';
   import { bodyAuthors } from '../front-view';
   import PostCard from './PostCard.svelte';
-  import PostComposer from './PostComposer.svelte';
+  import Composer from './journal/Composer.svelte';
+  import { composerFor } from '../journal-composer.svelte';
+  import { openComposer } from '../journal-compose.svelte';
+  import { MediaQuery } from 'svelte/reactivity';
   import { quoteView } from '../post-threads';
   import { repostOriginal, savedList, savedPosts, socialIndex } from '../journal-social';
   import JournalFriends from './JournalFriends.svelte';
-  import { journalCompose } from '../journal-compose.svelte';
   import { router } from '../router.svelte';
   import JournalLists from './JournalLists.svelte';
   import JournalFeeds from './JournalFeeds.svelte';
+  import JournalRail from './journal/JournalRail.svelte';
   import FeedPosts from './FeedPosts.svelte';
   import { savedFeeds } from '../feeds';
   import { BUILT_IN_NAMES, pinnedTabs, storedPins } from '../feed-pins';
@@ -62,8 +65,8 @@
   let menu = $state(false);
   const shownTimeline = $derived(section === 'entries' ? timeline.filter((item) => item.kind === 'post' && item.post.kind === 'entry') : timeline);
   const savedPostsList = $derived(savedList(entries, saved));
-  // a card's Quote opens the composer, which lives on the timeline
-  $effect(() => { if (journalCompose.quote && section !== 'timeline' && section !== 'entries') section = 'timeline'; });
+  // the quick box tops the timeline on wider screens; a phone starts a post from the full composer
+  const wide = new MediaQuery('min-width: 641px', true);
   const name = (id: string) => people.get(id)?.display_name ?? people.get(id)?.name ?? theirNames.get(id) ?? 'Someone';
   // other accounts' replies and hearts on our posts (GET /posts/activity, D-127)
   $effect(() => { void sync.device?.session; void entries.length; void refreshActivity(); });
@@ -107,7 +110,7 @@
     {:else}<EmptyState icon="bookmark" label="Nothing saved" />{/each}
   </div>
   {:else}
-  <PostComposer {projection} initialAuthors={speaker ? [speaker] : []} />
+  {#if wide.current}<Composer c={composerFor('main')} {projection} {dark} surface="quick" authors={speaker ? [speaker] : []} onexpand={() => openComposer({ inline: true })} />{/if}
   <div class="timeline">
     {#each shownTimeline as item (`${item.kind}:${item.id}`)}
       {#if item.kind === 'post'}
@@ -137,23 +140,17 @@
     {#if !self}<MenuRow label="System board" icon="layers" href="#/journal/board" onclick={() => (menu = false)} />{/if}
   </MenuSheet>
 {/if}
-<aside class="journal-context" aria-label="Journal shortcuts">
-  <a class="context-search" href="#/search/posts"><Icon name="search" size={18} />Search Journal</a>
-  <section><h2>Your journal</h2><button onclick={() => (section = 'timeline')}><Icon name="journal" size={18} />{self ? 'My timeline' : 'System timeline'}</button><button onclick={() => (section = 'friends')}><Icon name="friends" size={18} />Friends’ posts</button><button onclick={() => (section = 'saved')}><Icon name="bookmark" size={18} />Saved posts</button><button onclick={() => (section = 'feeds')}><Icon name="layers" size={18} />Your feeds</button><button onclick={() => (section = 'lists')}><Icon name="members" size={18} />Member lists</button></section>
-</aside></div>
+<JournalRail {projection} {section} onsection={(id) => (section = id)} /></div>
 
 <style>
   .journal-layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: var(--s-6); }
-  .journal-context { display: grid; align-content: start; gap: var(--s-4); min-width: 0; }
-  .journal-context section { display: grid; gap: var(--s-3); background: var(--surface); border-radius: var(--r-md); padding: var(--s-4); }
-  .journal-context h2 { font-size: var(--fs-sm); }
-  .journal-context a { color: var(--accent); text-decoration: none; font-size: var(--fs-xs); }
-  .journal-context button, .context-search { display: flex; align-items: center; gap: 10px; border: 0; background: none; color: var(--ink-2); padding: var(--s-2) 0; text-align: left; font-size: var(--fs-sm); cursor: pointer; }
-  .journal-context .context-search { background: var(--surface-2); border-radius: var(--r-full); padding: var(--s-3) var(--s-4); color: var(--ink-3); }
-  @media (max-width: 1279px) { .journal-layout { grid-template-columns: minmax(0, 1fr); } .journal-context { display: none; } }
+  @media (max-width: 1279px) { .journal-layout { grid-template-columns: minmax(0, 1fr); } .journal-layout > :global(.journal-context) { display: none; } }
   /* a set width (auto margins would shrink it to its content), so switching sections doesn't move the tabs */
-  .journal { width: 100%; max-width: 760px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-4); align-content: start; min-width: 0; }
-  header { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: var(--s-3); }
+  /* one column: header, tabs, the quick box and the posts stack with no gaps, as F6.13's bordered column */
+  .journal { width: 100%; max-width: 760px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; align-content: start; min-width: 0; }
+  @media (min-width: 641px) { .journal { border-inline: 1px solid var(--line); min-height: calc(100dvh - 76px - 2 * var(--s-6)); } }
+  header { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: var(--s-3); padding: var(--s-1) var(--s-2); }
+  .journal :global(.composer.quick + .timeline) { border-top: 0; }
   p { margin: 0; }
   /* switching sections fades the new one in */
   .timeline { animation: chorus-fade-in var(--t-fast) var(--ease); }

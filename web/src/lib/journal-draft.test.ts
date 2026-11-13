@@ -1,5 +1,71 @@
-import { describe, expect, it } from 'vitest';
-import { decodeDraft, draftKey, emptyDraft, encodeDraft, occupied } from './journal-draft';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { decodeDraft, draftKey, emptyDraft, encodeDraft, loadDraft, occupied, saveDraft } from './journal-draft';
+
+class FakeStorage {
+  [key: string]: unknown;
+  getItem(k: string) { return Object.hasOwn(this, k) ? String(this[k]) : null; }
+  setItem(k: string, v: string) { this[k] = String(v); }
+  removeItem(k: string) { delete this[k]; }
+}
+
+describe('kept drafts', () => {
+  let local: FakeStorage, session: FakeStorage;
+  const d = { ...emptyDraft(), body: 'hello' };
+  beforeEach(() => {
+    local = new FakeStorage();
+    session = new FakeStorage();
+    vi.stubGlobal('localStorage', local);
+    vi.stubGlobal('sessionStorage', session);
+  });
+
+  it('keeps the main draft in localStorage and replies in sessionStorage', () => {
+    saveDraft('a', 'main', d);
+    saveDraft('a', 'reply:p1', { ...d, body: 'r' });
+    expect(Object.keys(local)).toEqual([draftKey('a', 'main')]);
+    expect(Object.keys(session)).toEqual([draftKey('a', 'reply:p1')]);
+    expect(loadDraft('a', 'main')).toEqual(d);
+    expect(loadDraft('a', 'reply:p1')?.body).toBe('r');
+    expect(loadDraft('b', 'main')).toBeNull();
+  });
+
+  it('removes a draft when saving null', () => {
+    saveDraft('a', 'main', d);
+    saveDraft('a', 'main', null);
+    expect(loadDraft('a', 'main')).toBeNull();
+    saveDraft('a', 'reply:p1', d);
+    saveDraft('a', 'reply:p1', null);
+    expect(Object.keys(session)).toEqual([]);
+  });
+
+  it('moves a draft an older build left in the tab', () => {
+    session.setItem(draftKey('a', 'main'), encodeDraft(d));
+    expect(loadDraft('a', 'main')).toEqual(d);
+    expect(Object.keys(session)).toEqual([]);
+    expect(local.getItem(draftKey('a', 'main'))).toBe(encodeDraft(d));
+  });
+
+  it('prefers localStorage over a stale tab copy and ignores damage', () => {
+    local.setItem(draftKey('a', 'main'), encodeDraft(d));
+    session.setItem(draftKey('a', 'main'), encodeDraft({ ...d, body: 'old' }));
+    expect(loadDraft('a', 'main')?.body).toBe('hello');
+    local.setItem(draftKey('b', 'main'), 'not json');
+    expect(loadDraft('b', 'main')).toBeNull();
+  });
+
+  it('never throws when storage does', () => {
+    const boom = { getItem() { throw new Error('x'); }, setItem() { throw new Error('x'); }, removeItem() { throw new Error('x'); } };
+    vi.stubGlobal('localStorage', boom);
+    vi.stubGlobal('sessionStorage', boom);
+    expect(loadDraft('a', 'main')).toBeNull();
+    expect(loadDraft('a', 'reply:p')).toBeNull();
+    expect(() => saveDraft('a', 'main', d)).not.toThrow();
+    expect(() => saveDraft('a', 'reply:p', null)).not.toThrow();
+    vi.stubGlobal('localStorage', undefined);
+    vi.stubGlobal('sessionStorage', undefined);
+    expect(loadDraft('a', 'main')).toBeNull();
+    expect(() => saveDraft('a', 'main', d)).not.toThrow();
+  });
+});
 
 describe('journal drafts', () => {
   it('round-trips every field, keeping null authors distinct from an empty choice', () => {

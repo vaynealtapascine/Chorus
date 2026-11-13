@@ -26,7 +26,7 @@
   import { bookmarkPayload, repostBy, repostPayload, shareText, type SocialIndex } from '../journal-social';
   import { linkTo } from '../share-links';
   import { entryMeta, fullTimestamp, readTime, shortAgo } from '../journal-presentation';
-  import { journalCompose } from '../journal-compose.svelte';
+  import { openComposer } from '../journal-compose.svelte';
   import { router } from '../router.svelte';
   import { memberHandles, shownHandle } from '../handles';
   import { longPress } from '../long-press';
@@ -139,9 +139,8 @@
   }
   function quotePost() {
     repostMenu = false;
-    // the Journal's composer takes the post and focuses; quoting is its own post with its own audience
-    journalCompose.quote = post.id;
-    router.go('/journal');
+    // the full composer opens with the post quoted; quoting is its own post with its own audience
+    openComposer({ quote: post.id });
   }
   function toggleSave() {
     // saving is a private account pref: it syncs to this account's devices and never reaches the author

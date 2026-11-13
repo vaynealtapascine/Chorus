@@ -121,3 +121,35 @@ export function insert(v: Sel, add: string): Sel {
 }
 
 export const wordCount = (text: string) => text.split(/\s+/).filter(Boolean).length;
+
+const BULLET = /^([•\-*]) /;
+const NUMBER = /^(\d+)\. /;
+const QUOTE = /^(>+) /;
+
+/** Enter on a list or quote line: continue it (`• `, `1. ` → `2. `, `> `), or end it when the item is empty. null: let the browser insert the newline. */
+export function enter(v: Sel): Sel | null {
+  if (v.start !== v.end || inFence(v)) return null;
+  const at = v.start;
+  const start = v.text.lastIndexOf('\n', at - 1) + 1;
+  const nl = v.text.indexOf('\n', at);
+  const end = nl >= 0 ? nl : v.text.length;
+  const line = v.text.slice(start, end);
+  let prefix: string, next: string;
+  let m: RegExpMatchArray | null;
+  if ((m = line.match(NUMBER))) { prefix = m[0]; next = `${Number(m[1]) + 1}. `; }
+  else if ((m = line.match(BULLET)) || (m = line.match(QUOTE))) { prefix = next = m[0]; }
+  else return null;
+  if (at < start + prefix.length) return null; // the caret is inside the marker itself
+  if (line === prefix) return { text: v.text.slice(0, start) + v.text.slice(end), start, end: start };
+  const add = '\n' + next;
+  return { text: v.text.slice(0, at) + add + v.text.slice(at), start: at + add.length, end: at + add.length };
+}
+
+/** What a key chord does in the editor: a marker to toggle with inline() (`**`, `_`, `~~`, a backtick), 'link', 'post', or null. */
+export function chord(e: { key: string; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; altKey: boolean }): string | null {
+  if (e.ctrlKey === e.metaKey || e.altKey) return null;
+  const key = e.key.toLowerCase();
+  if (key === 'enter') return 'post';
+  if (e.shiftKey) return key === 'x' ? '~~' : null;
+  return ({ b: '**', i: '_', k: 'link', e: '`' } as Record<string, string>)[key] ?? null;
+}

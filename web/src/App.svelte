@@ -40,6 +40,7 @@
   import { displayPrefs, front as fdFront } from './lib/fronting-display';
   import Trash from './lib/ui/Trash.svelte';
   import UndoToast from './lib/ui/UndoToast.svelte';
+  import ComposerDialog from './lib/ui/journal/ComposerDialog.svelte';
   import ConnectionBanner from './lib/ui/kit/ConnectionBanner.svelte';
   import SlowDownToast from './lib/ui/kit/SlowDownToast.svelte';
   import { selfMember, members, groups } from './lib/data';
@@ -290,6 +291,7 @@
   {#if switching}
     <Switcher {projection} {dark} front={switchFront} addTo={switchAddTo} onclose={() => { switching = false; switchFront = undefined; switchAddTo = undefined; }} />
   {/if}
+  <ComposerDialog {projection} {dark} />
   <UndoToast />
   <SlowDownToast />
   <UpdateSheet />

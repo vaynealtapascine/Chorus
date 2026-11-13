@@ -11,7 +11,7 @@
   import { router } from '../router.svelte';
   import { shareText } from '../journal-social';
   import { withHeart } from '../friends-feed';
-  import { journalCompose } from '../journal-compose.svelte';
+  import { openComposer } from '../journal-compose.svelte';
   import { keepRemote } from '../remote-posts.svelte';
   import type { ThreadPost } from '../post-threads';
   import Icon from './Icon.svelte';
@@ -37,8 +37,7 @@
   function quote() {
     repostMenu = false;
     keepRemote(post);
-    journalCompose.quote = post.id;
-    router.go('/journal');
+    openComposer({ quote: post.id });
   }
   let disclose = $state<HTMLDialogElement | undefined>();
   // our heart answers at once, before the next read

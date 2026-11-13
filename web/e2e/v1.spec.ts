@@ -241,6 +241,8 @@ test('one internal channel shared with a follower (channel permissions)', async 
 
 test('a post with a reply and a reaction across accounts', async () => {
   const text = `tomatoes are in ${run}`;
+  // the inline post and reply boxes are the wide layout's (a phone starts both from the full composer, UI24)
+  for (const p of [stars.page, friend.page]) await p.setViewportSize({ width: 1360, height: 900 });
   await go(stars.page, 'journal');
   await stars.page.getByLabel('Post text').fill(text);
   await stars.page.getByRole('button', { name: 'Tags and mood', exact: true }).click();
@@ -287,6 +289,7 @@ test('a post with a reply and a reaction across accounts', async () => {
   await expect(thread.locator('.ancestors')).toContainText(text);
   await stars.page.goBack();
   await expect(thread.locator('article.row', { hasText: reply })).toBeVisible();
+  for (const p of [stars.page, friend.page]) await p.setViewportSize({ width: 420, height: 900 });
 });
 
 test('search finds messages and posts', async () => {
