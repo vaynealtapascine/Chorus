@@ -109,6 +109,7 @@ import garden.vayne.chorus.data.ChannelWindow
 import garden.vayne.chorus.data.ChatAttachment
 import garden.vayne.chorus.data.SearchDocument
 import garden.vayne.chorus.data.ReadTracking
+import garden.vayne.chorus.data.Ticks
 import garden.vayne.chorus.data.HeldMessage
 import garden.vayne.chorus.data.PrivateReplies
 import garden.vayne.chorus.data.ChatCompose
@@ -529,6 +530,20 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             } }
         }
     }
+    // ticks on our messages (D-131): other accounts' reads only with our switch on and in a shared or direct chat
+    val receipts by chorus.receipts.collectAsState()
+    val receiptsOn = model.accountPrefs.shareReads && space != null && space.kind != "internal"
+    LaunchedEffect(channel?.id, receiptsOn, syncStatus == Status.Live) {
+        val id = channel?.id ?: return@LaunchedEffect
+        if (receiptsOn && syncStatus == Status.Live) chorus.fetchReceipts(id)
+    }
+    val ticksByMessage by produceState<Map<String, String>>(emptyMap(), messages, readMarks, receipts, receiptsOn,
+        model.accountPrefs.readPerMember) {
+        val account = chorus.device?.accountId.orEmpty()
+        val readers = if (model.accountPrefs.readPerMember) readMarks.filter { it.member.isNotEmpty() } else emptyList()
+        val friends = if (receiptsOn) receipts[channel?.id].orEmpty() else emptyList()
+        value = withContext(Dispatchers.Default) { Ticks.of(messages, account, readers, friends) }
+    }
     var previousChannel by rememberSaveable { mutableStateOf(channel?.id) }
     LaunchedEffect(channel?.id, chorus.device?.accountId) {
         if (previousChannel == channel?.id) return@LaunchedEffect
@@ -595,8 +610,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             catch (_: Exception) { /* the partner's name stands in until the next refresh */ }
         }
     }
-    val listRows = remember(model, viewingAs, chorus.device?.accountId, directory, foreignAuthors, privateCards) {
-        chatListRows(model, viewingAs, chorus.device?.accountId.orEmpty(), directory, foreignAuthors, privateCards)
+    val listRows = remember(model, viewingAs, chorus.device?.accountId, directory, foreignAuthors, privateCards, receipts) {
+        chatListRows(model, viewingAs, chorus.device?.accountId.orEmpty(), directory, foreignAuthors, privateCards, receipts)
     }
     var arrangingPins by rememberSaveable { mutableStateOf(false) }
     // the chat folders screen (D-113): "" for its list, or "new", "new:<chat>" or a folder to edit
@@ -1146,7 +1161,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     message.authors.firstOrNull()?.let { it != replySpeakerId && model.member(it) != null } == true
                 else message.accountId != null && message.accountId != chorus.device?.accountId
                 ChatMessageCard(message, model, foreignAuthors, chorus, unseenByMessage[message.id].orEmpty(),
-                    heldMessages[message.id], actingMemberId = replySpeakerId, aligned = alignedIds,
+                    heldMessages[message.id], actingMemberId = replySpeakerId, aligned = alignedIds, tick = ticksByMessage[message.id],
                     reactions = model.messageReactions[message.id].orEmpty(),
                     onForward = if (heldMessages[message.id] == null) ({ forwarding = message }) else null,
                     onPin = if (heldMessages[message.id] == null) ({ pin(message) }) else null,
@@ -1795,6 +1810,8 @@ internal fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors:
     linked: ((String) -> ChatMessage?)? = null,
     /** Just jumped to: a moment's ring. */
     flash: Boolean = false,
+    /** Ours only (D-131): [Ticks.PENDING], [Ticks.SAVED] or [Ticks.READ]. */
+    tick: String? = null,
     /** Opens an author's profile: (their account when not ours, member id). */
     onProfile: ((String?, String) -> Unit)? = null) {
     val p = LocalChorusPalette.current
@@ -1989,13 +2006,18 @@ internal fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors:
             }
             Text(ChatThreads.repliesLabel(thread.replies), color = p.accent, fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold)
         }
-        if (reactions.isNotEmpty() || message.pinned || held != null) Row(Modifier.then(if (reactions.isNotEmpty()) Modifier.fillMaxWidth() else Modifier.align(Alignment.End)),
+        val shownTick = tick.takeIf { own && held == null }
+        if (reactions.isNotEmpty() || message.pinned || held != null || shownTick != null) Row(Modifier.then(if (reactions.isNotEmpty()) Modifier.fillMaxWidth() else Modifier.align(Alignment.End)),
             horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
             if (reactions.isNotEmpty()) ReactionChips(reactions, actingMemberId, Modifier.weight(1f),
                 { id -> model.member(id)?.shownName ?: foreignAuthors[id]?.name ?: "Someone" }, onReact.takeIf { held == null }, holdReaction)
             if (message.pinned) androidx.compose.material3.Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_pin), "Pinned",
                 Modifier.size(14.dp), tint = p.ink3)
             if (held != null) ChatIcon(R.drawable.ic_history, "Message held for slow mode")
+            if (shownTick != null) androidx.compose.material3.Icon(androidx.compose.ui.res.painterResource(
+                when (shownTick) { Ticks.PENDING -> R.drawable.ic_clock; Ticks.READ -> R.drawable.ic_read; else -> R.drawable.ic_check }),
+                when (shownTick) { Ticks.PENDING -> "Waiting to sync"; Ticks.READ -> "Read"; else -> "Sent" },
+                Modifier.size(14.dp), tint = if (shownTick == Ticks.READ) p.accent else p.ink3)
         }
         }
         HeartPop(hearts, Modifier.align(Alignment.Center))

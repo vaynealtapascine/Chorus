@@ -5,8 +5,10 @@ import garden.vayne.chorus.data.ChatOrganize
 import garden.vayne.chorus.data.ChatPresentation
 import garden.vayne.chorus.data.ForeignAuthor
 import garden.vayne.chorus.data.Model
+import garden.vayne.chorus.data.ReadMark
 import garden.vayne.chorus.data.ReadTracking
 import garden.vayne.chorus.data.SpaceInfo
+import garden.vayne.chorus.data.Ticks
 import garden.vayne.chorus.data.accountVisible
 import garden.vayne.chorus.data.memberVisible
 
@@ -15,7 +17,9 @@ import garden.vayne.chorus.data.memberVisible
  * [privateCards] are the server's names for other accounts and their members; without them a DM
  * shows its space name until they load. */
 internal fun chatListRows(model: Model, viewingAs: String?, accountId: String, directory: Map<String, SpaceInfo>,
-    foreignAuthors: Map<String, ForeignAuthor>, privateCards: Map<String, ForeignAuthor>): List<ChatListRow> {
+    foreignAuthors: Map<String, ForeignAuthor>, privateCards: Map<String, ForeignAuthor>,
+    /** Other accounts' reads of our messages (D-131), for the tick on our last message. */
+    receipts: Map<String, List<ReadMark>> = emptyMap()): List<ChatListRow> {
     val ownIds = model.knownMemberIds
     val prefs = model.accountPrefs
     return model.channels.mapNotNull { candidate ->
@@ -46,7 +50,15 @@ internal fun chatListRows(model: Model, viewingAs: String?, accountId: String, d
         val latest = visible.lastOrNull()
         val sender = latest?.authors?.joinToString(" & ") { id -> model.member(id)?.shownName ?: foreignAuthors[id]?.name
             ?: directory[home.id]?.accounts?.find { it.id == latest.accountId }?.shownName ?: "Someone" }
-        ChatListRow(candidate, home, title, latest, unread, sender,
+        // our last message: on its way, saved or read (D-131); core is asked only where a read could show
+        val tick = latest?.takeIf { it.accountId == null || it.accountId == accountId }?.let { m ->
+            val members = if (model.accountPrefs.readPerMember) marks.filter { it.member.isNotEmpty() } else emptyList()
+            val friends = if (prefs.shareReads && home.kind != "internal") receipts[candidate.id].orEmpty() else emptyList()
+            if (m.accountId == null) Ticks.PENDING
+            else if (members.isEmpty() && friends.isEmpty()) Ticks.SAVED
+            else Ticks.of(listOf(m), accountId, members, friends)[m.id]
+        }
+        ChatListRow(candidate, home, title, latest, unread, sender, tick = tick,
             muted = model.accountPrefs.channelNotify(candidate.id, home.kind) == "none", pinned = candidate.id in prefs.chatPins,
             private = sides != null || (home.kind == "internal" && candidate.kind == "text" && candidate.memberIds.isNotEmpty()),
             whose = sides?.mine?.mapNotNull { model.member(it)?.shownName }?.joinToString(" & ")?.ifEmpty { null },

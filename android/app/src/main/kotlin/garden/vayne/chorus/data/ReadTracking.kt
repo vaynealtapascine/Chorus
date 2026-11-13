@@ -77,6 +77,6 @@ object ReadTracking {
         return compare(at, id, last.at, last.id) > 0
     }
 
-    private fun compare(at: Long, id: String, otherAt: Long, otherId: String): Int =
+    internal fun compare(at: Long, id: String, otherAt: Long, otherId: String): Int =
         at.compareTo(otherAt).takeIf { it != 0 } ?: id.compareTo(otherId)
 }

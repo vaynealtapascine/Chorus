@@ -108,6 +108,8 @@ private fun AdvancedPage(model: Model, saver: PrefSaver) {
     FormCard {
         ToggleRow("Show when we're typing in shared chats", prefs.shareTyping, enabled = on) { saver.save("share_typing", it) }
         FormDivider()
+        ToggleRow("Show friends when we've read", prefs.shareReads, enabled = on) { saver.save("share_reads", it) }
+        FormDivider()
         ToggleRow("Expand content warnings automatically", prefs.cwAutoExpand, enabled = on) { saver.save("chat.cw_auto_expand", it) }
         FormDivider()
         ToggleRow("Parse speaker annotations in chat", prefs.segmentParsing, enabled = on) { saver.save("chat.segment_parsing", it) }

@@ -13,6 +13,7 @@ import java.io.File
 import java.util.TimeZone
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.SupervisorJob
@@ -89,6 +90,9 @@ class Chorus private constructor(private val ctx: Context) {
     val frontHistoryRevision: StateFlow<Long> = _frontHistoryRevision
     private val _typing = MutableStateFlow<Map<String, List<TypingEntry>>>(emptyMap())
     val typing: StateFlow<Map<String, List<TypingEntry>>> = _typing
+    /** Other accounts' reads of our messages (D-131): memory only, like typing. */
+    private val _receipts = MutableStateFlow<Map<String, List<ReadMark>>>(emptyMap())
+    val receipts: StateFlow<Map<String, List<ReadMark>>> = _receipts
     private var typingExpiry: Job? = null
     private var typingOffset = 0L
     private val typingThrottle = TypingThrottle()
@@ -349,6 +353,21 @@ class Chorus private constructor(private val ctx: Context) {
             socket.send(JSONObject().put("t", "typing").put("channel", channelId)
                 .put("member", member ?: JSONObject.NULL).put("audience", audience)
                 .put("state", if (start) "start" else "stop").toString())
+        }
+    }
+
+    /** Ask the server what other accounts have read here: when a shared or direct chat opens. A chat the
+     * server won't talk about shows nothing, and a failed fetch keeps what is held. */
+    suspend fun fetchReceipts(channelId: String) {
+        try {
+            val reads = authedCall("GET", "/channels/$channelId/reads").optJSONArray("reads")
+            _receipts.value = ReadReceipts.replace(_receipts.value, channelId, reads)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: ApiException) {
+            if (e.code == "not_found") _receipts.value = ReadReceipts.replace(_receipts.value, channelId, null)
+        } catch (e: Exception) {
+            Log.d(TAG, "read receipts not fetched", e)
         }
     }
 
@@ -794,6 +813,7 @@ class Chorus private constructor(private val ctx: Context) {
                     if (!current(n) || _status.value == Status.StorageError) return@launch
                     val kind = frame.optString("t")
                     if (kind == "typing") { receiveTyping(frame); return@launch }
+                    if (kind == "read") { _receipts.value = ReadReceipts.receive(_receipts.value, frame); return@launch }
                     val out = runCatching { JSONArray(r.onFrame(text, System.currentTimeMillis())) }
                         .onFailure { Log.w(TAG, "frame rejected by core", it) }
                         .getOrNull() ?: return@launch
@@ -924,6 +944,7 @@ class Chorus private constructor(private val ctx: Context) {
         heldTimer?.cancel()
         heldTimer = null
         clearTyping()
+        _receipts.value = emptyMap()
         runCatching { store.close() }
         replica = null
         device = null

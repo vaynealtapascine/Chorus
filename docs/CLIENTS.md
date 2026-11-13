@@ -31,6 +31,14 @@ chorus-core (UniFFI / wasm) ── ops ──▶ local op table + outbox
   `fixtures/ui_chat_visible.json`: each case's space, channel, our members, front, Read as,
   `chat.hide_private` and subsystem expansion, with the expected `is_private` and `visible`.
 
+Ticks on our own messages (D-131, D-157) are one core rule on both clients (`chorus_core::ticks`,
+`ticks_for`, `fixtures/ticks`): a clock until the server has stamped the message, one tick once
+stored, two once a member of ours who didn't write it has read it (per-member reading on) or, with
+both accounts' "Show friends when we've read" on, a friend has. Other accounts' reads are fetched
+when a shared or direct chat opens (`GET /channels/{id}/reads`) and kept up by the socket's `read`
+frame, in memory only (web `read-receipts.ts`, Android `data/Ticks.kt`); they show on our side's
+bubbles and on our last message in the chat list, and a client holds none while its own switch is off.
+
 ### 1.1 Named front history (D-080, D-083)
 
 History pages read the device's visible operations through `frontSystemHistory` and

@@ -35,7 +35,9 @@ data class AccountPrefs(val notifyChat: JSONObject = JSONObject(), val followCei
     val homeSections: Map<String, Any?> = emptyMap(), val homeSectionsAll: Any? = null,
     /** Feeds shown as Journal tabs, in order (`journal.pinned_feeds`, F6.8): "system", "friends",
      * "entries" or a saved feed's id. Null until chosen: the three built-in tabs. */
-    val pinnedFeeds: List<String>? = null) {
+    val pinnedFeeds: List<String>? = null,
+    /** Show friends when we've read (`share_reads`, D-131): off until chosen, and both accounts need it. */
+    val shareReads: Boolean = false) {
     /** The tabs to show: pins that still exist ([live] are the saved feeds' ids), never none. */
     fun tabs(live: Set<String>): List<String> =
         (pinnedFeeds ?: DEFAULT_TABS).filter { it in DEFAULT_TABS || it in live }.distinct().ifEmpty { DEFAULT_TABS }
@@ -80,7 +82,8 @@ data class AccountPrefs(val notifyChat: JSONObject = JSONObject(), val followCei
                 keyed(prefs, accountId, Inbox.READ).mapValues { (_, v) -> InboxRead.parse(v) }, value(Inbox.SHOWS_PREF) as? JSONObject,
                 (value(Friends.START_BUCKET) as? String)?.takeIf { it.isNotBlank() },
                 keyed(prefs, accountId, HomeDashboard.READER), value(HomeDashboard.PREF)?.takeIf { it != JSONObject.NULL },
-                (value(PINNED_FEEDS) as? org.json.JSONArray)?.let { a -> (0 until a.length()).mapNotNull { a.optString(it).takeIf(String::isNotBlank) } })
+                (value(PINNED_FEEDS) as? org.json.JSONArray)?.let { a -> (0 until a.length()).mapNotNull { a.optString(it).takeIf(String::isNotBlank) } },
+                value("share_reads") == true)
         }
 
         /** Account-wide (no device) prefs under [prefix], by the rest of the key; a pending local

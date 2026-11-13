@@ -109,7 +109,9 @@ internal data class ChatListRow(val channel: ChatChannel, val space: ChatSpace, 
      * or the person (their own member) or account at the other end. */
     val icon: Member? = null,
     /** In a shared space with several channels: listed under the space's entry (owner, 2026-11-06). */
-    val grouped: Boolean = false)
+    val grouped: Boolean = false,
+    /** Our last message here: [garden.vayne.chorus.data.Ticks] pending, saved or read (D-131). */
+    val tick: String? = null)
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -343,7 +345,12 @@ internal fun RowScope.ChatRowBody(model: Model, row: ChatListRow, peer: Member?,
             color = if (special != null) p.accent else p.ink3, fontSize = 14.sp, lineHeight = 20.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
     Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        row.latest?.let { Text(ChatPresentation.listTimeLabel(it.occurredAt), color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp) }
+        row.latest?.let { Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+            row.tick?.let { tick -> Icon(painterResource(when (tick) { Ticks.PENDING -> R.drawable.ic_clock; Ticks.READ -> R.drawable.ic_read; else -> R.drawable.ic_check }),
+                when (tick) { Ticks.PENDING -> "Waiting to sync"; Ticks.READ -> "Read"; else -> "Sent" }, Modifier.size(14.dp),
+                tint = if (tick == Ticks.READ) p.accent else p.ink3) }
+            Text(ChatPresentation.listTimeLabel(it.occurredAt), color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
+        } }
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
             if (row.muted) Icon(painterResource(R.drawable.ic_bell_off), "Muted", Modifier.size(16.dp), tint = p.ink3)
             if (row.unread > 0) ChatCount(row.unread, !row.muted)
