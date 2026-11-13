@@ -1,0 +1,269 @@
+#
+# There is insufficient memory for the Java Runtime Environment to continue.
+# Native memory allocation (mmap) failed to map 536870912 bytes. Error detail: G1 virtual space
+# Possible reasons:
+#   The system is out of physical RAM or swap space
+#   This process is running with CompressedOops enabled, and the Java Heap may be blocking the growth of the native heap
+# Possible solutions:
+#   Reduce memory load on the system
+#   Increase physical memory or swap space
+#   Check if swap backing store is full
+#   Decrease Java heap size (-Xmx/-Xms)
+#   Decrease number of Java threads
+#   Decrease Java thread stack sizes (-Xss)
+#   Set larger code cache with -XX:ReservedCodeCacheSize=
+#   JVM is running with Unscaled Compressed Oops mode in which the Java heap is
+#     placed in the first 4GB address space. The Java Heap base address is the
+#     maximum limit for the native heap growth. Please use -XX:HeapBaseMinAddress
+#     to set the Java Heap base and to place the Java Heap above 4GB virtual address.
+# This output file may be truncated or incomplete.
+#
+#  Out of Memory Error (os_windows.cpp:3926), pid=77192, tid=45092
+#
+# JRE version:  (21.0.10) (build )
+# Java VM: OpenJDK 64-Bit Server VM (21.0.10+-14961533-b1163.108, mixed mode, sharing, tiered, compressed oops, compressed class ptrs, g1 gc, windows-amd64)
+# No core dump will be written. Minidumps are not enabled by default on client versions of Windows
+#
+
+---------------  S U M M A R Y ------------
+
+Command Line: -Dchorus.fixtures=C:\Users\pcuser\.t3\worktrees\Chorus\ui21-web-home\fixtures -Djava.awt.headless=true -Djava.library.path=C:\Program Files\Android\Android Studio\jbr\bin;C:\WINDOWS\Sun\Java\bin;C:\WINDOWS\system32;C:\WINDOWS;C:\Program Files\PowerShell\7;C:\Python315\Scripts\;C:\Python315\;C:\Program Files\Alacritty\;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.4\bin\x64;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.4\bin;C:\Program Files\ImageMagick-7.1.2-Q16-HDRI;C:\Python313\Scripts\;C:\Python313\;C:\Program Files\Common Files\Oracle\Java\javapath;C:\Program Files (x86)\Common Files\Oracle\Java\java8path;C:\Program Files (x86)\Common Files\Oracle\Java\javapath;C:\Ruby32-x64\bin\;C:\Program Files\Eclipse Adoptium\jdk-17.0.9.9-hotspot\bin\;C:\Users\pcuser\AppData\Local\Programs\Python\Python312\Scripts\;C:\Users\pcuser\AppData\Local\Programs\Python\Python312\;C:\Users\pcuser\AppData\Local\Programs\Python\Python311\Scripts\;C:\Users\pcuser\AppData\Local\Programs\Python\Python311\;C:\Program Files\Eclipse Adoptium\jdk-11.0.16.101-hotspot\bin\;C:\Program Files (x86)\Common Files\Intel\Shared Libraries\redist\intel64\compiler\;C:\Program Files\AdoptOpenJDK\jre-8.0.292.10-hotspot\bin\;C:\Program Files\AdoptOpenJDK\jre-11.0.11.9-hotspot\bin\;C:\Program Files (x86)\AdoptOpenJDK\jre-8.0.292.10-hotspot\bin\;C:\Windows\system32\;C:\Windows\;C:\Windows\System32\Wbem\;C:\Windows\System32\WindowsPowerShell\v1.0\;C:\Windows\System32\OpenSSH\;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common\;C:\Program Files\NVIDIA Corporation\NVIDIA NvDLISR\;C:\Program Files\PuTTY\;C:\Program Files\dotnet\;C:\Program Files\Mactype\;C:\ProgramData\chocolatey\bin\;C:\Program Files\LLVM\bin\;C:\Program Files\Git\cmd\;C:\Program Files\CMake\bin\;C:\Program Files\starship\bin\;C:\Program Files\Common Files\Autodesk Shared\;C:\Program Files\Microsoft SQL Server\150\Tools\Binn\;C:\Program Files\Go\bin\;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;C:\Program -Djna.library.path=F:\DunBuild\chorus-target\debug -Dorg.gradle.internal.worker.tmpdir=F:\DunBuild\chorus-gradle-ui21web\core-bridge\tmp\testDebugUnitTest\work --add-opens=java.base/java.io=ALL-UNNAMED -Xmx512m -Dfile.encoding=UTF-8 -Duser.country=US -Duser.language=en -Duser.variant -ea worker.org.gradle.process.internal.worker.GradleWorkerMain 'Gradle Test Executor 1'
+
+Host: AMD Ryzen 5 5600X 6-Core Processor             , 12 cores, 47G,  Windows 11 , 64 bit Build 26100 (10.0.26100.9711)
+Time: Fri Nov 13 19:16:23 2026 Malay Peninsula Standard Time elapsed time: 0.427569 seconds (0d 0h 0m 0s)
+
+---------------  T H R E A D  ---------------
+
+Current thread (0x0000021f3c4f76a0):  JavaThread "Unknown thread" [_thread_in_vm, id=45092, stack(0x00000039db100000,0x00000039db200000) (1024K)]
+
+Stack: [0x00000039db100000,0x00000039db200000]
+Native frames: (J=compiled Java code, j=interpreted, Vv=VM code, C=native code)
+V  [jvm.dll+0x6d78a9]
+V  [jvm.dll+0x8665b3]
+V  [jvm.dll+0x868bde]
+V  [jvm.dll+0x8692c3]
+V  [jvm.dll+0x280ee6]
+V  [jvm.dll+0x6d4165]
+V  [jvm.dll+0x6c77fa]
+V  [jvm.dll+0x358f4b]
+V  [jvm.dll+0x360bc6]
+V  [jvm.dll+0x3b2ea6]
+V  [jvm.dll+0x3b3178]
+V  [jvm.dll+0x32b65c]
+V  [jvm.dll+0x32c34b]
+V  [jvm.dll+0x82f449]
+V  [jvm.dll+0x3c0078]
+V  [jvm.dll+0x8185e8]
+V  [jvm.dll+0x45449e]
+V  [jvm.dll+0x455c01]
+C  [jli.dll+0x52ab]
+C  [ucrtbase.dll+0x2cd30]
+C  [KERNEL32.DLL+0x2dda7]
+C  [ntdll.dll+0x7ee4c]
+
+
+---------------  P R O C E S S  ---------------
+
+Threads class SMR info:
+_java_thread_list=0x00007ff83d11b9c8, length=0, elements={
+}
+
+Java Threads: ( => current thread )
+Total: 0
+
+Other Threads:
+  0x0000021f3ecdaa60 WorkerThread "GC Thread#0"                     [id=54356, stack(0x00000039db200000,0x00000039db300000) (1024K)]
+  0x0000021f3ecdfa00 ConcurrentGCThread "G1 Main Marker"            [id=75608, stack(0x00000039db300000,0x00000039db400000) (1024K)]
+  0x0000021f3ece1260 WorkerThread "G1 Conc#0"                       [id=19540, stack(0x00000039db400000,0x00000039db500000) (1024K)]
+
+[error occurred during error reporting (printing all threads), id 0xc0000005, EXCEPTION_ACCESS_VIOLATION (0xc0000005) at pc=0x00007ff83c90e637]
+VM state: not at safepoint (not fully initialized)
+
+VM Mutex/Monitor currently owned by a thread:  ([mutex/lock_event])
+[0x00007ff83d1887d0] Heap_lock - owner thread: 0x0000021f3c4f76a0
+
+Heap address: 0x00000000e0000000, size: 512 MB, Compressed Oops mode: 32-bit
+
+CDS archive(s) mapped at: [0x0000000000000000-0x0000000000000000-0x0000000000000000), size 0, SharedBaseAddress: 0x0000000800000000, ArchiveRelocationMode: 1.
+Narrow klass base: 0x0000000000000000, Narrow klass shift: 0, Narrow klass range: 0x0
+
+GC Precious Log:
+ CardTable entry size: 512
+ Card Set container configuration: InlinePtr #cards 5 size 8 Array Of Cards #cards 12 size 40 Howl #buckets 4 coarsen threshold 1843 Howl Bitmap #cards 512 size 80 coarsen threshold 460 Card regions per heap region 1 cards per card region 2048
+
+Heap:
+ garbage-first heap   total 0K, used 0K [0x00000000e0000000, 0x0000000100000000)
+  region size 1024K, 0 young (0K), 0 survivors (0K)
+ Metaspace       used 0K, committed 0K, reserved 0K
+  class space    used 0K, committed 0K, reserved 0K
+
+Heap Regions: E=young(eden), S=young(survivor), O=old, HS=humongous(starts), HC=humongous(continues), CS=collection set, F=free, TAMS=top-at-mark-start, PB=parsable bottom
+
+Card table byte_map: [0x0000021f513e0000,0x0000021f514e0000] _byte_map_base: 0x0000021f50ce0000
+
+Marking Bits: (CMBitMap*) 0x0000021f3ecdb080
+ Bits: [0x0000021f514e0000, 0x0000021f51ce0000)
+
+GC Heap History (0 events):
+No events
+
+Dll operation events (1 events):
+Event: 0.007 Loaded shared library C:\Program Files\Android\Android Studio\jbr\bin\java.dll
+
+Deoptimization events (0 events):
+No events
+
+Classes loaded (0 events):
+No events
+
+Classes unloaded (0 events):
+No events
+
+Classes redefined (0 events):
+No events
+
+Internal exceptions (0 events):
+No events
+
+ZGC Phase Switch (0 events):
+No events
+
+VM Operations (0 events):
+No events
+
+Memory protections (0 events):
+No events
+
+Nmethod flushes (0 events):
+No events
+
+Events (0 events):
+No events
+
+
+Dynamic libraries:
+0x00007ff6106c0000 - 0x00007ff6106ca000 	C:\Program Files\Android\Android Studio\jbr\bin\java.exe
+0x00007ff916aa0000 - 0x00007ff916d08000 	C:\WINDOWS\SYSTEM32\ntdll.dll
+0x00007ff9160e0000 - 0x00007ff9161ab000 	C:\WINDOWS\System32\KERNEL32.DLL
+0x00007ff913ec0000 - 0x00007ff9142c1000 	C:\WINDOWS\System32\KERNELBASE.dll
+0x00007ff910a00000 - 0x00007ff910a9f000 	C:\WINDOWS\SYSTEM32\apphelp.dll
+0x00007ff914650000 - 0x00007ff91479c000 	C:\WINDOWS\System32\ucrtbase.dll
+0x00007ff8ead80000 - 0x00007ff8ead9b000 	C:\Program Files\Android\Android Studio\jbr\bin\VCRUNTIME140.dll
+0x00007ff8e5f50000 - 0x00007ff8e5f68000 	C:\Program Files\Android\Android Studio\jbr\bin\jli.dll
+0x00007ff915f00000 - 0x00007ff9160d7000 	C:\WINDOWS\System32\USER32.dll
+0x00007ff913de0000 - 0x00007ff913e07000 	C:\WINDOWS\System32\win32u.dll
+0x00007ff8f3570000 - 0x00007ff8f3801000 	C:\WINDOWS\WinSxS\amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.26100.9711_none_3e07b8b0e334e825\COMCTL32.dll
+0x00007ff916800000 - 0x00007ff91682b000 	C:\WINDOWS\System32\GDI32.dll
+0x00007ff915a20000 - 0x00007ff915ac9000 	C:\WINDOWS\System32\msvcrt.dll
+0x00007ff914460000 - 0x00007ff91458a000 	C:\WINDOWS\System32\gdi32full.dll
+0x00007ff913e10000 - 0x00007ff913eb3000 	C:\WINDOWS\System32\msvcp_win.dll
+0x00007ff9161b0000 - 0x00007ff9161e1000 	C:\WINDOWS\System32\IMM32.DLL
+0x00007ff9111f0000 - 0x00007ff91121d000 	C:\Program Files\Mactype\MacType64.dll
+0x00007ff9162a0000 - 0x00007ff91635c000 	C:\WINDOWS\System32\ADVAPI32.dll
+0x00007ff9161f0000 - 0x00007ff916298000 	C:\WINDOWS\System32\sechost.dll
+0x00007ff9166e0000 - 0x00007ff9167f8000 	C:\WINDOWS\System32\RPCRT4.dll
+0x00007ff911190000 - 0x00007ff9111ea000 	C:\Program Files\Mactype\Easyhk64.dll
+0x00007ff911080000 - 0x00007ff91118b000 	C:\Program Files\Mactype\MacType64.Core.dll
+0x00007ff90f800000 - 0x00007ff90fe3a000 	C:\WINDOWS\SYSTEM32\d2d1.dll
+0x00007ff90f590000 - 0x00007ff90f7fa000 	C:\WINDOWS\SYSTEM32\dwrite.dll
+0x00007ff914590000 - 0x00007ff91463c000 	C:\WINDOWS\System32\bcryptPrimitives.dll
+0x00007ff903b70000 - 0x00007ff903b7c000 	C:\Program Files\Android\Android Studio\jbr\bin\vcruntime140_1.dll
+0x00007ff8c4510000 - 0x00007ff8c459d000 	C:\Program Files\Android\Android Studio\jbr\bin\msvcp140.dll
+0x00007ff83c5d0000 - 0x00007ff83d266000 	C:\Program Files\Android\Android Studio\jbr\bin\server\jvm.dll
+0x00007ff916390000 - 0x00007ff916411000 	C:\WINDOWS\System32\WS2_32.dll
+0x00007ff913b30000 - 0x00007ff913b8e000 	C:\WINDOWS\SYSTEM32\POWRPROF.dll
+0x00007ff900e60000 - 0x00007ff900e97000 	C:\WINDOWS\SYSTEM32\WINMM.dll
+0x00007ff90aec0000 - 0x00007ff90aecb000 	C:\WINDOWS\SYSTEM32\VERSION.dll
+0x00007ff913ae0000 - 0x00007ff913af5000 	C:\WINDOWS\SYSTEM32\UMPDC.dll
+0x00007ff9128f0000 - 0x00007ff91290b000 	C:\WINDOWS\SYSTEM32\kernel.appcore.dll
+0x00007ff8f9290000 - 0x00007ff8f929a000 	C:\Program Files\Android\Android Studio\jbr\bin\jimage.dll
+0x00007ff8f6e70000 - 0x00007ff8f70bc000 	C:\WINDOWS\SYSTEM32\DBGHELP.DLL
+0x00007ff915ad0000 - 0x00007ff915e5b000 	C:\WINDOWS\System32\combase.dll
+0x0000021f3e310000 - 0x0000021f3e3e9000 	C:\WINDOWS\System32\OLEAUT32.dll
+0x00007ff90dc70000 - 0x00007ff90dcab000 	C:\WINDOWS\SYSTEM32\dbgcore.DLL
+0x00007ff8e1770000 - 0x00007ff8e1790000 	C:\Program Files\Android\Android Studio\jbr\bin\java.dll
+
+JVMTI agents: none
+
+dbghelp: loaded successfully - version: 4.0.5 - missing functions: none
+symbol engine: initialized successfully - sym options: 0x614 - pdb path: .;C:\Program Files\Android\Android Studio\jbr\bin;C:\WINDOWS\SYSTEM32;C:\WINDOWS\WinSxS\amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.26100.9711_none_3e07b8b0e334e825;C:\Program Files\Mactype;C:\Program Files\Android\Android Studio\jbr\bin\server
+
+VM Arguments:
+jvm_args: -Dchorus.fixtures=C:\Users\pcuser\.t3\worktrees\Chorus\ui21-web-home\fixtures -Djava.awt.headless=true -Djava.library.path=C:\Program Files\Android\Android Studio\jbr\bin;C:\WINDOWS\Sun\Java\bin;C:\WINDOWS\system32;C:\WINDOWS;C:\Program Files\PowerShell\7;C:\Python315\Scripts\;C:\Python315\;C:\Program Files\Alacritty\;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.4\bin\x64;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.4\bin;C:\Program Files\ImageMagick-7.1.2-Q16-HDRI;C:\Python313\Scripts\;C:\Python313\;C:\Program Files\Common Files\Oracle\Java\javapath;C:\Program Files (x86)\Common Files\Oracle\Java\java8path;C:\Program Files (x86)\Common Files\Oracle\Java\javapath;C:\Ruby32-x64\bin\;C:\Program Files\Eclipse Adoptium\jdk-17.0.9.9-hotspot\bin\;C:\Users\pcuser\AppData\Local\Programs\Python\Python312\Scripts\;C:\Users\pcuser\AppData\Local\Programs\Python\Python312\;C:\Users\pcuser\AppData\Local\Programs\Python\Python311\Scripts\;C:\Users\pcuser\AppData\Local\Programs\Python\Python311\;C:\Program Files\Eclipse Adoptium\jdk-11.0.16.101-hotspot\bin\;C:\Program Files (x86)\Common Files\Intel\Shared Libraries\redist\intel64\compiler\;C:\Program Files\AdoptOpenJDK\jre-8.0.292.10-hotspot\bin\;C:\Program Files\AdoptOpenJDK\jre-11.0.11.9-hotspot\bin\;C:\Program Files (x86)\AdoptOpenJDK\jre-8.0.292.10-hotspot\bin\;C:\Windows\system32\;C:\Windows\;C:\Windows\System32\Wbem\;C:\Windows\System32\WindowsPowerShell\v1.0\;C:\Windows\System32\OpenSSH\;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common\;C:\Program Files\NVIDIA Corporation\NVIDIA NvDLISR\;C:\Program Files\PuTTY\;C:\Program Files\dotnet\;C:\Program Files\Mactype\;C:\ProgramData\chocolatey\bin\;C:\Program Files\LLVM\bin\;C:\Program Files\Git\cmd\;C:\Program Files\CMake\bin\;C:\Program Files\starship\bin\;C:\Program Files\Common Files\Autodesk Shared\;C:\Program Files\Microsoft SQL Server\150\Tools\Binn\;C:\Program Files\Go\bin\;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;C:\Program -Djna.library.path=F:\DunBuild\chorus-target\debug -Dorg.gradle.internal.worker.tmpdir=F:\DunBuild\chorus-gradle-ui21web\core-bridge\tmp\testDebugUnitTest\work --add-opens=java.base/java.io=ALL-UNNAMED -Xmx512m -Dfile.encoding=UTF-8 -Duser.country=US -Duser.language=en -Duser.variant -ea 
+java_command: worker.org.gradle.process.internal.worker.GradleWorkerMain 'Gradle Test Executor 1'
+java_class_path (initial): F:\\DunBuild\\gradle\\caches\\8.14.3\\workerMain\\gradle-worker.jar;F:\\DunBuild\\chorus-gradle-ui21web\\core-bridge\\tmp\\kotlin-classes\\debugUnitTest;F:\\DunBuild\\chorus-gradle-ui21web\\core-bridge\\intermediates\\java_res\\debugUnitTest\\processDebugUnitTestJavaRes\\out;F:\\DunBuild\\chorus-gradle-ui21web\\core-bridge\\intermediates\\runtime_library_classes_jar\\debug\\bundleLibRuntimeToJarDebug\\classes.jar;F:\\DunBuild\\gradle\\caches\\modules-2\\files-2.1\\junit\\junit\\4.13.2\\8ac9e16d933b6fb43bc7f576336b8f4d7eb5ba12\\junit-4.13.2.jar;F:\\DunBuild\\gradle\\caches\\modules-2\\files-2.1\\net.java.dev.jna\\jna\\5.14.0\\67bf3eaea4f0718cb376a181a629e5f88fa1c9dd\\jna-5.14.0.jar;F:\\DunBuild\\gradle\\caches\\8.14.3\\transforms\\54874a4fe4f672099fb64d7e4a96e188\\transformed\\jna-5.14.0-runtime.jar;F:\\DunBuild\\gradle\\caches\\modules-2\\files-2.1\\org.json\\json\\20240303\\ebb88e8fb5122b7506d5cf1d69f1ccdb790d22a\\json-20240303.jar;F:\\DunBuild\\gradle\\caches\\modules-2\\files-2.1\\org.jetbrains.kotlin\\kotlin-stdlib\\2.0.21\\618b539767b4899b4660a83006e052b63f1db551\\kotlin-stdlib-2.0.21.jar;F:\\DunBuild\\gradle\\caches\\modules-2\\files-2.1\\org.hamcrest\\hamcrest-core\\1.3\\42a25dc3219429f0e5d060061f71acb49bf010a0\\hamcrest-core-1.3.jar;F:\\DunBuild\\gradle\\caches\\modules-2\\files-2.1\\org.jetbrains\\annotations\\13.0\\919f0dfe192fb4e063e7dacadee7f8bb9a2672a9\\annotations-13.0.jar;F:\\DunBuild\\chorus-gradle-ui21web\\core-bridge\\intermediates\\java_res\\debug\\processDebugJavaRes\\out;F:\\DunBuild\\gradle\\caches\\8.14.3\\transforms\\f88cfb24e37b7a9fc4c5dd0655cf25a0\\transformed\\jna-5.14.0\\jars\\classes.jar;F:\\DunBuild\\chorus-gradle-ui21web\\core-bridge\\intermediates\\compile_and_runtime_not_namespaced_r_class_jar\\debugUnitTest\\generateDebugUnitTestStubRFile\\R.jar;F:\\DunBuild\\gradle\\caches\\8.14.3\\transforms\\deb552efd4ec2de2595839cbb1ea9bab\\transformed\\android.jar
+Launcher Type: SUN_STANDARD
+
+[Global flags]
+     intx CICompilerCount                          = 4                                         {product} {ergonomic}
+     uint ConcGCThreads                            = 3                                         {product} {ergonomic}
+     uint G1ConcRefinementThreads                  = 10                                        {product} {ergonomic}
+   size_t G1HeapRegionSize                         = 1048576                                   {product} {ergonomic}
+    uintx GCDrainStackTargetSize                   = 64                                        {product} {ergonomic}
+   size_t InitialHeapSize                          = 536870912                                 {product} {ergonomic}
+   size_t MarkStackSize                            = 4194304                                   {product} {ergonomic}
+   size_t MaxHeapSize                              = 536870912                                 {product} {command line}
+   size_t MinHeapDeltaBytes                        = 1048576                                   {product} {ergonomic}
+   size_t MinHeapSize                              = 8388608                                   {product} {ergonomic}
+    uintx NonNMethodCodeHeapSize                   = 5839372                                {pd product} {ergonomic}
+    uintx NonProfiledCodeHeapSize                  = 122909434                              {pd product} {ergonomic}
+    uintx ProfiledCodeHeapSize                     = 122909434                              {pd product} {ergonomic}
+    uintx ReservedCodeCacheSize                    = 251658240                              {pd product} {ergonomic}
+     bool SegmentedCodeCache                       = true                                      {product} {ergonomic}
+   size_t SoftMaxHeapSize                          = 536870912                              {manageable} {ergonomic}
+     bool UseCompressedOops                        = true                           {product lp64_product} {ergonomic}
+     bool UseG1GC                                  = true                                      {product} {ergonomic}
+     bool UseLargePagesIndividualAllocation        = false                                  {pd product} {ergonomic}
+
+Logging:
+Log output configuration:
+ #0: stdout all=warning uptime,level,tags foldmultilines=false
+ #1: stderr all=off uptime,level,tags foldmultilines=false
+
+Release file:
+<release file has not been read>
+Environment Variables:
+JAVA_HOME=C:\Program Files\Android\Android Studio\jbr
+CLASSPATH=C:\Users\pcuser\.t3\worktrees\Chorus\ui21-web-home\android\\gradle\wrapper\gradle-wrapper.jar
+PATH=C:\Program Files\PowerShell\7;C:\Python315\Scripts\;C:\Python315\;C:\Program Files\Alacritty\;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.4\bin\x64;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.4\bin;C:\Program Files\ImageMagick-7.1.2-Q16-HDRI;C:\Python313\Scripts\;C:\Python313\;C:\Program Files\Common Files\Oracle\Java\javapath;C:\Program Files (x86)\Common Files\Oracle\Java\java8path;C:\Program Files (x86)\Common Files\Oracle\Java\javapath;C:\Ruby32-x64\bin\;C:\Program Files\Eclipse Adoptium\jdk-17.0.9.9-hotspot\bin\;C:\Users\pcuser\AppData\Local\Programs\Python\Python312\Scripts\;C:\Users\pcuser\AppData\Local\Programs\Python\Python312\;C:\Users\pcuser\AppData\Local\Programs\Python\Python311\Scripts\;C:\Users\pcuser\AppData\Local\Programs\Python\Python311\;C:\Program Files\Eclipse Adoptium\jdk-11.0.16.101-hotspot\bin\;C:\Program Files (x86)\Common Files\Intel\Shared Libraries\redist\intel64\compiler\;C:\Program Files\AdoptOpenJDK\jre-8.0.292.10-hotspot\bin\;C:\Program Files\AdoptOpenJDK\jre-11.0.11.9-hotspot\bin\;C:\Program Files (x86)\AdoptOpenJDK\jre-8.0.292.10-hotspot\bin\;C:\Windows\system32\;C:\Windows\;C:\Windows\System32\Wbem\;C:\Windows\System32\WindowsPowerShell\v1.0\;C:\Windows\System32\OpenSSH\;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common\;C:\Program Files\NVIDIA Corporation\NVIDIA NvDLISR\;C:\Program Files\PuTTY\;C:\Program Files\dotnet\;C:\Program Files\Mactype\;C:\ProgramData\chocolatey\bin\;C:\Program Files\LLVM\bin\;C:\Program Files\Git\cmd\;C:\Program Files\CMake\bin\;C:\Program Files\starship\bin\;C:\Program Files\Common Files\Autodesk Shared\;C:\Program Files\Microsoft SQL Server\150\Tools\Binn\;C:\Program Files\Go\bin\;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;C:\Program Files\Tailscale\;C:\Program Files\NVIDIA Corporation\Nsight Compute 2026.3.0\;C:\Program Files\GitHub CLI\;C:\Program Files\OpenSSL-Win64\bin;C:\Program Files\nodejs\;C:\Program Files\PowerShell\7\;C:\Program Files\Sunshine;C:\Program Files\Sunshine\tools;C:\Users\pcuser\AppData\Local\agy\bin;C:\Users\pcuser\AppData\Local\Programs\OpenAI\Codex\bin;C:\Users\pcuser\AppData\Local\hermes\node;C:\Users\pcuser\AppData\Local\hermes\bin;C:\Users\pcuser\AppData\Local\Programs\Python\Python310\Scripts\;C:\Users\pcuser\AppData\Local\Programs\Python\Python310\;C:\Users\pcuser\AppData\Local\Programs\Python\Python39\Scripts\;C:\Users\pcuser\AppData\Local\Programs\Python\Python39\;C:\Users\pcuser\.cargo\bin;C:\Users\pcuser\AppData\Local\Microsoft\WindowsApps;C:\Program Files\Mactype;C:\Users\pcuser\AppData\Local\Programs\Microsoft VS Code\bin;D:\02_attic\Tools\dart-sass;C:\Users\pcuser\AppData\Local\spicetify;C:\Users\pcuser\go\bin;C:\Users\pcuser\pip\pip.ini;D:\texlive\2022\bin\win32;C:\Users\pcuser\AppData\Local\gitkraken\bin;C:\tools\dart-sdk\bin;C:\Users\pcuser\AppData\Local\Pub\Cache\bin;C:\Users\pcuser\.dotnet\tools;C:\Users\pcuser\AppData\Local\Programs\Ollama;C:\Users\pcuser\AppData\Local\Microsoft\WinGet\Links;C:\Users\pcuser\AppData\Local\Programs\Cua\cua-driver\bin;C:\Users\pcuser\.lmstudio\bin;C:\Users\pcuser\AppData\Local\Programs\Zed\bin;C:\Users\pcuser\AppData\Local\Programs\DockerDesktop\resources\bin;C:\Users\pcuser\.local\bin;C:\Users\pcuser\AppData\Local\Android\Sdk\platform-tools;C:\Users\pcuser\AppData\Roaming\npm;C:\Users\pcuser\AppData\Local\Programs\nodejs;C:\Users\pcuser\AppData\Local\Volta\bin;C:\Users\pcuser\AppData\Local\pnpm;C:\Users\pcuser\.bun\bin;C:\Users\pcuser\scoop\shims
+USERNAME=pcuser
+OS=Windows_NT
+PROCESSOR_IDENTIFIER=AMD64 Family 25 Model 33 Stepping 0, AuthenticAMD
+TMP=C:\Users\pcuser\AppData\Local\Temp
+TEMP=C:\Users\pcuser\AppData\Local\Temp
+
+
+
+
+Periodic native trim disabled
+
+JNI global refs:
+JNI global refs: 0, weak refs: 0
+
+JNI global refs memory usage: 0, weak refs: 0
+
+Process memory usage:
+Resident Set Size: 16116K (0% of 50276736K total physical memory with 3714760K free physical memory)
+
+OOME stack traces (most recent first):
+Classloader memory used:
+
+---------------  S Y S T E M  ---------------
+
+OS:
+ Windows 11 , 64 bit Build 26100 (10.0.26100.9711)
+OS uptime: 8 days 8:12 hours
+Hyper-V role detected
+
+CPU: total 12 (initial active 12) (12 cores per cpu, 2 threads per core) family 25 model 33 stepping 0 microcode 0xa201009, cx8, cmov, fxsr, ht, mmx, 3dnowpref, sse, sse2, sse3, ssse3, sse4a, sse4.1, sse4.2, popcnt, lzcnt, tsc, tscinvbit, avx, avx2, aes, erms, clmul, bmi1, bmi2, adx, sha, fma, vzeroupper, clflush, clflushopt, hv, rdtscp, rdpid, fsrm, f16c, cet_ss
+Processor Information for the first 12 processors :
+  Max Mhz: 3701, Current Mhz: 3701, Mhz Limit: 3701
+
+Memory: 4k page, system-wide physical 49098M (3627M free)
+TotalPageFile size 81866M (AvailPageFile size 401M)
+current process WorkingSet (physical memory assigned to process): 15M, peak: 15M
+current process commit charge ("private bytes"): 65M, peak: 577M
+
+vm_info: OpenJDK 64-Bit Server VM (21.0.10+-14961533-b1163.108) for windows-amd64 JRE (21.0.10+-14961533-b1163.108), built on 2026-03-02T19:58:50Z by "builder" with MS VC++ 16.10 / 16.11 (VS2019)
+
+END.
