@@ -1,0 +1,17 @@
+{
+  "description": "a mark that has not reached any of our messages names nothing",
+  "fn": "ticks_upto",
+  "args": [
+    {
+      "at": 5,
+      "id": "z"
+    },
+    [
+      {
+        "at": 10,
+        "id": "a"
+      }
+    ]
+  ],
+  "expect": null
+}

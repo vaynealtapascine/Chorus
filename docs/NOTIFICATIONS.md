@@ -239,6 +239,20 @@ Rules:
    bypass any follower-front access, delay or reveal rule.
 8. Read marks never leave the account (SYNC §4.2): with "track reading per member" on, a mark
    names the member who read, and another account would learn who was fronting and when.
+9. Read receipts (D-131, D-157) are an explicit, reciprocal chat-activity side channel like typing
+   (7), not a notification or a follower-front surface. They reveal that an account read, never
+   which member, so only the account row of a read mark is ever used (a member row would name
+   who was fronting, 8). They flow only when **both** accounts have `share_reads: true` (account
+   pref, default **off**), only in `shared` and `dm` spaces (never `internal`, guests included),
+   only while both accounts can view the channel now, and only for reading done after the later
+   of the two switch-ons, so turning it on never reveals earlier reading and turning either side
+   off hides everything again. The answer is clamped: the asker learns only "up to your message
+   X", where X is their own latest undeleted message the reader could see, never the reader's
+   mark (which could point at the reader's own aside) and never a time of reading. Nothing is
+   persisted or replayed: a view computed on request (`GET /channels/{id}/reads`) and a live
+   socket frame, never an op, SSE event, webhook, export, push or inbox item. Ticks between a
+   system's own members need none of this: those marks already sync to the account's own devices.
+   Receipts grant or bypass no follower-front access, delay or reveal rule.
 
 Tests (M8): for random switch sequences and ceilings, assert that the sequence of follower-visible
 states over time (from every surface) equals the sequence of revealed states, and that no surface

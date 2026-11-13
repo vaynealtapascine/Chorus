@@ -1,0 +1,45 @@
+{
+  "description": "a clock until acked, one tick once stored, two once a non-author member has read it",
+  "fn": "ticks_for",
+  "args": [
+    [
+      {
+        "at": 10,
+        "id": "a",
+        "authors": [
+          "kai"
+        ],
+        "acked": false
+      },
+      {
+        "at": 20,
+        "id": "b",
+        "authors": [
+          "kai"
+        ],
+        "acked": true
+      },
+      {
+        "at": 30,
+        "id": "c",
+        "authors": [
+          "kai"
+        ],
+        "acked": true
+      }
+    ],
+    [
+      {
+        "member": "rin",
+        "at": 30,
+        "id": "c"
+      }
+    ],
+    []
+  ],
+  "expect": [
+    "pending",
+    "read",
+    "read"
+  ]
+}

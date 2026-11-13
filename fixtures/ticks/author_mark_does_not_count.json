@@ -1,0 +1,32 @@
+{
+  "description": "a mark by an author of the message, or by the account row, is not a receipt",
+  "fn": "ticks_for",
+  "args": [
+    [
+      {
+        "at": 10,
+        "id": "a",
+        "authors": [
+          "kai"
+        ],
+        "acked": true
+      }
+    ],
+    [
+      {
+        "member": "kai",
+        "at": 99,
+        "id": "z"
+      },
+      {
+        "member": "",
+        "at": 99,
+        "id": "z"
+      }
+    ],
+    []
+  ],
+  "expect": [
+    "saved"
+  ]
+}

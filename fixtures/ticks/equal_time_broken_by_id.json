@@ -1,0 +1,25 @@
+{
+  "description": "same occurred_at: the id decides",
+  "fn": "ticks_for",
+  "args": [
+    [
+      {
+        "at": 10,
+        "id": "b",
+        "authors": [],
+        "acked": true
+      }
+    ],
+    [
+      {
+        "member": "rin",
+        "at": 10,
+        "id": "a"
+      }
+    ],
+    []
+  ],
+  "expect": [
+    "saved"
+  ]
+}

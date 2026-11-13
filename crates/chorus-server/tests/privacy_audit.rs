@@ -698,3 +698,19 @@ fn a24_a_relationship_set_without_a_target_is_answered_not_an_error() {
     assert_eq!(w.push(&w.mallory, "relationship.set", &rel, json!({})), None);
     assert_eq!(w.push(&w.mallory, "relationship.set", &rel, json!({})), None);
 }
+
+#[test]
+fn a25_a_stranger_who_opts_in_still_gets_no_read_receipts_from_a_space_they_are_not_in() {
+    // D-131: `share_reads` is only half of the gate; the asker must reach the channel too
+    let w = World::new();
+    w.c.execute("INSERT INTO space(id,kind,owner_account_id,created_at) VALUES ('sp','shared',?1,0)", [&w.alice])
+        .unwrap();
+    w.c.execute("INSERT INTO channel(id,space_id,kind,created_at) VALUES ('ch','sp','text',0)", []).unwrap();
+    ingest::grant(&w.c, &w.alice, "space:sp").unwrap();
+    for who in [&w.alice, &w.mallory] {
+        let id = w.id();
+        assert_eq!(w.push(who, "pref.set", &id, json!({"device": "", "key": "share_reads", "value": true})), None);
+    }
+    let asked = chorus_server::receipts::reads(&w.c, &chorus_server::api_data::Principal::owner(&w.mallory), "ch");
+    assert!(asked.unwrap().is_none(), "Mallory is told the channel isn't there");
+}

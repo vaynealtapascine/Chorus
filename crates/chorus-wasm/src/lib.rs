@@ -140,6 +140,11 @@ pub fn read_unseen_by(at: f64, id: &str, marks_json: &str) -> Result<String, JsE
     wrap(api::read_unseen_by(at as i64, id, marks_json))
 }
 
+#[wasm_bindgen(js_name = ticksFor)]
+pub fn ticks_for(msgs_json: &str, member_marks_json: &str, foreign_json: &str) -> Result<String, JsError> {
+    wrap(api::ticks_for(msgs_json, member_marks_json, foreign_json))
+}
+
 #[wasm_bindgen(js_name = searchParse)]
 pub fn search_parse(query: &str) -> Result<String, JsError> {
     wrap(api::search_parse(query))

@@ -4,6 +4,11 @@ import init, * as wasm from './pkg/chorus_wasm.js';
 import type { EffectiveFrontHistory, FoldedFrontSystem, FrontHistoryInterval, FrontSystem, NamedFrontDailyRow, ResolvedFront } from './fronts';
 export type { EffectiveFrontHistory, FoldedFrontSystem, FrontHistoryInterval, FrontSystem, ResolvedFront, NamedFront, FrontLayer, FrontPresence, FrontChange, NamedFrontDailyRow } from './fronts';
 
+/** One of our own messages for ticks (D-131); `acked` once the server has stamped it. */
+export interface TickMsg { at: number; id: string; authors: string[]; acked: boolean }
+export interface ReadMark { member: string; at: number; id: string }
+export type Tick = 'pending' | 'saved' | 'read';
+
 export type Json = unknown;
 
 export interface Entity {
@@ -105,6 +110,9 @@ export const core = {
   /** Members whose read mark is before the message `(at, id)`. */
   readUnseenBy: (at: number, id: string, marks: { member: string; at: number; id: string }[]): string[] =>
     JSON.parse(wasm.readUnseenBy(at, id, JSON.stringify(marks))),
+  /** Ticks of our own messages (D-131): our members' marks, then other accounts' clamped marks. */
+  ticksFor: (msgs: TickMsg[], memberMarks: ReadMark[], foreign: ReadMark[]): Tick[] =>
+    JSON.parse(wasm.ticksFor(JSON.stringify(msgs), JSON.stringify(memberMarks), JSON.stringify(foreign))),
   /** A message search box → query (SPEC §5.3); throws `{"pos","message"}` JSON on a bad one. */
   searchParse: (q: string): SearchQuery => JSON.parse(wasm.searchParse(q)),
   /** Indexes of the candidates the query matches (the server's search agrees). */

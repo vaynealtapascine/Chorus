@@ -34,6 +34,7 @@ pub mod stage;
 pub mod sync;
 pub mod tagged;
 pub mod text;
+pub mod ticks;
 pub mod time;
 
 /// D-091 portable member-position reference; client fallbacks share its fixtures.

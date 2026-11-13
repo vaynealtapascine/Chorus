@@ -1,0 +1,21 @@
+{
+  "description": "stored and unread",
+  "fn": "ticks_for",
+  "args": [
+    [
+      {
+        "at": 10,
+        "id": "a",
+        "authors": [
+          "kai"
+        ],
+        "acked": true
+      }
+    ],
+    [],
+    []
+  ],
+  "expect": [
+    "saved"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "a foreign mark clamps to our latest message at or before it",
+  "fn": "ticks_upto",
+  "args": [
+    {
+      "at": 25,
+      "id": "x"
+    },
+    [
+      {
+        "at": 30,
+        "id": "c"
+      },
+      {
+        "at": 10,
+        "id": "a"
+      },
+      {
+        "at": 20,
+        "id": "b"
+      }
+    ]
+  ],
+  "expect": {
+    "at": 20,
+    "id": "b"
+  }
+}

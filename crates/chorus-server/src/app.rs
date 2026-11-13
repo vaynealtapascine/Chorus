@@ -23,6 +23,7 @@ use crate::config::Config;
 use crate::follows::{self, FollowError};
 use crate::{blobs, db, ingest, now_ms, oplog};
 
+mod reads;
 mod typing;
 
 /// Keep durable frames typed until the socket writer serializes them. Typing never enters core.
@@ -31,6 +32,7 @@ mod typing;
 enum Outgoing {
     Sync(Box<Frame>),
     Typing(serde_json::Value),
+    Read(serde_json::Value),
 }
 
 /// A connected device.
@@ -59,6 +61,7 @@ pub struct Shared {
     pub instance_id: String,
     peers: Mutex<HashMap<String, Peer>>,
     typing_starts: Mutex<typing::Starts>,
+    read_sent: Mutex<reads::Sent>,
     /// Live events for `/api/v1/stream`: (account id, event JSON).
     pub events: tokio::sync::broadcast::Sender<(String, serde_json::Value)>,
     /// Webhook deliveries (and their retries) for the delivery task (webhooks.rs).
@@ -94,6 +97,7 @@ impl Shared {
             instance_id,
             peers: Mutex::new(HashMap::new()),
             typing_starts: Mutex::new(typing::Starts::default()),
+            read_sent: Mutex::new(reads::Sent::default()),
             events,
             hooks,
             hook_rx: Mutex::new(Some(hook_rx)),
@@ -186,6 +190,7 @@ pub fn router(state: AppState) -> Router {
         .route("/messages/{id}/revisions", get(message_revisions))
         .route("/spaces/{id}/channels", get(space_channels))
         .route("/channels/{id}/messages", get(channel_messages).post(channel_send))
+        .route("/channels/{id}/reads", get(channel_reads))
         .route("/posts", get(posts_list))
         .route("/posts/activity", get(posts_activity))
         .route("/posts/{id}", get(post_one))
@@ -1193,6 +1198,18 @@ async fn channel_messages(
     let conn = s.db();
     let p = principal(&s, &conn, &headers)?;
     Ok(Json(crate::messages::list(&conn, &p, &id, &q)?.ok_or_else(|| not_found("channel"))?))
+}
+
+/// Other accounts' reads of our messages (D-131): only when both accounts opted in, never cached.
+async fn channel_reads(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Response, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    let body = crate::receipts::reads(&conn, &p, &id)?.ok_or_else(|| not_found("channel"))?;
+    Ok(([(axum::http::header::CACHE_CONTROL, "no-store")], Json(body)).into_response())
 }
 
 async fn message_thread(
@@ -2546,6 +2563,8 @@ pub(crate) fn fan_out(
             send(&p.tx, Frame::Caught { scope: (*scope).into(), to, digest });
         }
     }
+    // cross-account read receipts (D-131): live frames only, after the scopes above are current
+    reads::relay(conn, &peers, &mut s.read_sent.lock().unwrap_or_else(|e| e.into_inner()), fresh);
     Ok(())
 }
 

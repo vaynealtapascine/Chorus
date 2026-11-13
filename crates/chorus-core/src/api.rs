@@ -373,6 +373,30 @@ pub fn read_unseen_by(at: i64, id: &str, marks_json: &str) -> Result<String, Str
     Ok(js(&crate::reading::unseen_by(at, id, &m)))
 }
 
+/// Ticks for our own messages (D-131): `msgs` is `[{at, id, authors, acked}]`, the marks are
+/// `[{member, at, id}]` (our members', then other accounts' already clamped by `ticks_upto`);
+/// returns `"pending" | "saved" | "read"` for each message, in order (JSON array).
+pub fn ticks_for(msgs_json: &str, member_marks_json: &str, foreign_json: &str) -> Result<String, String> {
+    let m: Vec<crate::ticks::Msg> = parse("messages", msgs_json)?;
+    let own: Vec<crate::reading::Mark> = parse("member marks", member_marks_json)?;
+    let foreign: Vec<crate::reading::Mark> = parse("foreign marks", foreign_json)?;
+    Ok(js(&crate::ticks::ticks_for(&m, &own, &foreign)))
+}
+
+/// The latest of our messages (`[{at, id}]`) at or before a reader's mark `{at, id}`: `{at, id}`
+/// or `null` (D-131: all a receipt may say).
+pub fn ticks_upto(mark_json: &str, own_json: &str) -> Result<String, String> {
+    #[derive(serde::Deserialize)]
+    struct At {
+        at: i64,
+        id: String,
+    }
+    let mark: At = parse("mark", mark_json)?;
+    let own: Vec<At> = parse("messages", own_json)?;
+    let own: Vec<(i64, String)> = own.into_iter().map(|m| (m.at, m.id)).collect();
+    Ok(js(&crate::ticks::upto((mark.at, &mark.id), &own).map(|(at, id)| serde_json::json!({"at": at, "id": id}))))
+}
+
 /// A message search box → query JSON (`chorus_core::search`), or `Err` with `{"pos", "message"}`.
 pub fn search_parse(src: &str) -> Result<String, String> {
     crate::search::parse(src).map(|q| js(&q)).map_err(|e| js(&serde_json::json!({"pos": e.pos, "message": e.message})))

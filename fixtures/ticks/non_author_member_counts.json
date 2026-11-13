@@ -1,0 +1,32 @@
+{
+  "description": "another member of our system at or after the message",
+  "fn": "ticks_for",
+  "args": [
+    [
+      {
+        "at": 10,
+        "id": "a",
+        "authors": [
+          "kai"
+        ],
+        "acked": true
+      }
+    ],
+    [
+      {
+        "member": "kai",
+        "at": 99,
+        "id": "z"
+      },
+      {
+        "member": "rin",
+        "at": 10,
+        "id": "a"
+      }
+    ],
+    []
+  ],
+  "expect": [
+    "read"
+  ]
+}

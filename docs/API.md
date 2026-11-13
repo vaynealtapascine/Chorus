@@ -184,6 +184,7 @@ GET  /front/reviews?front=&open=1
 GET  /spaces
 GET  /spaces/{id}/channels
 GET  /channels/{id}/messages?before=&after=&around=&limit=
+GET  /channels/{id}/reads                  other accounts' reads of our messages (D-131), below
 GET  /messages/{id}                        the message (same scoped fields as search)
 GET  /messages/{id}/revisions              edit history, oldest first; the last is what it says now
   → {items:[{rev,text,entities,cw,at}]}; an unedited message has one item (itself). Same read
@@ -640,7 +641,22 @@ Internal typing stays own-account even when a channel has guests. Typing is neve
 exported, sent through notifications, SSE or webhooks, or replayed. HTTP push/pull fallback
 ignores typing (the current router does not implement those fallback routes).
 
-### UI11b search view (D-114)
+### Read receipts (D-131, D-157)
+
+`GET /channels/{id}/reads` → `{"reads":[{"account_id","message_id","at"}]}`: one row for each
+other account that has read up to at least one of the caller's messages in the channel, naming the
+caller's latest message it has read (`at` is that message's time, not a time of reading).
+`Cache-Control: no-store`; tokens need `read:messages`; 404 if the caller can't view the channel.
+The list is empty unless both accounts have `share_reads: true` (pref.set with `device: ""`,
+default off), the space is `shared` or `dm`, both can view the channel now, and the reader read
+after both switched it on. It never names a private aside, a deleted message, someone else's
+message or the reader's own mark, and never a member (NOTIFICATIONS §5.9).
+
+The sync socket sends `{"t":"read","channel","account","message_id","at"}` to the caller's
+devices when what they may learn changed (not when a mark moves over nobody's messages of
+theirs). Receipts are never persisted, replayed, or sent over SSE, webhooks or exports.
+
+### UI11b search view (D-114)### UI11b search view (D-114)
 
 `GET /search/messages` additionally accepts `current=true` and `channel_id=<exact id>`.
 All searches use chronological newest-first ordering and rechecks current permissions, Body

@@ -1,0 +1,17 @@
+{
+  "description": "same time: ids decide",
+  "fn": "ticks_upto",
+  "args": [
+    {
+      "at": 10,
+      "id": "A"
+    },
+    [
+      {
+        "at": 10,
+        "id": "a"
+      }
+    ]
+  ],
+  "expect": null
+}

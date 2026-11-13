@@ -1,0 +1,24 @@
+{
+  "description": "a mark past all our messages names our last one, not the reader's mark",
+  "fn": "ticks_upto",
+  "args": [
+    {
+      "at": 99,
+      "id": "z"
+    },
+    [
+      {
+        "at": 10,
+        "id": "a"
+      },
+      {
+        "at": 20,
+        "id": "b"
+      }
+    ]
+  ],
+  "expect": {
+    "at": 20,
+    "id": "b"
+  }
+}

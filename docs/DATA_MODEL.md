@@ -561,6 +561,8 @@ CREATE TABLE mention (                            -- derived from entities on se
   target_id TEXT, PRIMARY KEY (source_type, source_id, target_type, target_id)
 );
 
+-- D-131: cross-account receipts are NOT stored. They are computed from this table's account row
+-- (reader_member_id = '') plus both accounts' `share_reads` prefs when asked (receipts.rs).
 CREATE TABLE read_state (
   channel_id TEXT NOT NULL, account_id TEXT NOT NULL,
   reader_member_id TEXT NOT NULL DEFAULT '',     -- '' = account-level

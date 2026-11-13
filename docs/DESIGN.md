@@ -480,7 +480,7 @@ is retained as product specification, not a claim that a chat-style selector exi
 - *Chat*: segment parsing (newline annotations) on/off, autoproxy defaults, proxy tag case sensitivity, sigil parsing on/off, multi-author
   parsing on/off, strip tags, per-member read tracking, delete behaviour (placeholder/vanish),
   link handling, spoiler auto-reveal, CW auto-expand, "delay send" per space, formatting
-  shortcuts on/off, slow mode, “Show when we're typing in shared chats” (`share_typing`, account-level, default off; D-087).
+  shortcuts on/off, slow mode, “Show when we're typing in shared chats” (`share_typing`, account-level, default off; D-087). “Show friends when we've read” (`share_reads`, account-level, default off, both accounts must have it on; D-131).
 - *Journal*: note length limit, attach front snapshot to entries, default visibility per member,
   drafts retention.
 - *Privacy*: per-object-type defaults, per-field visibility, member locks (PIN/biometric), lock

@@ -120,7 +120,7 @@ or post. An id the server hasn't seen yet passes (made offline, still on its way
 `chorus-core::visibility::can_read(account, op, state)` is the one function deciding delivery.
 Notable filters inside `space:` scopes: `system_only` messages go only to the author's account;
 reactions/edits to such messages likewise; read marks (`read.*`) go only to the account that
-wrote them (no read receipts: per member, they'd show another account who was fronting); channel permissions (`view`, SPEC §5.1) decide which
+wrote them (no read receipts as ops: per member, they'd show another account who was fronting; the opt-in receipts of D-131 are a separate view, below); channel permissions (`view`, SPEC §5.1) decide which
 channels of a space an account receives — this is how a single internal channel is shared with an
 outside account (a *guest*: it gets the space's scope but only that channel's ops). Permission
 resolution is one SQL rule on the server (`chorus-server/src/perms.rs`, DATA_MODEL §4.4): clients
@@ -132,6 +132,14 @@ with its fresh digest; a device that gained or lost a channel sees a mismatch an
 scope (§6.5), which fetches what it may now see and evicts what it may not. Devices that were
 offline repair the same way at their next catch-up. (The pusher is a manager and keeps `view`
 unless it denied itself; it repairs at its next catch-up.)
+
+**Read receipts across accounts (D-131, D-157)** are not ops and not part of any digest. A device
+asks `GET /channels/{id}/reads` (API.md) when a shared or DM chat opens and also gets a live
+`{"t":"read",...}` frame; both are computed from the reader's stored account-level read mark and
+both accounts' `share_reads` prefs at that moment (`chorus-server/src/receipts.rs`), clamped to
+the asker's own messages with `chorus_core::ticks::upto`. A pref that flips needs no frame: the
+next fetch or relay checks again, and a device drops what it holds for a channel when it
+re-fetches. Own-system ticks use the account's own `read_state` member rows, which already sync.
 
 ### 4.3 Views (read-only, for other accounts)
 
@@ -525,7 +533,7 @@ closes the window with `reconcile-close` or `POST /admin/reconcile/close`.
 Areas: `hlc`, `time`, `lww`, `set`, `groups_cycle`, `front`, `review`, `text_entities` (`fixtures/text/`, headings: `headings_*`, D-134),
 `speaker_parse`, `feed_query`, `visibility`, `digest`, `poll` (D-081/D-086; test-only helper
 adapters documented in `fixtures/poll/README.md`), `search` (message search: the web's word
-index runs these too, `web/src/lib/search.test.ts`). Rust runs all of them in CI. Any non-Rust
+index runs these too, `web/src/lib/search.test.ts`). `ticks` (D-131: `ticks_for` and `ticks_upto`; the web and Android clients call the same core). Rust runs all of them in CI. Any non-Rust
 reimplementation must run them too.
 
 ### 9.2 Convergence simulator

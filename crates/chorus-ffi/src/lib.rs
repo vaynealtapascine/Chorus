@@ -141,6 +141,13 @@ pub fn read_unseen_by(at: i64, id: String, marks_json: String) -> Result<String,
     wrap(api::read_unseen_by(at, &id, &marks_json))
 }
 
+/// Ticks for our own messages (D-131): `[{at, id, authors, acked}]`, our members' marks, other
+/// accounts' clamped marks (`[{member, at, id}]`) → `["pending"|"saved"|"read", …]`.
+#[uniffi::export]
+pub fn ticks_for(msgs_json: String, member_marks_json: String, foreign_json: String) -> Result<String, CoreError> {
+    wrap(api::ticks_for(&msgs_json, &member_marks_json, &foreign_json))
+}
+
 /// A message search box → query JSON (SPEC §5.3: words, from:, in:, has:, before:/after:,
 /// is:pinned), or an error with `{"pos", "message"}`.
 #[uniffi::export]

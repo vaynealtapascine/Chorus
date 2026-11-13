@@ -1,0 +1,32 @@
+{
+  "description": "another account's clamped mark reads our messages up to it",
+  "fn": "ticks_for",
+  "args": [
+    [
+      {
+        "at": 10,
+        "id": "a",
+        "authors": [],
+        "acked": true
+      },
+      {
+        "at": 20,
+        "id": "b",
+        "authors": [],
+        "acked": true
+      }
+    ],
+    [],
+    [
+      {
+        "member": "acct",
+        "at": 10,
+        "id": "a"
+      }
+    ]
+  ],
+  "expect": [
+    "read",
+    "saved"
+  ]
+}

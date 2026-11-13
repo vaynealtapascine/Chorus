@@ -77,6 +77,8 @@ fn call(f: &str, a: &[Value]) -> Result<String, String> {
         "search_parse" => api::search_parse(&s(a, 0)),
         "default_speaker" => api::default_speaker(&s(a, 0)),
         "default_speaker_for_front" => api::default_speaker_for_front(&s(a, 0), &s(a, 1), &s(a, 2), &s(a, 3)),
+        "ticks_for" => api::ticks_for(&s(a, 0), &s(a, 1), &s(a, 2)),
+        "ticks_upto" => api::ticks_upto(&s(a, 0), &s(a, 1)),
         "search_filter" => api::search_filter(&s(a, 0), &s(a, 1), &s(a, 2)),
         "stage_plan" => api::stage_plan(&s(a, 0), &s(a, 1)),
         "adapt_color" => Ok(api::adapt_color(&s(a, 0), a[1].as_bool().unwrap_or(false), &s(a, 2))),

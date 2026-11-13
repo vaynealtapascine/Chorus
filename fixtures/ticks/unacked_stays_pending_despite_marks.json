@@ -1,0 +1,31 @@
+{
+  "description": "a message the server has not stamped is a clock whatever the marks say",
+  "fn": "ticks_for",
+  "args": [
+    [
+      {
+        "at": 10,
+        "id": "a",
+        "authors": [],
+        "acked": false
+      }
+    ],
+    [
+      {
+        "member": "rin",
+        "at": 99,
+        "id": "z"
+      }
+    ],
+    [
+      {
+        "member": "acct",
+        "at": 99,
+        "id": "z"
+      }
+    ]
+  ],
+  "expect": [
+    "pending"
+  ]
+}
