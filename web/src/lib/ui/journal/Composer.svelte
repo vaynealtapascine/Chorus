@@ -44,6 +44,8 @@
   const ed = $derived(new TextEditing(c));
   const full = $derived(surface === 'full');
   const reply = $derived(!!c.replyTo);
+  // a quote, files or a poll below the words leave the full field two lines, not a hole
+  const following = $derived(!!c.draft.quote || c.pending.length > 0 || c.draft.pollOn);
 
   // the inline cells open on focus and stay open while they hold something
   let root = $state<HTMLFormElement | undefined>();
@@ -85,6 +87,9 @@
   // a file dragged over the cell lights it; dropped, it attaches
   let dragDepth = $state(0);
   const hasFiles = (e: DragEvent) => !!e.dataTransfer?.types.includes('Files');
+  // a press on a tool opens the box only once its click has landed: opening moves the tools, and a
+  // button that moves between press and release never gets its click
+  function openOnFocus(e: FocusEvent) { if (!(e.target instanceof HTMLButtonElement)) opened = true; }
   function dragEnter(e: DragEvent) { if (hasFiles(e)) { dragDepth++; opened = true; } }
   function dragLeave(e: DragEvent) { if (hasFiles(e)) dragDepth = Math.max(0, dragDepth - 1); }
   function drop(e: DragEvent) {
@@ -129,7 +134,7 @@
 {/snippet}
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<form bind:this={root} class="composer {surface}" class:revealed class:drag={dragDepth > 0} onsubmit={post} onfocusin={() => (opened = true)} onfocusout={focusOut}
+<form bind:this={root} class="composer {surface}" class:revealed class:drag={dragDepth > 0} onsubmit={post} onfocusin={openOnFocus} onclick={() => (opened = true)} onfocusout={focusOut}
   ondragenter={dragEnter} ondragleave={dragLeave} ondragover={(e) => e.preventDefault()} ondrop={drop} aria-label={reply ? 'Reply' : 'New post'}>
   {#if full}
     <header class="top">
@@ -138,15 +143,17 @@
       {#if !reply}<button type="button" class="text-btn drafts" onclick={ondrafts}>Drafts</button>{/if}
       {@render postButton()}
     </header>
-    {#if !reply}<div class="kind"><Segmented label="Kind" value={c.draft.kind} options={[{ id: 'note', label: 'Post' }, { id: 'entry', label: 'Journal entry' }]} onchange={(v) => (c.draft.kind = v)} /></div>{/if}
-    <div class="scroll">
+    {#if !reply}<div class="kind"><Segmented quiet label="Kind" value={c.draft.kind} options={[{ id: 'note', label: 'Post' }, { id: 'entry', label: 'Journal entry' }]} onchange={(v) => (c.draft.kind = v)} /></div>{/if}
+    <!-- the empty middle focuses the text; the keys already reach it -->
+    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+    <div class="scroll" onclick={(e) => { if ((e.target as HTMLElement).matches('.scroll, .cell, .main, .replying')) { ed.el?.focus(); ed.el?.setSelectionRange(c.draft.body.length, c.draft.body.length); } }}>
       {#if replyNames}<p class="replying">Replying to <strong>{replyNames}</strong></p>{/if}
       <div class="cell">
         {@render face()}
         <div class="main">
           <div class="author-row"><AuthorChip {c} {dark} /></div>
           {#if c.draft.kind === 'entry' && !reply}<input class="entry-title" bind:value={c.draft.title} placeholder="Title (optional)" aria-label="Entry title" onkeydown={titleKey} />{/if}
-          <ComposerEditor {ed} {placeholder} onpost={post} big {autofocus} />
+          <ComposerEditor {ed} {dark} {placeholder} onpost={post} big roomy={!following} {autofocus} />
           {@render extras()}
         </div>
       </div>
@@ -168,7 +175,7 @@
         {/if}
         {#if revealed && c.draft.kind === 'entry' && !reply}<input class="entry-title" bind:value={c.draft.title} placeholder="Title (optional)" aria-label="Entry title" onkeydown={titleKey} />{/if}
         <div class="line" class:collapsed={surface === 'reply' && !revealed}>
-          <ComposerEditor {ed} {placeholder} onpost={post} />
+          <ComposerEditor {ed} {dark} {placeholder} onpost={post} />
           {#if surface === 'reply' && !revealed}{@render postButton()}{/if}
         </div>
         {#if revealed || surface === 'quick'}
@@ -177,6 +184,7 @@
           <div class="actions">
             <ComposerBars {ed} part="attach" few={!revealed} toggle={revealed}>
               {#snippet trailing()}
+                <span class="brk"></span>
                 <span class="grow"></span>
                 <div class="right">
                   {#if revealed}<button type="button" class="bell" class:on={!!c.draft.alerts} aria-label="Notifications" title="Notifications" onclick={() => (ed.sheet = 'alerts')}>
@@ -228,19 +236,32 @@
   .line { display: flex; align-items: flex-start; gap: var(--s-2); min-width: 0; }
   .line > :global(.body-wrap) { flex: 1; }
   .line.collapsed { align-items: center; }
+  .expand:focus-visible, .bell:focus-visible, .unquote:focus-visible, .restored button:focus-visible { outline-offset: 0; }
   .expand { display: grid; place-items: center; width: 40px; height: 40px; margin: -4px -8px -4px 0; border: 0; border-radius: 50%; background: none; color: var(--ink-2); cursor: pointer; }
   @media (hover: hover) { .expand:hover { background: var(--surface-2); filter: none; } }
   .format { margin: 0 -8px; }
-  .actions { margin-left: -10px; }
+  .actions > :global(.attach) { margin-left: -10px; }
   /* once open, a hairline sets the tools apart from the words (Twitter's) */
   .revealed .actions { border-top: 1px solid var(--line); padding-top: var(--s-1); }
   .actions :global(.attach) { flex-wrap: wrap; }
   .grow { flex: 1; }
   .right { display: flex; align-items: center; gap: var(--s-2); margin-left: auto; }
+  .brk { display: none; }
+  /* too narrow for tools, audience and Post on one line: audience, bell and Post take the line above the tools (Android's two bars) */
+  .actions { container-type: inline-size; }
+  @container (max-width: 490px) {
+    .revealed .right { display: contents; }
+    .revealed .audience { order: -4; }
+    .revealed .bell { order: -3; }
+    .revealed .brk { display: block; order: -1; flex: 0 0 100%; height: 0; }
+    .revealed .actions :global(.post-pill) { order: -2; margin-left: auto; }
+  }
   .audience :global(.chips) { min-height: 0; flex-wrap: nowrap; }
   .bell { display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 50%; background: var(--surface-2); color: var(--ink-2); cursor: pointer; animation: chorus-fade-in var(--t-fast) var(--ease); }
   .bell.on { background: var(--accent-soft); color: var(--accent); }
   :global(.post-pill) { flex: none; }
+  /* a disabled Post still reads as the button: the accent, faded */
+  :global(.post-pill:disabled) { background: color-mix(in srgb, var(--accent) 24%, var(--surface-2)); color: color-mix(in srgb, var(--accent) 70%, var(--ink-3)); }
 
   .field { width: 100%; box-sizing: border-box; min-height: 44px; border: 1px solid transparent; border-radius: var(--r-row); background: var(--surface-2); color: var(--ink);
     padding: 0 var(--s-3); font: inherit; font-size: var(--fs-md); }
@@ -260,13 +281,14 @@
   .top { display: flex; align-items: center; gap: var(--s-1); min-height: 56px; padding: 0 var(--s-3) 0 var(--s-1); flex: none; }
   .top .title { flex: 1; text-align: center; color: var(--ink-3); font-size: var(--fs-sm); font-weight: 500; }
   .text-btn { min-height: 44px; padding: 0 var(--s-3); border: 0; border-radius: var(--r-row); background: none; font: inherit; font-size: var(--fs-base); font-weight: 500; cursor: pointer; }
+  .text-btn:focus-visible { outline-offset: -2px; }
   .cancel { color: var(--accent); }
   .drafts { color: var(--ink-2); font-size: var(--fs-md); }
   .kind { padding: 0 var(--s-4) var(--s-2); flex: none; }
   .kind :global(.segmented) { display: inline-flex; width: 240px; border-radius: var(--r-full); }
   .kind :global(.segmented button) { border-radius: var(--r-full); }
   .scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
-  .full .cell { padding-top: var(--s-2); padding-bottom: var(--s-6); }
+  .full .cell { min-height: 100%; box-sizing: border-box; padding-top: var(--s-2); padding-bottom: var(--s-6); }
   .replying { margin: 0; padding: var(--s-2) var(--s-4) 0 calc(var(--s-4) + 52px); color: var(--ink-3); font-size: var(--fs-sm); }
   .replying strong { color: var(--accent); font-weight: 600; }
   .entry-title { width: 100%; box-sizing: border-box; border: 0; outline: none; background: none; color: var(--ink); padding: var(--s-1) 0 0; font: inherit; font-size: var(--fs-xl); line-height: 28px; font-weight: 700; }

@@ -379,13 +379,22 @@ resuming. Blob reads (`AvatarImage`, `AttachmentView`, `EmojiImage`) use plain `
 server doesn't count them.
 
 Journal composer drafts (M7.2) follow the chat composer's precedent: one draft per account and
-composer context (the main composer, or a thread's reply box) in `sessionStorage`, so a draft
-survives reloads and navigation in that tab but not closing it (Android keeps its Journal draft in
+composer context in `sessionStorage` (a thread's reply box; the main draft is kept on the device, in
+`localStorage`, and Drafts lists the shelved ones), so a reply draft survives reloads and navigation in
+that tab but not closing it (Android keeps its Journal draft in
 the encrypted replica store; SPEC §6.2's cross-device draft sync is pending on both). A draft keeps
 text, kind/title, CW/mood/tags, audience and buckets, authors (`null` = follow the current front
 until someone picks, as on Android), quote and poll. Files can't be stored, so the draft records how
 many were left and says they need attaching again. A post's files are `post.attachment` rows in the
 account scope; chat's `attachment.create` belongs to a space and is rejected there.
+
+The web Journal is one bordered column of cells (tabs, quick box, posts, switch and pin markers) that
+feels like Android's. The app bar reads "Posting as Violet" (a sheet of our faces; "Current front"
+follows the front) and carries Search, Feeds and More (a singlet's My profile is More's first row).
+A post starts from the quick box (at 641 px and up), the phone's pencil button above the tab bar,
+the sidebar's **New post** (any route, 1024 px and up), or `n` on the Journal; the dialog loads on
+first use. A post arriving while the reader is scrolled down raises a "New posts" pill
+(`feed-arrivals.ts`, Android's rule); our own post scrolls to the top instead, and new posts fade in.
 
 ### 4.3 Offline window
 

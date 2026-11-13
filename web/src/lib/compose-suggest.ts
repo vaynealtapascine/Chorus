@@ -27,3 +27,8 @@ export function applySuggestion(v: Sel, at: { from: number; to: number }, handle
   const r = replaceSelection(v.text, at.from, at.to, `@${handle} `);
   return { text: r.text, start: r.cursor, end: r.cursor };
 }
+
+/** The highlight after an arrow press, wrapping round the list. */
+export function stepIndex(index: number, delta: number, count: number): number {
+  return count ? (((index + delta) % count) + count) % count : 0;
+}

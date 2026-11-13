@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applySuggestion, suggest, suggestionAt, type Suggestion } from './compose-suggest';
+import { applySuggestion, stepIndex, suggest, suggestionAt, type Suggestion } from './compose-suggest';
 
 const sel = (text: string, start: number, end = start) => ({ text, start, end });
 const m = (name: string, handle: string): Suggestion => ({ id: handle, name, handle });
@@ -39,5 +39,12 @@ describe('@ suggestions', () => {
     expect(applySuggestion(v, suggestionAt(v)!, 'kai.lanterns')).toEqual({ text: 'hi @kai.lanterns  and', start: 17, end: 17 });
     const w = sel('@m', 2);
     expect(applySuggestion(w, { from: 0, to: 2 }, 'mo')).toEqual({ text: '@mo ', start: 4, end: 4 });
+  });
+
+  it('steps the highlight round the list', () => {
+    expect(stepIndex(0, 1, 3)).toBe(1);
+    expect(stepIndex(2, 1, 3)).toBe(0);
+    expect(stepIndex(0, -1, 3)).toBe(2);
+    expect(stepIndex(5, 1, 0)).toBe(0);
   });
 });

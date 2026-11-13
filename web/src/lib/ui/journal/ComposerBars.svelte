@@ -88,6 +88,7 @@
   .chip { display: inline-flex; align-items: center; gap: var(--s-1); min-height: 26px; min-width: 32px; justify-content: center; padding: 0 10px; border: 0; border-radius: var(--r-full);
     background: var(--surface-2); color: var(--ink-2); font: inherit; font-size: var(--fs-xs); font-weight: 500; cursor: pointer; }
   .chip.on { background: var(--accent-soft); color: var(--accent); }
+  .glyph:focus-visible, .chip:focus-visible { outline-offset: -2px; }
   .saved { margin-left: auto; color: var(--ink-3); font-size: var(--fs-sm); }
   .tools { gap: 0; }
   .glyph { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: var(--r-sm); background: none; color: var(--ink-2); cursor: pointer;

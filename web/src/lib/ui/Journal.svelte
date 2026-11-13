@@ -1,12 +1,20 @@
 <script lang="ts">
+  import { onMount, untrack } from 'svelte';
   import { channels, groups, members, reactions, selfMember, type MemberRow } from '../data';
   import { canWriteAs, postReaction, posts, type PostRow } from '../posts';
   import { sync, type Projection } from '../sync/client';
   import { bodyAuthors } from '../front-view';
   import PostCard from './PostCard.svelte';
-  import Composer from './journal/Composer.svelte';
+  import Lazy from './Lazy.svelte';
+  import { screens } from '../lazy-screens';
   import { composerFor } from '../journal-composer.svelte';
-  import { openComposer } from '../journal-compose.svelte';
+  import { journalCompose, noteSent, openComposer, sentRecently } from '../journal-compose.svelte';
+  import { journalUi } from '../journal-ui.svelte';
+  import { arrive, seen, type Arrivals } from '../feed-arrivals';
+  import { pinMarker, switchMarker } from '../journal-marker';
+  import NewPostsPill from './journal/NewPostsPill.svelte';
+  import ComposeFab from './journal/ComposeFab.svelte';
+  import TimelineEvent from './journal/TimelineEvent.svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import { quoteView } from '../post-threads';
   import { repostOriginal, savedList, savedPosts, socialIndex } from '../journal-social';
@@ -52,17 +60,16 @@
   ].sort((a, b) => b.at - a.at || b.id.localeCompare(a.id)));
   const active = $derived(members(projection).filter((m) => canWriteAs(projection, m.id, sync.accountId)));
   const frontSpeaker = $derived(bodyAuthors(projection, sync.accountId)[0]);
-  let actingAs = $state('');
-  const speaker = $derived(actingAs || frontSpeaker || active[0]?.id || null);
+  const speaker = $derived(journalUi.as || frontSpeaker || active[0]?.id || null);
   // Android's tabs (Our system, Friends, Journals), then what Android keeps in its menu
   // the tabs are the pinned feeds (F6.8): the built-ins, then saved feeds, as the Feeds screen arranges them
   const feedRows = $derived(savedFeeds(projection));
   const tabIds = $derived(pinnedTabs(storedPins(projection, sync.accountId), new Set(feedRows.map((f) => f.id))));
   const tabs = $derived(tabIds.map((id) => ({ id: id === 'system' ? 'timeline' : id, label: BUILT_IN_NAMES[id] ?? feedRows.find((f) => f.id === id)?.name ?? 'Feed' })));
   const SUB: Record<string, string> = { saved: 'Saved', lists: 'Lists', feeds: 'Feeds' };
-  let section = $state<string>('timeline');
+  const section = $derived(journalUi.section);
+  const setSection = (id: string) => (journalUi.section = id);
   const pinnedFeed = $derived(feedRows.find((f) => f.id === section));
-  let menu = $state(false);
   const shownTimeline = $derived(section === 'entries' ? timeline.filter((item) => item.kind === 'post' && item.post.kind === 'entry') : timeline);
   const savedPostsList = $derived(savedList(entries, saved));
   // the quick box tops the timeline on wider screens; a phone starts a post from the full composer
@@ -89,16 +96,38 @@
     if (!as) return;
     sync.create(add ? 'post.react' : 'post.unreact', sync.accountScope, post.id, postReaction(post.id, emoji, as));
   }
+
+  // posts that arrive while the reader is scrolled down raise a pill instead of moving the page (Android's rule)
+  const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const systemTab = $derived(section === 'timeline' || section === 'entries');
+  const newest = $derived(systemTab ? shownTimeline.find((item) => item.kind === 'post')?.id ?? null : null);
+  let arrivals = $state<Arrivals | null>(null);
+  let atTop = true;
+  const scrollUp = () => window.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' });
+  const toTop = () => { scrollUp(); arrivals = seen(arrivals); };
+  $effect(() => {
+    const tab = section, latest = newest;
+    if (!systemTab) { arrivals = null; return; }
+    const r = arrive(untrack(() => arrivals), tab, latest, { atTop, justPosted: sentRecently() ? latest : null });
+    arrivals = r.state;
+    if (r.scrollTop) scrollUp();
+  });
+  onMount(() => {
+    const onscroll = () => { atTop = window.scrollY < 48; if (atTop) arrivals = seen(arrivals); };
+    onscroll();
+    addEventListener('scroll', onscroll, { passive: true });
+    return () => { removeEventListener('scroll', onscroll); journalUi.section = 'timeline'; journalUi.menu = false; };
+  });
+  // a post entering the list after it settled slides in; the first list and a tab change do not
+  const arrives = (node: HTMLElement) => { if (settled && !reduced) node.animate([{ opacity: 0, transform: 'translateY(-8px)' }, { opacity: 1, transform: 'none' }], { duration: 200, easing: 'ease-out' }); };
+  let settled = false;
+  $effect(() => { void section; settled = false; const t = setTimeout(() => (settled = true), 800); return () => clearTimeout(t); });
 </script>
 
 <div class="journal-layout"><section class="journal">
-  <header>
-    <div class="head-tools">{#if self}<a class="me" href="#/profile/{self.id}">My profile</a>{:else}<label>React as <select bind:value={actingAs} aria-label="React as member"><option value="">Current front</option>{#each active as person (person.id)}<option value={person.id}>{person.display_name ?? person.name}</option>{/each}</select></label>{/if}
-      <button class="icon-btn" aria-label="Feeds" title="Feeds" onclick={() => (section = 'feeds')}><Icon name="hash" size={22} /></button>
-      <button class="icon-btn" aria-label="More" aria-haspopup="menu" title="More" onclick={() => (menu = true)}><Icon name="more-vert" size={22} /></button></div></header>
-  {#if SUB[section]}<div class="sub"><button class="icon-btn back" aria-label="Back" onclick={() => (section = 'timeline')}><Icon name="chevron" size={20} /></button><h2>{SUB[section]}</h2></div>
-  {:else}<UnderlineTabs label="Journal sections" value={section} {tabs} onchange={(id) => (section = id)} />{/if}
-  {#if section === 'lists'}<JournalLists {projection} {dark} />{:else if section === 'feeds'}<JournalFeeds {projection} {dark} onlists={() => (section = 'lists')} />
+  {#if SUB[section]}<div class="sub"><button class="icon-btn back" aria-label="Back" onclick={() => setSection('timeline')}><Icon name="chevron" size={20} /></button><h2>{SUB[section]}</h2></div>
+  {:else}<UnderlineTabs label="Journal sections" value={section} {tabs} onchange={setSection} />{#if arrivals?.pill}<NewPostsPill onclick={toTop} />{/if}{/if}
+  {#if section === 'lists'}<div class="page"><JournalLists {projection} {dark} /></div>{:else if section === 'feeds'}<div class="page"><JournalFeeds {projection} {dark} onlists={() => setSection('lists')} /></div>
   {:else if pinnedFeed}<FeedPosts {projection} {dark} feed={pinnedFeed} />
   {:else if section === 'friends'}<JournalFriends {projection} {speaker} speakerName={speaker ? name(speaker) : ''} {dark} />
   {:else if section === 'saved'}
@@ -110,7 +139,7 @@
     {:else}<EmptyState icon="bookmark" label="Nothing saved" />{/each}
   </div>
   {:else}
-  {#if wide.current}<Composer c={composerFor('main')} {projection} {dark} surface="quick" authors={speaker ? [speaker] : []} onexpand={() => openComposer({ inline: true })} />{/if}
+  {#if wide.current}<Lazy load={screens.composer} c={composerFor('main')} {projection} {dark} surface="quick" authors={speaker ? [speaker] : []} onexpand={() => openComposer({ inline: true })} onsent={noteSent} />{/if}
   <div class="timeline">
     {#each shownTimeline as item (`${item.kind}:${item.id}`)}
       {#if item.kind === 'post'}
@@ -118,55 +147,50 @@
         {@const by = item.post.repost_of ? item.post.authors.map(name).join(' & ') || 'Someone' : undefined}
         {#if !original}<p class="repost-gone">{by} reposted a post that’s no longer available</p>
         {:else}
+        <div use:arrives>
         <!-- replying opens the post's thread, where the reply box shows what it answers -->
         <PostCard {projection} post={original} quote={quoteOf(original)} {people} {dark} reactions={reactionsOf(original.id)} reactorNames={theirNames} {speaker} compactEntry
           {social} {saved} repostedBy={by} replyCount={repliesTo(original.id)} replyToNames={original.reply_to ? byId.get(original.reply_to)?.authors.map(name).join(' & ') : undefined}
           onreply={() => router.go(`/journal/post/${encodeURIComponent(original.id)}`)} onreact={(emoji, add, as) => react(original, emoji, add, as)} />
+        </div>
         {/if}
       {:else if item.kind === 'switch'}
-        <div class="event"><span class="event-icon">◌</span><span>{item.sw.retracted ? 'Undone switch' : `Front: ${item.sw.fronting.map(frontName).join(' & ') || 'no one'}`}</span><time>{new Date(item.at).toLocaleString()}</time></div>
+        <TimelineEvent marker={switchMarker({ retracted: item.sw.retracted, names: item.sw.fronting.map(frontName), at: item.at })} />
       {:else}
-        <div class="event"><span class="event-icon">⌁</span><span>Pinned in #{channelById.get(item.pin.channelId) ?? 'channel'}: {item.pin.text.slice(0, 120)}</span><time>{new Date(item.at).toLocaleString()}</time></div>
+        <TimelineEvent marker={pinMarker({ channel: channelById.get(item.pin.channelId) ?? null, text: item.pin.text.slice(0, 160), at: item.at })} />
       {/if}
     {:else}<EmptyState icon={section === 'entries' ? 'book' : 'journal'} label="Nothing yet" />{/each}
   </div>
   {/if}
 </section>
-{#if menu}
-  <MenuSheet title="Journal" onclose={() => (menu = false)}>
-    <MenuRow label="Saved" icon="bookmark" onclick={() => { menu = false; section = 'saved'; }} />
-    <MenuRow label="Search saved posts" icon="search" href="#/search/saved" onclick={() => (menu = false)} />
-    <MenuRow label="Lists" icon="members" onclick={() => { menu = false; section = 'lists'; }} />
-    {#if !self}<MenuRow label="System board" icon="layers" href="#/journal/board" onclick={() => (menu = false)} />{/if}
+{#if journalUi.menu}
+  <MenuSheet title="Journal" onclose={() => (journalUi.menu = false)}>
+    {#if self}<MenuRow label="My profile" icon="user" href="#/profile/{self.id}" onclick={() => (journalUi.menu = false)} />{/if}
+    <MenuRow label="Saved" icon="bookmark" onclick={() => { journalUi.menu = false; setSection('saved'); }} />
+    <MenuRow label="Search saved posts" icon="search" href="#/search/saved" onclick={() => (journalUi.menu = false)} />
+    <MenuRow label="Lists" icon="members" onclick={() => { journalUi.menu = false; setSection('lists'); }} />
+    {#if !self}<MenuRow label="System board" icon="layers" href="#/journal/board" onclick={() => (journalUi.menu = false)} />{/if}
   </MenuSheet>
 {/if}
-<JournalRail {projection} {section} onsection={(id) => (section = id)} /></div>
+<JournalRail {projection} {section} onsection={setSection} />
+{#if !SUB[section] && !journalCompose.open}<ComposeFab kind={section === 'entries' ? 'entry' : 'note'} />{/if}</div>
 
 <style>
   .journal-layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: var(--s-6); }
   @media (max-width: 1279px) { .journal-layout { grid-template-columns: minmax(0, 1fr); } .journal-layout > :global(.journal-context) { display: none; } }
-  /* a set width (auto margins would shrink it to its content), so switching sections doesn't move the tabs */
-  /* one column: header, tabs, the quick box and the posts stack with no gaps, as F6.13's bordered column */
+  .journal-layout > :global(.journal-context) { margin-top: var(--s-6); }
+  /* one column: tabs, the quick box and the posts are cells that stack with no gaps, bordered at the sides as F6.13's */
   .journal { width: 100%; max-width: 760px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; align-content: start; min-width: 0; }
-  @media (min-width: 641px) { .journal { border-inline: 1px solid var(--line); min-height: calc(100dvh - 76px - 2 * var(--s-6)); } }
-  header { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: var(--s-3); padding: var(--s-1) var(--s-2); }
-  .journal :global(.composer.quick + .timeline) { border-top: 0; }
+  @media (min-width: 641px) { .journal { border-inline: 1px solid var(--line); min-height: calc(100dvh - 76px - var(--s-6)); } }
   p { margin: 0; }
   /* switching sections fades the new one in */
   .timeline { animation: chorus-fade-in var(--t-fast) var(--ease); }
-  .head-tools { display: flex; align-items: center; gap: var(--s-1); }
-  .me { color: var(--accent); text-decoration: none; margin-right: var(--s-2); }
   .icon-btn { display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 50%; background: none; color: var(--ink-2); cursor: pointer; }
   .icon-btn:hover { background: var(--surface-2); }
   .icon-btn.back { transform: rotate(180deg); }
-  .sub { display: flex; align-items: center; gap: var(--s-1); }
+  .sub { display: flex; align-items: center; gap: var(--s-1); min-height: 52px; padding: 0 var(--s-4) 0 var(--s-2); border-bottom: 1px solid var(--line); }
   .sub h2 { margin: 0; font-size: 19px; font-weight: 600; }
-  header label { color: var(--ink-3); font-size: var(--fs-sm); }
-  select { border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--ink); padding: var(--s-2); }
-  .timeline { display: grid; gap: 0; border-top: 1px solid var(--line); }
-  /* a switch or pin is a quiet marker in the timeline, aligned with the post avatars */
-  .event { display: flex; gap: var(--s-3); align-items: center; padding: 10px var(--s-4); border-bottom: 1px solid var(--line); color: var(--ink-3); font-size: var(--fs-sm); }
-  .event-icon { width: 40px; flex: none; text-align: center; color: var(--accent); }
-  time { margin-left: auto; color: var(--ink-3); font-size: var(--fs-xs); white-space: nowrap; }
+  .page { padding: var(--s-2) var(--s-4) var(--s-4); }
+  .timeline { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; }
   .repost-gone { margin: 0; padding: var(--s-3) var(--s-4); border-bottom: 1px solid var(--line); color: var(--ink-3); font-size: var(--fs-sm); }
 </style>

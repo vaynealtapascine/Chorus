@@ -94,7 +94,7 @@
 </div>
 
 <style>
-  .friends { display: grid; border-top: 1px solid var(--line); }
+  .friends { display: grid; }
   .quiet { margin: 0; padding: var(--s-5) var(--s-4); color: var(--ink-3); }
   .quiet p { margin: 0 0 var(--s-2); }
   .older { text-align: center; }

@@ -39,5 +39,6 @@
     padding: var(--s-2) var(--s-3); background: var(--bg); border-top: 1px solid var(--line); animation: chorus-rise-in var(--t-base) var(--ease); }
   .ask { flex: 1; min-width: 0; min-height: 44px; padding: 0 var(--s-4); border: 0; border-radius: var(--r-full); background: var(--surface-2); color: var(--ink-3);
     font: inherit; font-size: var(--fs-md); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: text; }
+  .ask:focus-visible { outline-offset: -2px; }
   .ask.said { color: var(--ink); }
 </style>

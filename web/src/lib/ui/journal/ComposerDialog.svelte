@@ -6,7 +6,7 @@
   import Sheet from '../Sheet.svelte';
   import Button from '../kit/Button.svelte';
   import Composer from './Composer.svelte';
-  import { closeComposer, journalCompose } from '../../journal-compose.svelte';
+  import { closeComposer, journalCompose, noteSent } from '../../journal-compose.svelte';
   import { composerFor, contextOf } from '../../journal-composer.svelte';
   import type { Projection } from '../../sync/client';
 
@@ -90,7 +90,7 @@
     style={vv ? `--vv-top: ${vv.top}px; --vv-height: ${vv.height}px` : undefined}>
     {#key context}
       <Composer {c} {projection} {dark} surface="full" autofocus {authors} {replyNames} replyVisibility={options.replyVisibility}
-        oncancel={cancel} ondrafts={() => (drafts = true)} onsent={close} />
+        oncancel={cancel} ondrafts={() => (drafts = true)} onsent={() => { noteSent(); close(); }} />
     {/key}
   </div>
   {#if asking}

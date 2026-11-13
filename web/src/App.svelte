@@ -20,7 +20,6 @@
   import Search from './lib/ui/Search.svelte';
   import SystemBoard from './lib/ui/SystemBoard.svelte';
   import Journal from './lib/ui/Journal.svelte';
-  import PostThread from './lib/ui/PostThread.svelte';
   import Profile from './lib/ui/Profile.svelte';
   import FriendProfiles from './lib/ui/FriendProfiles.svelte';
   import FriendPage from './lib/ui/FriendPage.svelte';
@@ -40,7 +39,9 @@
   import { displayPrefs, front as fdFront } from './lib/fronting-display';
   import Trash from './lib/ui/Trash.svelte';
   import UndoToast from './lib/ui/UndoToast.svelte';
-  import ComposerDialog from './lib/ui/journal/ComposerDialog.svelte';
+  import ActingAs from './lib/ui/journal/ActingAs.svelte';
+  import { journalCompose, openComposer } from './lib/journal-compose.svelte';
+  import { journalUi } from './lib/journal-ui.svelte';
   import ConnectionBanner from './lib/ui/kit/ConnectionBanner.svelte';
   import SlowDownToast from './lib/ui/kit/SlowDownToast.svelte';
   import { selfMember, members, groups } from './lib/data';
@@ -82,7 +83,18 @@
   $effect(() => { void router.route; navOpen = false; });
   let switchFront = $state<string | undefined>(undefined);
   let switchAddTo = $state<string | undefined>(undefined);
+  // the full composer loads when first asked for
+  let ComposerDialog = $state<typeof import('./lib/ui/journal/ComposerDialog.svelte').default | null>(null);
+  $effect(() => { if (journalCompose.open && !ComposerDialog) void import('./lib/ui/journal/ComposerDialog.svelte').then((m) => (ComposerDialog = m.default)); });
   addEventListener('keydown', (e: KeyboardEvent) => {
+    // n: a new post on the Journal, unless typing or something is open over it
+    if (e.key === 'n' && !e.ctrlKey && !e.metaKey && !e.altKey && router.route.name === 'journal' && !journalCompose.open) {
+      const t = e.target as HTMLElement | null;
+      if (!t?.closest?.('input, textarea, select, [contenteditable]:not([contenteditable="false"])') && !document.querySelector('.sheet, dialog[open], [role="dialog"]')) {
+        e.preventDefault();
+        openComposer();
+      }
+    }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && sync.device && !person) {
       e.preventDefault();
       switching = true;
@@ -173,7 +185,7 @@
 {:else if projection && setupName !== null}
   <Setup {projection} name={setupName} ondone={() => { setupOwed.done(sync.accountId); setupDone++; }} />
 {:else if projection}
-  <div class="shell" data-status={status} class:chat-page={router.route.name === 'chat'} class:nav-open={navOpen}>
+  <div class="shell" data-status={status} class:chat-page={router.route.name === 'chat'} class:journal-page={router.route.name === 'journal'} class:nav-open={navOpen}>
     <a class="skip" href="#main-content" onclick={(e) => { e.preventDefault(); document.getElementById('main-content')?.focus(); }}>Skip to content</a>
     <aside class="app-nav" aria-label="App navigation">
       <a class="identity" href="#/" title={accountName}>
@@ -186,6 +198,7 @@
             aria-label={t.name === 'notifications' && inboxUnread ? `Notifications, ${inboxUnread} unread` : undefined}><span class="tab-icon"><Icon name={t.icon} />{#if t.name === 'notifications' && inboxUnread}<span class="badge">{inboxUnread > 99 ? '99+' : inboxUnread}</span>{/if}</span><span>{t.label}</span></a>
         {/each}
       </nav>
+      <button class="new-post" onclick={() => openComposer()}><Icon name="edit" size={20} />New post</button>
       <nav class="desktop-tools" aria-label="Your tools">
         {#if self}<a href="#/profile/{self.id}"><Icon name="members" />My profile</a>{/if}
         <a href="#/search"><Icon name="search" />Search</a>
@@ -204,10 +217,14 @@
     <div class="workspace">
       <!-- Fronting's subpages carry their own back-arrow bars (Figma F3.4, F3.5, F3.7, F3.9), as Friends' pages do (F7) -->
       <header class="app-bar" class:own-head={['notifications', 'friend', 'people', 'insights', 'member', 'post', 'board', 'review'].includes(router.route.name) || ((router.route.name === 'settings' || router.route.name === 'chat') && !!router.route.id)} class:own-head-wide={router.route.name === 'settings'} class:subpage={(['fronts', 'layers', 'history', 'review'].includes(router.route.name) && !person) || router.route.name === 'friend' || router.route.name === 'people'}>
-        <div><strong>{routeTitle}</strong><span class="account-subtitle">{accountName}{#if router.route.name === 'fronting' && !person}{' · '}{homeSimple ? 'simple view' : `${current.length} here now`}{:else if router.route.name === 'home'}{' · '}{new Date().toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' })}{/if}</span></div>
+        <div><strong>{routeTitle}</strong><span class="account-subtitle">{#if router.route.name === 'journal' && !person}<ActingAs {projection} {dark} />{:else}{accountName}{/if}{#if router.route.name === 'fronting' && !person}{' · '}{homeSimple ? 'simple view' : `${current.length} here now`}{:else if router.route.name === 'home'}{' · '}{new Date().toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' })}{/if}</span></div>
         {#if router.route.name === 'home'}
           <button class="sections-pill" onclick={() => (homeUi.sections = true)}><Icon name="sliders" size={18} />Sections</button>
           <a class="icon-button" href="#/search" aria-label="Search"><Icon name="search" /></a>
+        {:else if router.route.name === 'journal'}
+          <a class="icon-button" href="#/search" aria-label="Search"><Icon name="search" /></a>
+          <button class="icon-button" aria-label="Feeds" title="Feeds" onclick={() => (journalUi.section = 'feeds')}><Icon name="hash" /></button>
+          <button class="icon-button" aria-label="More" aria-haspopup="menu" title="More" onclick={() => (journalUi.menu = true)}><Icon name="more-vert" /></button>
         {:else if router.route.name === 'fronting' && !person}
           <!-- Fronting's own bar (Figma F3.1): history and Layers & display for the shown front -->
           <a class="icon-button" href="#/history" aria-label="Front history"><Icon name="history" /></a>
@@ -242,7 +259,7 @@
       {:else if router.route.name === 'board'}
         <SystemBoard {projection} {dark} />
       {:else if router.route.name === 'post' && router.route.id}
-        <PostThread {projection} id={router.route.id} {dark} />
+        <Lazy load={screens.postThread} {projection} id={router.route.id} {dark} />
       {:else if router.route.name === 'post-stage' && router.route.id}
         <Lazy load={screens.postStage} {projection} {dark} id={router.route.id} />
       {:else if router.route.name === 'more'}
@@ -291,7 +308,7 @@
   {#if switching}
     <Switcher {projection} {dark} front={switchFront} addTo={switchAddTo} onclose={() => { switching = false; switchFront = undefined; switchAddTo = undefined; }} />
   {/if}
-  <ComposerDialog {projection} {dark} />
+  {#if ComposerDialog}<ComposerDialog {projection} {dark} />{/if}
   <UndoToast />
   <SlowDownToast />
   <UpdateSheet />
@@ -316,6 +333,9 @@
     font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; }
   nav a.on :global(.icon) { color: var(--accent); }
   nav a:hover { background: var(--surface); }
+  .new-post { display: none; align-items: center; justify-content: center; gap: var(--s-2); min-height: 48px; border: 0; border-radius: var(--r-full); background: var(--accent); color: var(--on-accent);
+    font: inherit; font-size: var(--fs-md); font-weight: 600; cursor: pointer; }
+  @media (min-width: 1024px) { .new-post { display: flex; } }
   .desktop-tools { border-top: 1px solid var(--line); padding-top: var(--s-4); }
   .front-summary { margin-top: auto; display: grid; gap: var(--s-2); text-align: left; background: var(--surface); border: 0; border-radius: var(--r-md); padding: var(--s-3); cursor: pointer; }
   .front-summary-title { display: flex; align-items: center; gap: 6px; color: var(--ink-2); font-size: var(--fs-xs); }
@@ -336,6 +356,9 @@
   @media (min-width: 1024px) { .app-bar.own-head-wide { display: none; } }
   main { padding: var(--s-6); max-width: 1200px; margin-inline: auto; min-width: 0; outline: none; }
   .chat-page main { padding: 0; max-width: none; }
+  /* the Journal column runs from the app bar down, edge to edge on a phone */
+  .journal-page main { padding-top: 0; }
+  @media (max-width: 640px) { .journal-page main { padding-inline: 0; } }
   /* a page fades in when you go to it (owner, 2026-11-07) */
   main > :global(*) { animation: chorus-fade-in var(--t-fast) var(--ease); }
   .storage-full { margin: 0; padding: var(--s-3) var(--s-6); font-size: var(--fs-sm); background: var(--accent-soft); }

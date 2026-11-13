@@ -42,5 +42,5 @@
 </div>
 
 <style>
-  .feed-posts { display: grid; border-top: 1px solid var(--line); }
+  .feed-posts { display: grid; }
 </style>

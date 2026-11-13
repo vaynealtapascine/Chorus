@@ -13,7 +13,8 @@ import { pollPayload } from './polls';
 import { flushUploads, imageThumbnail, stageBlob } from './sync/uploads';
 import { emptyDraft, loadDraft, occupied, saveDraft, type JournalDraft } from './journal-draft';
 import { shelve as shelveDraft, unshelve as unshelveDraft } from './journal-drafts';
-import { handleMentions, memberHandles } from './handles';
+import { handleMentions, memberHandles, shownHandle } from './handles';
+import { stepIndex, suggest, suggestionAt, applySuggestion, type Suggestion } from './compose-suggest';
 import { inline, link, linkProblem, type Sel } from './format-text';
 
 export const MAX_FILES = 10;
@@ -85,6 +86,15 @@ export class Composer {
   readonly authors = $derived(this.draft.authors ?? this.defaultAuthors.filter((id) => this.writers.some((m) => m.id === id)));
   readonly authorMembers = $derived(this.authors.map((id) => this.writers.find((m) => m.id === id)).filter((m): m is MemberRow => !!m));
   readonly firstName = $derived(this.authorMembers[0] ? this.authorMembers[0].display_name ?? this.authorMembers[0].name : '');
+
+  /** our members an `@` can name, with the handle shown for each */
+  readonly mentionChoices = $derived.by<Suggestion[]>(() => {
+    const p = this.projection;
+    if (!p) return [];
+    const own = memberHandles(p, this.accountId);
+    return members(p).filter((m) => !m.deleted && !m.archived && own.has(m.id))
+      .map((m) => ({ id: m.id, name: m.display_name ?? m.name, handle: shownHandle(m, own) ?? '' })).filter((s) => s.handle);
+  });
 
   readonly hasContent = $derived(hasContent(this.draft, this.pending.length));
   readonly isOccupied = $derived(occupied(this.draft, this.start.mode, this.startBuckets) || this.pending.length > 0);
@@ -236,6 +246,7 @@ export const contextOf = (replyTo?: string | null) => (replyTo ? `reply:${replyT
 
 /** One surface's text field: its selection, and the formatting that acts on it. Each surface has its own
  * (the quick box and the dialog can both be on screen), all writing into the same draft. */
+let uid = 0;
 export class TextEditing {
   readonly c: Composer;
   el = $state<HTMLTextAreaElement | undefined>();
@@ -250,7 +261,23 @@ export class TextEditing {
   cwOpen = $state(false);
   tagsOpen = $state(false);
 
+  /** the `@` suggestions: the highlighted row, and the @word an Escape put away */
+  readonly listId = `mention-${++uid}`;
+  index = $state(0);
+  dismissed = $state(-1);
+  private lastKey = '';
+
   constructor(c: Composer) { this.c = c; }
+
+  readonly at = $derived.by(() => (this.focused ? suggestionAt({ text: this.c.draft.body, ...this.caret }) : null));
+  readonly matches = $derived.by(() => (this.at && this.dismissed !== this.at.from ? suggest(this.at.query, this.c.mentionChoices) : []));
+  moveMention = (delta: number) => { this.index = stepIndex(this.index, delta, this.matches.length); };
+  pickMention = (s: Suggestion | undefined = this.matches[this.index]) => {
+    const at = this.at;
+    if (!at || !s) return;
+    void this.apply(applySuggestion(this.current(), at, s.handle));
+  };
+  closeMention = () => { if (this.at) this.dismissed = this.at.from; };
 
   readonly showCw = $derived.by(() => this.cwOpen || !!this.c.draft.cw);
   readonly showTags = $derived.by(() => this.tagsOpen || !!this.c.draft.tags || !!this.c.draft.mood);
@@ -264,6 +291,11 @@ export class TextEditing {
     if (!this.el) return;
     this.caret = { start: this.el.selectionStart, end: this.el.selectionEnd };
     this.focused = document.activeElement === this.el;
+    // a new word starts at the top of the list; leaving the @word forgets an Escape
+    const at = this.focused ? suggestionAt(this.current()) : null;
+    const key = at ? `${at.from}:${at.query}` : '';
+    if (key !== this.lastKey) { this.index = 0; this.lastKey = key; }
+    if (!at) this.dismissed = -1;
   };
   apply = async (next: Sel) => {
     this.c.draft.body = next.text;

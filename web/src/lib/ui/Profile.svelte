@@ -6,7 +6,8 @@
   import { frontDaily, namedFrontDays, windowStart } from '../insights';
   import { sync, type Projection } from '../sync/client';
   import PostCard from './PostCard.svelte';
-  import Composer from './journal/Composer.svelte';
+  import Lazy from './Lazy.svelte';
+  import { screens } from '../lazy-screens';
   import { composerFor } from '../journal-composer.svelte';
   import { openComposer } from '../journal-compose.svelte';
   import { quoteView } from '../post-threads';
@@ -91,7 +92,7 @@
     </div>
     {#if pinned}<section class="pinned"><h2>Pinned post</h2><PostCard {projection} post={pinned} quote={quoteView(pinned.quote_post_id, postById, memberName)} {people} {dark} reactions={reacts.get(pinned.id) ?? new Map()} speaker={writeAs} {social} {saved} replyCount={social.replies.get(pinned.id) ?? 0} onreply={() => router.go(`/journal/post/${encodeURIComponent(pinned.id)}`)} onreact={(emoji, add, as) => react(pinned, emoji, add, as)} />{#if own}<button onclick={() => pin(null)}>Unpin post</button>{/if}</section>{/if}
     {#if writeAs}
-      <Composer c={composerFor('main')} {projection} {dark} surface="quick" authors={[writeAs]} onexpand={() => openComposer({ inline: true })} />
+      <Lazy load={screens.composer} c={composerFor('main')} {projection} {dark} surface="quick" authors={[writeAs]} onexpand={() => openComposer({ inline: true })} />
     {/if}
     <UnderlineTabs label="Profile sections" bind:value={tab} tabs={[{ id: 'posts', label: 'Posts' }, { id: 'replies', label: 'Replies' }, { id: 'highlights', label: 'Highlights' }, { id: 'relationships', label: 'Relationships' }]} />
     {#if tab === 'relationships'}<ProfileRelationships {projection} {id} {own} />

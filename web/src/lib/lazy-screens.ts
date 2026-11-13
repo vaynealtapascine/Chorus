@@ -2,6 +2,8 @@
 // fetched when first shown (ui/Lazy.svelte) or, sooner, once the page is idle.
 export const screens = {
   insights: () => import('./ui/Insights.svelte'),
+  composer: () => import('./ui/journal/Composer.svelte'),
+  postThread: () => import('./ui/PostThread.svelte'),
   postStage: () => import('./ui/PostStage.svelte'),
   settings: () => import('./ui/SettingsShell.svelte'),
   stage: () => import('./ui/Stage.svelte'),

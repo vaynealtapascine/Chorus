@@ -37,6 +37,8 @@
   .row { display: flex; align-items: center; gap: var(--s-1); border-radius: var(--r-row); background: var(--surface-2); }
   .open { flex: 1; min-width: 0; display: grid; gap: 2px; padding: 10px 0 10px 14px; border: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
   .open strong { font-size: var(--fs-md); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .open span { color: var(--ink-3); font-size: var(--fs-xs); }
+  .open span { color: var(--ink-3); font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .bin { display: grid; place-items: center; width: 44px; height: 44px; flex: none; border: 0; border-radius: 50%; background: none; color: var(--ink-3); cursor: pointer; }
+.bin:focus-visible, .open:focus-visible { outline-offset: -2px; }
+  @media (hover: hover) { .bin:hover { background: var(--surface-3); } }
 </style>

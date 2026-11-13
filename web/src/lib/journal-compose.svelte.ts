@@ -27,6 +27,11 @@ export function openComposer(options: ComposeOptions = {}) {
   journalCompose.open = true;
 }
 
+// when a post last went out from a box or the dialog: the feed scrolls to our own new post instead of showing a pill
+let sentAt = 0;
+export const noteSent = () => { sentAt = Date.now(); };
+export const sentRecently = (ms = 15_000) => Date.now() - sentAt < ms;
+
 export function closeComposer() {
   journalCompose.open = false;
 }

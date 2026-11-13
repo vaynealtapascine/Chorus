@@ -59,6 +59,7 @@
 <style>
   .author { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 32px; padding: 0 var(--s-3); border: 0; border-radius: var(--r-full);
     background: var(--accent-soft); color: var(--accent); font: inherit; font-size: var(--fs-sm); font-weight: 600; cursor: pointer; }
+  .author:focus-visible, .pick:focus-visible, .filter:focus-visible { outline-offset: -2px; }
   .author:disabled { cursor: default; }
   .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .down { display: inline-grid; transform: rotate(90deg); }
