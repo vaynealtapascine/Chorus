@@ -400,3 +400,95 @@ fn the_start_up_backfill_is_idempotent_and_leaves_named_channels_and_deleted_one
     let n: i64 = c.query_row("SELECT count(*) FROM channel WHERE special IS NOT NULL", [], |r| r.get(0)).unwrap();
     assert_eq!(n, 3);
 }
+
+fn switch(w: &World, who: &[&str]) {
+    let entries: Vec<Value> = who
+        .iter()
+        .enumerate()
+        .map(|(i, m)| json!({"subject_type": "member", "subject_id": m, "level": "front", "is_primary": i == 0}))
+        .collect();
+    let acct = format!("account:{}", w.alice);
+    assert_eq!(w.push(&w.alice, &acct, "front.switch", &w.id(), json!({"entries": entries})), None);
+}
+
+/// (due_at, from_device, delivered) of each handover notification.
+fn rung(c: &Connection) -> Vec<(i64, Option<String>, bool)> {
+    c.prepare(
+        "SELECT due_at, json_extract(payload, '$.from_device'), delivered_at IS NOT NULL FROM notification
+         WHERE kind = 'handover' ORDER BY created_at",
+    )
+    .unwrap()
+    .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+    .unwrap()
+    .collect::<Result<_, _>>()
+    .unwrap()
+}
+
+#[test]
+fn a_next_switch_handover_rings_once_when_the_front_changes_and_never_from_a_rebuild() {
+    use chorus_server::activity::{self, HANDOVER_WAITING};
+    let w = World::new();
+    let h = w.home(&w.alice);
+    let (amy, fox) = (w.member(&w.alice, "Amarynthe"), w.member(&w.alice, "Foxglove"));
+    switch(&w, &[&amy]);
+    let def = json!({"deliver": "next_switch", "checklist": [{"id": "a", "text": "Keys"}]});
+    let (_, refused) = w.send(&w.alice, &h, &h.handover, &amy, def.clone());
+    assert_eq!(refused, None);
+    assert_eq!(rung(&w.c), vec![(HANDOVER_WAITING, None, false)], "waiting, not rung at sending");
+    assert!(activity::process_due(&w.c, NOW * 2).unwrap().is_empty() && !rung(&w.c)[0].2);
+    // the same front again changes nothing; Foxglove fronting delivers it, skipping that device
+    switch(&w, &[&amy]);
+    assert_eq!(rung(&w.c)[0].0, HANDOVER_WAITING);
+    switch(&w, &[&fox]);
+    let at = w.at();
+    assert_eq!(rung(&w.c), vec![(at, Some("dev".into()), false)]);
+    let payload: String =
+        w.c.query_row("SELECT payload FROM notification WHERE kind = 'handover'", [], |r| r.get(0)).unwrap();
+    let p: Value = serde_json::from_str(&payload).unwrap();
+    assert_eq!(p["title"], "Handover from Amarynthe");
+    assert_eq!(p["text"], "Keys are by the door");
+    activity::process_due(&w.c, at).unwrap();
+    assert!(rung(&w.c)[0].2, "delivered");
+    // exactly once: more switches, and a rebuild, ring nothing more
+    switch(&w, &[&amy]);
+    switch(&w, &[&fox]);
+    let mut c = w.c;
+    project::rebuild(&mut c).unwrap();
+    assert_eq!(rung(&c).len(), 1);
+}
+
+#[test]
+fn handover_rings_follow_the_switch_and_channel_levels() {
+    let w = World::new();
+    let h = w.home(&w.alice);
+    let (amy, fox) = (w.member(&w.alice, "Amarynthe"), w.member(&w.alice, "Foxglove"));
+    let count = |kind: &str| -> i64 {
+        w.c.query_row("SELECT count(*) FROM notification WHERE kind = ?1", [kind], |r| r.get(0)).unwrap()
+    };
+    // `now` rings like any message in Handover (its level is `all`); Notes is `none`
+    assert_eq!(w.send(&w.alice, &h, &h.handover, &amy, json!({"deliver": "now"})).1, None);
+    assert_eq!(count("message"), 1);
+    assert_eq!(w.send(&w.alice, &h, &h.notes, &amy, Value::Null).1, None);
+    assert_eq!(count("message"), 1, "a note rang");
+    // switched off: no next-switch ring at all
+    let acct = format!("account:{}", w.alice);
+    let off = json!({"key": "notify_chat", "value": {"handover": false}});
+    assert_eq!(w.push(&w.alice, &acct, "pref.set", &w.id(), off), None);
+    switch(&w, &[&amy]);
+    assert_eq!(w.send(&w.alice, &h, &h.handover, &amy, json!({"deliver": "next_switch"})).1, None);
+    switch(&w, &[&fox]);
+    assert_eq!(count("handover"), 0);
+    // a deleted handover never rings
+    let on = json!({"key": "notify_chat", "value": {}});
+    assert_eq!(w.push(&w.alice, &acct, "pref.set", &w.id(), on), None);
+    let (gone, _) = w.send(&w.alice, &h, &h.handover, &amy, json!({"deliver": "next_switch"}));
+    assert_eq!(w.push(&w.alice, &h.scope, "message.delete", &gone, json!({"message_id": gone})), None);
+    switch(&w, &[&amy]);
+    let cancelled: i64 = w
+        .c
+        .query_row("SELECT count(*) FROM notification WHERE kind = 'handover' AND cancelled_at IS NOT NULL", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!((count("handover"), cancelled), (1, 1));
+}

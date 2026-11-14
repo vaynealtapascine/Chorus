@@ -53,8 +53,118 @@ pub fn channel_level(conn: &Connection, account: &str, channel: &str, is_dm: boo
     Ok(match set.as_ref().and_then(Value::as_str) {
         Some(l @ ("all" | "mentions" | "none")) => l.to_string(),
         _ if is_dm => "all".into(),
-        _ => "mentions".into(),
+        // D-132: Handover rings for every message, Notes for none
+        _ => match crate::perms::special_of(conn, channel)?.as_deref() {
+            Some("handover") => "all".into(),
+            Some("notes") => "none".into(),
+            _ => "mentions".into(),
+        },
     })
+}
+
+/// `due_at` of a handover notification waiting for the next switch (D-132).
+pub const HANDOVER_WAITING: i64 = i64::MAX;
+
+/// D-132: a `next_switch` handover, sent live. It rings once, when it is delivered: queued now as
+/// waiting (or due at once if a switch already came after it was written), and made due by the
+/// front op that delivers it ([`handovers_after_front`]). Never from a rebuild or a restore.
+fn handover_waits(conn: &Connection, o: &Op, author: &str, now: i64) -> anyhow::Result<()> {
+    let Some(message) = o.entity() else { return Ok(()) };
+    if !kind_wanted(conn, author, "handover")? || channel_level(conn, author, channel_of(o), false)? == "none" {
+        return Ok(());
+    }
+    let p = &o.payload;
+    let channel_id = channel_of(o);
+    let meta = load_channel_meta(conn, channel_id)?;
+    let mut names = Vec::new();
+    let authors: Vec<&str> =
+        p.get("authors").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).collect();
+    for m in &authors {
+        names.push(name_of(conn, m)?.unwrap_or_else(|| "Someone".into()));
+    }
+    let who = if names.is_empty() { "Someone".to_string() } else { names.join(" & ") };
+    let card = match authors.first() {
+        Some(m) => author_card(conn, m)?,
+        None => AuthorCard::default(),
+    };
+    let (_, chat) = chat_visual(conn, &meta, channel_id, author, Some(author), &who, &card)?;
+    let line = p.get("text").and_then(Value::as_str).unwrap_or("").lines().map(str::trim).find(|l| !l.is_empty());
+    let items = p.get("handover").and_then(|h| h.get("checklist")).and_then(Value::as_array).map_or(0, Vec::len);
+    let text: String = match line {
+        Some(l) => l.chars().take(120).collect(),
+        None if items == 1 => "Checklist · 1 item".into(),
+        None => format!("Checklist · {items} items"),
+    };
+    let mut payload = json!({
+        "t": "message", "kind": "handover", "title": format!("Handover from {who}"), "text": text,
+        "channel_id": channel_id, "message_id": message, "scope": o.scope, "chat": chat,
+        "sender": sender_of(&who, &card),
+    });
+    let intervals = crate::handover::body_intervals(conn, author, o.time())?;
+    let due = if chorus_core::handover::delivered_at(o.time(), "next_switch", &intervals).is_some() {
+        if let Some(d) = &o.device_id {
+            payload["from_device"] = json!(d);
+        }
+        now
+    } else {
+        HANDOVER_WAITING
+    };
+    conn.execute(
+        "INSERT INTO notification (id, recipient_account_id, kind, source_op_id, payload, created_at, due_at)
+         VALUES (?1, ?2, 'handover', ?3, ?4, ?5, ?6)",
+        params![
+            chorus_core::id::new_id(now as u64, rand::random()),
+            author,
+            message,
+            serde_json::to_string(&payload)?,
+            now,
+            due
+        ],
+    )?;
+    Ok(())
+}
+
+fn channel_of(o: &Op) -> &str {
+    o.payload.get("channel_id").and_then(Value::as_str).unwrap_or_default()
+}
+
+/// D-132: after a live front op of `account`, the waiting handovers it delivers become due, once,
+/// skipping the device that switched (it shows the Home card anyway). A deleted handover is dropped.
+pub fn handovers_after_front(conn: &Connection, account: &str, o: &Op, now: i64) -> anyhow::Result<()> {
+    let rows: Vec<(String, String, Option<i64>, Option<i64>)> = conn
+        .prepare_cached(
+            "SELECT n.id, n.payload, m.occurred_at, m.deleted_at FROM notification n
+             LEFT JOIN message m ON m.id = n.source_op_id
+             WHERE n.recipient_account_id = ?1 AND n.kind = 'handover' AND n.due_at = ?2
+               AND n.delivered_at IS NULL AND n.cancelled_at IS NULL",
+        )?
+        .query_map(params![account, HANDOVER_WAITING], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+        .collect::<Result<_, _>>()?;
+    let Some(since) = rows.iter().filter_map(|r| r.2).min() else {
+        for (id, ..) in &rows {
+            conn.execute("UPDATE notification SET cancelled_at = ?2 WHERE id = ?1", params![id, now])?;
+        }
+        return Ok(());
+    };
+    let intervals = crate::handover::body_intervals(conn, account, since)?;
+    for (id, payload, sent, deleted) in rows {
+        let Some(sent) = sent.filter(|_| deleted.is_none()) else {
+            conn.execute("UPDATE notification SET cancelled_at = ?2 WHERE id = ?1", params![id, now])?;
+            continue;
+        };
+        if chorus_core::handover::delivered_at(sent, "next_switch", &intervals).is_none() {
+            continue;
+        }
+        let mut p: Value = serde_json::from_str(&payload).unwrap_or(json!({}));
+        if let Some(d) = &o.device_id {
+            p["from_device"] = json!(d);
+        }
+        conn.execute(
+            "UPDATE notification SET due_at = ?2, payload = ?3 WHERE id = ?1",
+            params![id, now, serde_json::to_string(&p)?],
+        )?;
+    }
+    Ok(())
 }
 
 /// Per-kind switches (`pref` key `notify_chat`: `{"mention": bool, "dm": bool, "reply": bool,
@@ -224,6 +334,13 @@ pub fn on_op(conn: &Connection, o: &Op, now: i64) -> anyhow::Result<()> {
     // a forward notifies like a message (D-151), with its own comment as the text
     if !matches!(o.kind.as_str(), "message.send" | "message.forward") {
         return Ok(());
+    }
+    // a handover for whoever fronts next rings when it reaches them, not now (D-132); one for
+    // now rings like any message in the Handover channel
+    if o.kind == "message.send"
+        && o.payload.get("handover").and_then(|h| h.get("deliver")).and_then(Value::as_str) == Some("next_switch")
+    {
+        return handover_waits(conn, o, author, now);
     }
     let p = &o.payload;
     if !crate::visibility::is_public(p.get("visibility")) {
@@ -906,7 +1023,7 @@ fn queue(
 pub fn process_due(conn: &Connection, now: i64) -> anyhow::Result<Vec<push::Outbound>> {
     let mut st = conn.prepare_cached(
         "SELECT id, recipient_account_id, payload, kind FROM notification
-         WHERE kind IN ('mention', 'dm', 'reply', 'message', 'member_dm', 'own_switch', 'post', 'post_reply', 'poll_nudge', 'alert_request', 'alert_accepted')
+         WHERE kind IN ('mention', 'dm', 'reply', 'message', 'member_dm', 'own_switch', 'post', 'post_reply', 'poll_nudge', 'alert_request', 'alert_accepted', 'handover')
            AND delivered_at IS NULL AND cancelled_at IS NULL AND due_at <= ?1
          ORDER BY due_at, id LIMIT 500",
     )?;

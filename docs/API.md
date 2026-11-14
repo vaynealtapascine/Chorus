@@ -301,6 +301,7 @@ GET  /notifications?after=<ms>             delivered notifications, newest first
                                             only newer ones, and pings caused by the calling device's
                                             own writes are left out (D-096: phones without push poll it);
                                             `poll_nudge` (D-136) has `post_id`, or `message_id` + `channel_id`;
+                                            `handover` (D-132) has `message_id` + `channel_id` + `scope`;
                                             an item whose message or post the caller can't read now
                                             (deleted, or no longer theirs) is left out while so (D-149)
 GET  /insights/{chart}?from=&to=           dashboard data (same numbers as the views)

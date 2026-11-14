@@ -321,7 +321,8 @@ follower surface to its `surfaces` closure. A mutation that reveals one minute e
 | Reply to a post / message | on | |
 | Reactions | off | |
 | Nudged to vote on a poll (`poll_nudge`, D-136) | on | Our own members only; each named member's mentions rule; never the device that sent it. Off with `notify_chat.poll_nudge`. |
-| Channel messages | per channel: all · mentions · none | Default: internal channels "mentions", shared spaces "mentions", DMs "all". |
+| A handover reaches whoever fronts next (`handover`, D-132) | on | Own account only. A `deliver: next_switch` handover rings once, when a live front op delivers it (`chorus_core::handover::delivered_at` over the Body front's folded history): "Handover from Amarynthe", its first line or "Checklist · N items", `message_id`/`channel_id`/`scope`, `t: message`. Never at sending, never from a rebuild or restore, never on the device that switched (or, if it was already delivered when it arrived, the device that sent it); a deleted one is dropped. Off with `notify_chat.handover`, or the Handover channel's level `none`. A `deliver: now` handover rings like any message there. |
+| Channel messages | per channel: all · mentions · none | Default: internal channels "mentions" (Handover "all", Notes "none", D-132), shared spaces "mentions", DMs "all". |
 | Review card | on | Concurrent switches need a look (SYNC.md §5.7). |
 | Follow request | on | |
 | Own switches from other devices | off | "Switched to Kai (from phone)" on the PC browser. |

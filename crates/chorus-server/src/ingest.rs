@@ -273,6 +273,8 @@ fn store_and_project(
         && let Some(account) = o.scope.strip_prefix("account:")
     {
         crate::notifier::on_front_op(conn, account, o, now)?;
+        // handovers waiting for the next switch that this one delivers ring now (D-132)
+        crate::activity::handovers_after_front(conn, account, o, now)?;
     }
     // a changed sharing policy applies to reveals still pending, not only to the next switch (D-115)
     if !preserved

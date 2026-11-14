@@ -625,10 +625,14 @@ impl World {
         }
         w.settle(300).await;
         // members to write as
+        let mut kais = Vec::new();
         for d in [A, B] {
             let scope = format!("account:{}", w.accounts[d].id);
             for n in 0..3 {
                 let m = w.id();
+                if d == A {
+                    kais.push(m.clone());
+                }
                 w.op(d, "member.create", &scope, &m, json!({"name": format!("{}{n}", ["Kai", "Rin"][d])})).await;
             }
         }
@@ -680,7 +684,23 @@ impl World {
             json!({"target_type": "account", "target_id": c, "allow": ["view", "react"], "deny": []}),
         )
         .await;
+        // D-132: a handover in A's Handover channel (made by the server), taken by another member
+        let handover = w.devs[A]
+            .projection()
+            .rows
+            .get("channel")
+            .and_then(|rows| rows.iter().find(|(_, r)| r.fields.get("special") == Some(&json!("handover"))))
+            .map(|(id, _)| id.clone())
+            .expect("A's Handover channel");
+        let note = w.id();
+        let send = json!({"channel_id": handover, "authors": [kais[0]], "text": "Keys by the door", "entities": [],
+                          "handover": {"deliver": "next_switch", "checklist": [{"id": "a", "text": "Keys"}]}});
+        w.op(A, "message.send", &home, &note, send).await;
+        w.op(A, "handover.ack", &home, &note, json!({"message_id": note, "member_id": kais[1]})).await;
         w.settle(400).await;
+        let acked = w.devs[A + 3].projection().rows.get("handover_ack").is_some_and(|r| r.len() == 1);
+        assert!(acked, "A's other device has the ack");
+        assert!(!w.devs[C].projection().rows.contains_key("handover_ack"), "the guest got A's handover ack");
         assert!(w.devs[C].store.scopes.contains(&w.home), "C is a guest of A's internal space");
         w
     }

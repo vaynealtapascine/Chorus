@@ -100,6 +100,41 @@ fn make(conn: &Connection, account: &str, kind: &str, now: i64) -> anyhow::Resul
     Ok(made)
 }
 
+/// The Body front's folded intervals still open at or after `since`, for
+/// `chorus_core::handover::delivered_at`: a configured account's effective history (D-080), else
+/// the legacy timeline with its level as the layer. Retracted switches are already gone from both.
+pub fn body_intervals(
+    conn: &Connection,
+    account: &str,
+    since: i64,
+) -> anyhow::Result<Vec<chorus_core::handover::Interval>> {
+    use chorus_core::handover::Interval;
+    if crate::fronts::current(conn, account)?.is_some() {
+        let ops = crate::fronts::account_ops(conn, account)?;
+        let history = chorus_core::front_effective::fold(account, account, &ops);
+        return Ok(history
+            .intervals
+            .into_iter()
+            .filter(|i| i.end_at.is_none_or(|e| e > since))
+            .map(|i| Interval {
+                subject_id: i.subject_id,
+                layer: i.layer_id,
+                start_at: i.start_at,
+                end_at: i.end_at,
+                front: None,
+            })
+            .collect());
+    }
+    let mut st = conn.prepare_cached(
+        "SELECT subject_id, level, start_at, end_at FROM front_interval
+         WHERE account_id = ?1 AND (end_at IS NULL OR end_at > ?2)",
+    )?;
+    let rows = st.query_map(params![account, since], |r| {
+        Ok(Interval { subject_id: r.get(0)?, layer: r.get(1)?, start_at: r.get(2)?, end_at: r.get(3)?, front: None })
+    })?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
 /// Start-up: every account gets the special channels it is missing (D-162). Never keeps the
 /// server from starting: an account that can't be done is logged and left as it was. Returns how
 /// many channels were made.

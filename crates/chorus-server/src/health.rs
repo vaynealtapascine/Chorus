@@ -61,7 +61,8 @@ pub fn snapshot(conn: &Connection, cfg: &Config, connected_devices: usize) -> an
     let wal_bytes = fs::metadata(db_path.with_extension("db-wal")).map(|m| m.len()).unwrap_or(0);
     let op_count: i64 = conn.query_row("SELECT count(*) FROM op WHERE status='applied'", [], |r| r.get(0))?;
     let pending_notifications: i64 = conn.query_row(
-        "SELECT count(*) FROM notification WHERE delivered_at IS NULL AND cancelled_at IS NULL",
+        // handovers waiting for the next switch (D-132) aren't a backlog
+        "SELECT count(*) FROM notification WHERE delivered_at IS NULL AND cancelled_at IS NULL AND due_at < 9223372036854775807",
         [],
         |r| r.get(0),
     )?;
