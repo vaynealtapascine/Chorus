@@ -126,7 +126,7 @@ local/server search screen. No new operations or schema are introduced.
 - Threads (F5.7): "Reply in thread"/"Open thread" opens or creates the parent's thread (id =
   parent id, as on web); parents show last repliers and the count; thread channels are not
   listed as chats. "Also send to <channel>" posts a second message replying to the parent in the
-  parent channel — an Android reading of the Figma, pending Q22.
+  parent channel (D-161; not on web yet).
 - Notes are ordinary existing channels, without a saved-notes type or tags navigation.
 - System/unsigned authorship is unsupported by ChatCompose; send-as must list real eligible
   own-account members only. The internal space name supplies system context where available;

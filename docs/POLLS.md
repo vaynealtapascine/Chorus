@@ -37,7 +37,8 @@ parent post/message ID, payload `{member_id, choices: [option id, ...]}`. `[]` w
 One LWW register per `(poll, member)`: the latest vote by HLC wins. Because the op lives in the
 voter's account scope, it reaches only that account's devices. The server validates on ingest:
 
-- the member belongs to the voter's account and is not deleted;
+- the member belongs to the voter's account and is not deleted (checked when the vote is cast: a
+  vote keeps counting if the member is archived or deleted afterwards, D-161);
 - the voter's account may read the parent now (message: channel `view` + space membership;
   post: the post's visibility for that account);
 - each choice is an option ID of that poll, with no duplicates, and at most one when
