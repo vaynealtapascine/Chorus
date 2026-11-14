@@ -45,4 +45,35 @@ class ChannelPermissionsTest {
         assertEquals(30, ChannelPermissions.seconds("30"))
         assertNull(ChannelPermissions.seconds("99999"))
     }
+
+    @Test fun theSpacesOwnOverridesKnowTheNewNamesAndKeepWhatTheFormDoesNotDraw() {
+        val target = ChannelPermissions.Target("account", "m", "Mo")
+        val latest = JSONObject("""{"allow":["invite","x_future"],"deny":["poll"]}""")
+        val keys = ChannelPermissions.spaceLabels.keys
+        assertTrue(keys.containsAll(listOf("attach", "poll", "aside", "invite", "history")))
+        assertFalse("invite" in ChannelPermissions.labels.keys)
+        val baseline = ChannelPermissions.choices(latest, keys)
+        assertEquals(ChannelPermissions.Choice.Allow, baseline["invite"])
+        assertEquals(ChannelPermissions.Choice.Deny, baseline["poll"])
+        val patch = ChannelPermissions.patch(latest, target,
+            baseline, baseline + ("poll" to ChannelPermissions.Choice.Allow) + ("history" to ChannelPermissions.Choice.Deny))!!
+        assertEquals("""["invite","x_future","poll"]""", patch.getJSONArray("allow").toString())
+        assertEquals("""["history"]""", patch.getJSONArray("deny").toString())
+    }
+
+    @Test fun theSpaceEditorListsPeopleAndExistingTargetsOfThatSpaceOnly() {
+        val s = state("""{"space":{"s":{"exists":true,"fields":{"kind":"shared","roles":[{"id":"mod","name":"Mods"}]}}},
+            "space_permission":{"s|account|z":{"exists":true,"fields":{"allow":[],"deny":["pin"]}},"t|account|y":{"exists":true,"fields":{"allow":[],"deny":[]}}}}""")
+        val ids = ChannelPermissions.targets(s, "s", "s", "space_permission", listOf(SpaceAccount("m", null, "Mo"))).map { "${it.type}|${it.id}" }
+        assertEquals(listOf("role|everyone", "role|member", "role|read_only", "role|mod", "account|m", "account|z"), ids)
+    }
+
+    @Test fun managingTheWholeSpaceIsTheOwnerAnAdminOrADmParticipant() {
+        val s = state("""{"space":{"s":{"exists":true,"fields":{"kind":"shared"}}},
+            "space_member":{"s|a":{"exists":false,"fields":{"role":"admin"}}}}""", joins)
+        assertTrue(ChannelPermissions.manages(s, "s", "a"))
+        assertFalse(ChannelPermissions.manages(s, "s", "m"))
+        assertTrue(ChannelPermissions.manages(s, "s", "o", owner = "o"))
+        assertFalse(ChannelPermissions.manages(s, "s", ""))
+    }
 }

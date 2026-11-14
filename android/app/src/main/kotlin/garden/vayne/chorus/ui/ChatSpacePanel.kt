@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.*
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import garden.vayne.chorus.designsystem.R
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 
@@ -39,7 +40,25 @@ internal fun ChatSpacePanel(chorus: Chorus, model: Model, space: ChatSpace, chan
     var adding by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf<SpaceAccount?>(null) }
     var leaving by remember { mutableStateOf(false) }
+    var permsOpen by remember { mutableStateOf(false) }
     val scope = "space:${space.id}"
+    // adding people: the owner, admins, or members the space lets invite (D-133); the server decides too
+    val mayAdd = space.kind == "shared" && role != null &&
+        SpacePerms.here(model.channelPermissionState, model.spaceRoles, space, directory, null, null, me)?.contains("invite") == true
+    // a person has no members or fronting to share (D-093), so their only row is the one they manage
+    val permsRow = if (SpacePerms.canSetPermissions(space.kind, role)) "Permissions"
+        else if (SpacePerms.canShare(space.kind, role) && !model.isPerson) "What we share" else null
+    // other accounts' shared fronting status here: asked when the list opens and every few minutes while it stays;
+    // nothing is shown when nothing comes back
+    var fronts by remember(space.id) { mutableStateOf<Map<String, List<SpaceFrontEntry>>>(emptyMap()) }
+    val device = chorus.device
+    LaunchedEffect(space.id, space.kind, role != null, device?.session) {
+        if (space.kind != "shared" || role == null || device == null) { fronts = emptyMap(); return@LaunchedEffect }
+        while (true) {
+            fronts = SpaceFronts.byAccount(Spaces.fronts(device, space.id))
+            delay(SpaceFronts.REFRESH_MS)
+        }
+    }
     fun nameOf(id: String) = model.member(id)?.shownName ?: foreign[id]?.name ?: "Someone"
 
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -48,7 +67,8 @@ internal fun ChatSpacePanel(chorus: Chorus, model: Model, space: ChatSpace, chan
             if (editable && onEditGroup != null) PanelLink(R.drawable.ic_edit, "Edit group", onEditGroup)
             Text("${directory?.accounts?.size ?: 0} ${if (directory?.accounts?.size == 1) "person" else "people"}",
                 color = p.accent, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
-            if (owner) PanelLink(R.drawable.ic_plus, "Add people") { adding = true }
+            if (permsRow != null) PanelLink(R.drawable.ic_sliders, permsRow) { permsOpen = true }
+            if (mayAdd) PanelLink(R.drawable.ic_plus, "Add people") { adding = true }
             if (directory == null) Text("Offline", color = p.ink3, fontSize = 13.sp)
             for (account in directory?.accounts.orEmpty()) {
                 val theirs = if (account.id == directory?.ownerAccountId) "owner" else model.spaceRoles["${space.id}|${account.id}"] ?: "member"
@@ -61,6 +81,11 @@ internal fun ChatSpacePanel(chorus: Chorus, model: Model, space: ChatSpace, chan
                     Column(Modifier.weight(1f)) {
                         Text(account.shownName + if (account.id == me) " (you)" else "", color = p.ink, fontSize = 15.sp)
                         Text(if (account.isSystem) "system" else "person", color = p.ink3, fontSize = 12.sp)
+                        for (entry in fronts[account.id].orEmpty()) Row(verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Avatar(SpaceFronts.glyph(entry), entry.color ?: "#A09184", 16.dp, ring = false)
+                            Text(entry.name, color = p.ink2, fontSize = 12.sp, maxLines = 1)
+                        }
                     }
                     Box {
                         val changeable = editable && theirs != "owner" && account.id != me
@@ -124,6 +149,7 @@ internal fun ChatSpacePanel(chorus: Chorus, model: Model, space: ChatSpace, chan
         }
     }
 
+    if (permsOpen) SpacePermissionsDrawer(chorus, model, space, directory, connections) { permsOpen = false }
     if (adding) {
         val inside = directory?.accounts.orEmpty().mapTo(HashSet()) { it.id }
         var chosen by remember { mutableStateOf(listOf<String>()) }

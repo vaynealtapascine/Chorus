@@ -190,3 +190,33 @@ existing spaces keep today's behaviour.
   `history` right after `POST /spaces` (`NEW_SPACE_EVERYONE`).
 - Tests: `space-perms.test.ts` (rule through core over ops built with `project`), `space-fronts.test.ts`,
   `ui/SpacePermissions.test.ts`.
+
+## 10. Android status (done 2026-11-14)
+
+Android does what web does (section 9), in the D-124 drawer style:
+
+- [x] **Form** `ui/SpacePermissionsDrawer.kt`, opened from chat info of a shared space: "Permissions" (owner, admins) or
+  "What we share" (any other present member). The same rows and the same writes as web (`data/SpacePerms.kt`:
+  `memberSwitches` through core `spacePerms`, `everyonePayload` with only the changed names touched and the rest of the
+  lists kept; `Sharing.changes` sends only changed fields; the delay is a choice drawer: Now, 15 min, 1 hour, 6 hours,
+  1 day, plus any value another client set). One Save. Exceptions opens `ChatPermissions.kt`'s override editor over
+  `space_permission` (`SpaceExceptions`, all eleven names, unknown ones kept); the channel editor in Advanced is the
+  same editor over `channel_permission` and now also knows `attach`, `poll`, `aside`.
+- [x] **Gating** by core `spacePerms` (`SpacePerms.here`, levels from `rows.space_permission` / `channel_permission` and the
+  role; a thread asks about its parent's channel; only shared spaces and guest channels, once the directory has loaded):
+  the attach sheet drops its photo grid, Gallery and File without `attach` (the other tiles stay: Android's sheet also
+  carries Warning, Journal, Who sees, Speaker), shared-in files are refused with a line, the Poll tile and chip need
+  `poll`, the Aside bar and "Only my system" need `aside` (an aside kept in a draft goes back to everyone), Add people
+  needs `invite` (removing people stays with the owner). Not built, as on web: hiding the composer without `send`.
+- [x] **Others' fronts**: `Spaces.fronts` (`GET /spaces/{id}/fronts`, empty on any error), asked when chat info's people
+  list opens and every 3 minutes while it stays; a glyph/colour disc and name under each account. Nothing is drawn when it
+  returns nothing.
+- [x] **History**: with `history` denied, "History starts here" above the oldest message once the replica holds nothing
+  older. Android's chat never pages back to the server (it reads its replica), so there is no older page to hold back.
+- [x] **Reading side of `member_names` off**: authors without a card fall back to their account's name and picture
+  (`SpaceFronts.standIns`), once the cards have loaded. Android's `@` suggestions only ever offer our own members and
+  groups, so nothing foreign is mentionable.
+- [x] **New shared space**: `space.set_permission` for `everyone` denying `invite` and `history`, right after `POST /spaces`.
+- [x] **Person accounts** (D-093) see no system words: no member-names or fronting rows (so a non-admin person has no
+  "What we share" row), no "Allow system asides", and "Invite others" for "Invite other systems".
+- Tests: `SpacePermsTest` (rule through core over ops built with `project`), `SpaceFrontsTest`, `ChannelPermissionsTest`.

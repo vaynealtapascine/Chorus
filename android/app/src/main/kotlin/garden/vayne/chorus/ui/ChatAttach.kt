@@ -188,7 +188,9 @@ internal object AttachTints {
 internal fun AttachSheet(page: String, onPage: (String) -> Unit, already: Int, options: List<AttachOption>,
     onAdd: (List<Uri>) -> Unit, onDismiss: () -> Unit,
     caption: String = "", onCaption: (String) -> Unit = {}, speaker: garden.vayne.chorus.data.Member? = null,
-    canSend: Boolean = false, onSend: ((List<Uri>, Boolean) -> Unit)? = null) {
+    canSend: Boolean = false, onSend: ((List<Uri>, Boolean) -> Unit)? = null,
+    /** False where the space doesn't let us send photos and files (D-133): no grid, Gallery or File, only the other tiles. */
+    attach: Boolean = true) {
     val p = LocalChorusPalette.current
     val ctx = LocalContext.current
     val motion = rememberChorusMotion()
@@ -196,8 +198,8 @@ internal fun AttachSheet(page: String, onPage: (String) -> Unit, already: Int, o
     var hidden by rememberSaveable { mutableStateOf(false) }
     var reload by remember { mutableIntStateOf(0) }
     val access = remember(reload) { DeviceGallery.access(ctx) }
-    val media by produceState(emptyList<DeviceMedia>(), access, reload) {
-        value = if (access == "none") emptyList() else withContext(Dispatchers.IO) { DeviceGallery.recent(ctx) }
+    val media by produceState(emptyList<DeviceMedia>(), access, reload, attach) {
+        value = if (access == "none" || !attach) emptyList() else withContext(Dispatchers.IO) { DeviceGallery.recent(ctx) }
     }
     val room = (AttachPicks.MAX - already).coerceAtLeast(0)
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { reload++ }
@@ -220,7 +222,7 @@ internal fun AttachSheet(page: String, onPage: (String) -> Unit, already: Int, o
         skipPartiallyExpanded = true) {
         val option = options.find { it.key == page }
         if (option == null) Column(Modifier.fillMaxWidth()) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (attach) Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Recent photos", color = p.ink, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 22.sp,
                     modifier = Modifier.weight(1f))
                 val selected = AttachPicks.selectedLabel(picked.size)
@@ -228,7 +230,7 @@ internal fun AttachSheet(page: String, onPage: (String) -> Unit, already: Int, o
                 else if (room < AttachPicks.MAX) Text("${AttachPicks.MAX - room} of ${AttachPicks.MAX}", color = p.ink3,
                     fontSize = 13.sp, lineHeight = 18.sp)
             }
-            LazyVerticalGrid(GridCells.Fixed(3), Modifier.fillMaxWidth().heightIn(max = 330.dp),
+            if (attach) LazyVerticalGrid(GridCells.Fixed(3), Modifier.fillMaxWidth().heightIn(max = 330.dp),
                 horizontalArrangement = Arrangement.spacedBy(2.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 item(key = "camera") {
                     GridAction(R.drawable.ic_camera, "Camera", room > 0) {
@@ -248,17 +250,19 @@ internal fun AttachSheet(page: String, onPage: (String) -> Unit, already: Int, o
                     }
                 }
             }
-            if (picked.isNotEmpty() && onSend != null) CaptionRow(caption, onCaption, speaker, hidden, { hidden = it }, canSend) {
+            if (attach && picked.isNotEmpty() && onSend != null) CaptionRow(caption, onCaption, speaker, hidden, { hidden = it }, canSend) {
                 onSend(picked, hidden)
             }
             // while the caption is typed the keyboard needs the room the tiles take
             if (picked.isEmpty() || !androidx.compose.foundation.layout.WindowInsets.isImeVisible)
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                ActionTile(R.drawable.ic_image, "Gallery", AttachTints.GALLERY, enabled = room > 0) {
-                    gallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
+                if (attach) {
+                    ActionTile(R.drawable.ic_image, "Gallery", AttachTints.GALLERY, enabled = room > 0) {
+                        gallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
+                    }
+                    ActionTile(R.drawable.ic_file, "File", AttachTints.FILE, enabled = room > 0) { files.launch(arrayOf("*/*")) }
                 }
-                ActionTile(R.drawable.ic_file, "File", AttachTints.FILE, enabled = room > 0) { files.launch(arrayOf("*/*")) }
                 for (o in options) ActionTile(o.icon, o.label, o.tint, active = o.active) { onPage(o.key) }
             }
         } else Column(Modifier.fillMaxWidth().heightIn(max = 560.dp).verticalScroll(rememberScrollState())

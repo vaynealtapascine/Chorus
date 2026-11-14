@@ -16,7 +16,9 @@ data class SpaceAccount(val id: String, val handle: String?, val displayName: St
         ?: handle?.takeIf { it.isNotBlank() }?.let { "@$it" } ?: "Someone"
 }
 
-data class SpaceInfo(val id: String, val kind: String, val ownerAccountId: String, val accounts: List<SpaceAccount>)
+/** [guest]: we aren't in it; some of its channels are shared with us (channel permissions). */
+data class SpaceInfo(val id: String, val kind: String, val ownerAccountId: String, val accounts: List<SpaceAccount>,
+    val guest: Boolean = false)
 data class ForeignAuthor(val id: String, val accountId: String, val name: String, val color: String? = null,
     val sigil: String? = null, val avatarBlob: String? = null,
     /** The handle we may see (D-126): their first claim, else their default. */
@@ -43,7 +45,7 @@ object Spaces {
     fun directory(j: JSONObject): Map<String, SpaceInfo> = j.getJSONArray("items").objects().associate { s ->
         val id = s.getString("id")
         id to SpaceInfo(id, s.getString("kind"), s.getString("owner_account_id"),
-            s.getJSONArray("accounts").objects().map(::account))
+            s.getJSONArray("accounts").objects().map(::account), s.optBoolean("guest", false))
     }
 
     fun connected(j: JSONObject): List<SpaceAccount> = sequenceOf("following", "followers")
@@ -64,6 +66,12 @@ object Spaces {
     suspend fun authorCards(dev: DeviceRecord, spaceId: String): Map<String, ForeignAuthor> =
         authors(Api.call("GET", dev.base, "/spaces/$spaceId/authors", null, dev.session))
 
+    /** Others' fronting status in a shared space (`GET /spaces/{id}/fronts`, D-133); empty when none is shared or the server can't say. */
+    suspend fun fronts(dev: DeviceRecord, spaceId: String): List<SpaceFront> =
+        try { SpaceFronts.parse(Api.call("GET", dev.base, "/spaces/$spaceId/fronts", null, dev.session)) }
+        catch (e: kotlinx.coroutines.CancellationException) { throw e }
+        catch (_: Exception) { emptyList() }
+
     suspend fun createShared(dev: DeviceRecord, name: String, accounts: List<String>): String =
         Api.post(dev.base, "/spaces", JSONObject().put("kind", "shared").put("name", name.trim())
             .put("accounts", JSONArray(accounts)), dev.session).getString("id")
@@ -72,7 +80,7 @@ object Spaces {
         Api.post(dev.base, "/spaces", JSONObject().put("kind", "dm")
             .put("accounts", JSONArray(listOf(accountId))), dev.session).getString("id")
 
-    /** Bring connected accounts into a shared space (its owner only; D-099). */
+    /** Bring connected accounts into a shared space (its owner, admins, or members with `invite`; D-099, D-133). */
     suspend fun add(dev: DeviceRecord, spaceId: String, accounts: List<String>) {
         Api.post(dev.base, "/spaces/$spaceId/members", JSONObject().put("accounts", JSONArray(accounts)), dev.session)
     }

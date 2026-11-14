@@ -130,6 +130,8 @@ import garden.vayne.chorus.data.Member
 import garden.vayne.chorus.data.ChatAside
 import garden.vayne.chorus.data.ChatActions
 import garden.vayne.chorus.data.SpaceInfo
+import garden.vayne.chorus.data.SpaceFronts
+import garden.vayne.chorus.data.SpacePerms
 import garden.vayne.chorus.data.Spaces
 import garden.vayne.chorus.data.accountVisible
 import garden.vayne.chorus.data.memberVisible
@@ -330,7 +332,11 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         val incoming = sharedDraft ?: return@LaunchedEffect
         if (channel?.id != sharedChannel || chorus.device == null) return@LaunchedEffect
         if (incoming.text.isNotBlank()) draft = listOf(draft, incoming.text).filter { it.isNotBlank() }.joinToString("\n")
-        for (uri in incoming.uris) {
+        // a space that doesn't let us send photos and files takes the text only (D-133)
+        val mayAttach = SpacePerms.gates(SpacePerms.here(model.channelPermissionState, model.spaceRoles, space, space?.id?.let { directory[it] },
+            channel, threadParentChannel, chorus.device?.accountId.orEmpty())).attach
+        if (!mayAttach && incoming.uris.isNotEmpty()) error = "This space doesn't allow photos or files."
+        for (uri in if (mayAttach) incoming.uris else emptyList()) {
             try { attachments.add(PendingAttachment.of(ctx, uri)) }
             catch (_: Exception) { error = "One shared file could not be opened. Please attach it again." }
         }
@@ -838,7 +844,11 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         busy = true; error = null
         actions.launch {
             try {
-                selectedSpace = Spaces.createShared(dev, name, accounts)
+                val created = Spaces.createShared(dev, name, accounts)
+                // a new space starts as F5.11 draws it: no inviting, history from when people join (D-133)
+                try { chorus.create("space.set_permission", created, SpacePerms.newSpacePayload(), "space:$created") }
+                catch (e: CancellationException) { throw e } catch (_: Exception) { /* the space exists; its permissions stay as they were */ }
+                selectedSpace = created
                 selectedChannel = ""; conversationOpen = true; newChat = null; refresh++
             } catch (e: CancellationException) { throw e
             } catch (_: Exception) { error = "Could not create the space. Try again when connected." }
@@ -878,10 +888,25 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     val threadParent = snapshot.parent
     val threadParentChannel = snapshot.parentChannel
     val paneComposer = drafts[channel?.id] ?: composer
+    // what this space lets us do here (D-133): core's rule over the space's and channel's overrides. The server is
+    // the authority (a refused send lands in the error line); these only hide controls it would refuse.
+    val panePerms = remember(model, directory, channel?.id, space?.id, threadParentChannel?.id) {
+        SpacePerms.here(model.channelPermissionState, model.spaceRoles, space, space?.id?.let { directory[it] }, channel, threadParentChannel,
+            chorus.device?.accountId.orEmpty())
+    }
+    val gates = SpacePerms.gates(panePerms)
+    val shownAuthors = remember(foreignAuthors, messages, directory, cardsFor, model.members) {
+        // authors a space withholds (`member_names` off) fall back to their account's name and picture, once the cards are in
+        if (space == null || space.kind == "internal" || cardsFor != space.id) foreignAuthors
+        else SpaceFronts.standIns(messages, { id, m -> model.member(id) != null || id in foreignAuthors || id in m.authorCards },
+            directory[space.id]?.accounts.orEmpty(), chorus.device?.accountId.orEmpty()) + foreignAuthors
+    }
     var draft by paneComposer.text
     var selectedAuthor by paneComposer.author
     var cw by paneComposer.cw
     var audience by paneComposer.audience
+    // an aside kept in the draft after the space stopped allowing them goes to everyone
+    LaunchedEffect(gates.aside, panePerms == null) { if (!gates.aside && audience == "system_only") audience = "all" }
     var visibleTo by paneComposer.visibleTo
     var replyTo by paneComposer.replyTo
     var pollOn by paneComposer.poll
@@ -898,7 +923,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         "dm" -> channel.kind == "member_dm" && paneSides?.mine?.isNotEmpty() == true
         else -> ChatManage.canEditSpace(space?.kind, ChatManage.roleIn(model.spaceRoles, space?.id.orEmpty(), space?.id?.let { directory[it] }, chorus.device?.accountId.orEmpty()))
     }
-    fun nameOf(id: String) = model.member(id)?.shownName ?: foreignAuthors[id]?.name ?: privateCards[id]?.name ?: "Someone"
+    fun nameOf(id: String) = model.member(id)?.shownName ?: shownAuthors[id]?.name ?: privateCards[id]?.name ?: "Someone"
     // which bubbles sit on our side (D-103): the room's speakers and whoever speaks now, and everyone
     // inside any of them that is a subsystem (D-102: the only place they count as fronting with it)
     val alignedIds = remember(model, channel?.id, replySpeakerId, paneSides) {
@@ -976,7 +1001,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             ChatInfoPane(chorus, channel, space, model, messages, library, directory[space.id], { infoOpen = false; searchHere = true },
                 { infoOpen = false }, model.accountPrefs.channelNotify(channel.id, space.kind), ::setNotify,
                 onShowMessage = { infoOpen = false; jumpTo = it }, modifier = Modifier.weight(1f), title = infoTitle(channel, space),
-                subtitle = infoSubtitle(channel, space), connections = connections, foreign = foreignAuthors + privateCards,
+                subtitle = infoSubtitle(channel, space), connections = connections, foreign = shownAuthors + privateCards,
                 speakerId = replySpeakerId, onSpaceChanged = { refresh++ }, onOpenChannel = { id -> selectedChannel = id; infoOpen = false; conversationOpen = true },
                 onLeft = { selectedSpace = ""; selectedChannel = ""; infoOpen = false; conversationOpen = false; refresh++ },
                 onFolders = { saveFolders(it) }, onNewFolder = { infoOpen = false; conversationOpen = false; foldersAt = it })
@@ -1136,6 +1161,12 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             }
         }
         val listMotion = rememberChorusMotion()
+        // without `history` the server sends nothing from before we joined: mark where what we hold starts (D-133).
+        // The chat never pages back to the server, so there is no older page to hold back.
+        val atHistoryStart = remember(panePerms, messages, model.searchMessages) {
+            SpacePerms.historyStarts(panePerms, channel.id, messages, model.searchMessages)
+        }
+        val historyStart = atHistoryStart && channel.kind != "thread" && !paneLocked
         // Appearance › Density (F10.2): Compact draws messages closer together
         val compact = garden.vayne.chorus.designsystem.LocalChorusAppearance.current.compact
         Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -1160,7 +1191,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 val canPrivate = if (space.kind == "internal") replySpeakerId != null &&
                     message.authors.firstOrNull()?.let { it != replySpeakerId && model.member(it) != null } == true
                 else message.accountId != null && message.accountId != chorus.device?.accountId
-                ChatMessageCard(message, model, foreignAuthors, chorus, unseenByMessage[message.id].orEmpty(),
+                ChatMessageCard(message, model, shownAuthors, chorus, unseenByMessage[message.id].orEmpty(),
                     heldMessages[message.id], actingMemberId = replySpeakerId, aligned = alignedIds, tick = ticksByMessage[message.id],
                     reactions = model.messageReactions[message.id].orEmpty(),
                     onForward = if (heldMessages[message.id] == null) ({ forwarding = message }) else null,
@@ -1195,7 +1226,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             if (channel.kind == "thread") item(key = "thread-parent") {
                 Column(Modifier.padding(top = 8.dp)) {
                     val parent = threadParent
-                    if (parent != null) ChatMessageCard(parent, model, foreignAuthors, chorus, emptyList(), null,
+                    if (parent != null) ChatMessageCard(parent, model, shownAuthors, chorus, emptyList(), null,
                         actingMemberId = replySpeakerId, onReply = {}, onReplyPrivately = null, onEdit = null,
                         reactions = model.messageReactions[parent.id].orEmpty(), interactive = false, onStage = {})
                     else Text("Original message unavailable in this view", color = p.ink3, fontSize = 13.sp, lineHeight = 18.sp, modifier = Modifier.padding(16.dp))
@@ -1204,6 +1235,10 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                             modifier = Modifier.background(p.surface, RoundedCornerShape(20.dp)).padding(horizontal = 12.dp, vertical = 4.dp))
                     }
                 }
+            }
+            if (historyStart) item(key = "history-start") {
+                Text("History starts here", color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp, textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp))
             }
             if (messages.isEmpty() && channel.kind != "thread") item {
                 Text("No messages here yet.", color = p.ink2, modifier = Modifier.padding(16.dp))
@@ -1242,7 +1277,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             }
         }
         // F5.16: who reads what's written here, and the one-tap aside (F5.4)
-        if (ChatAside.offered(space.kind, model.isPerson)) {
+        if (ChatAside.offered(space.kind, model.isPerson) && gates.aside) {
             val on = audience == "system_only"
             Row(Modifier.fillMaxWidth().background(if (on) p.accentSoft else p.surface).heightIn(min = 44.dp).padding(start = 16.dp, end = 12.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1338,7 +1373,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ChatIcon(R.drawable.ic_reply, tint = p.accent)
                     Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
-                        val name = target.authors.joinToString(" & ") { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: "Someone" }
+                        val name = target.authors.joinToString(" & ") { model.member(it)?.shownName ?: shownAuthors[it]?.name ?: "Someone" }
                         Text(if (carriedReply?.id == replyTo) "Reply to $name · from another chat" else "Reply to $name", color = p.accent, fontSize = 13.sp, lineHeight = 18.sp)
                         Text(spoilerPreview(ChatPresentation.preview(target)), color = p.ink3, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 2)
                     }
@@ -1354,8 +1389,9 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 else -> "Everyone here"
             }
             // a shared space's audience is the bar over the composer (F5.16), not a tile
-            val asideBar = ChatAside.offered(space.kind, model.isPerson)
-            val aside = audience == "system_only"
+            val asideBar = ChatAside.offered(space.kind, model.isPerson) && gates.aside
+            // an aside the space no longer allows (the audience was kept in the draft) goes to everyone
+            val aside = audience == "system_only" && gates.aside
             if (attachments.isNotEmpty()) AttachmentTray(attachments, onEdit = { editingFile = it }, onRemove = { i ->
                 attachments.getOrNull(i)?.let { DeviceGallery.discard(ctx, it.uri); attachments.removeAt(i) }
             })
@@ -1383,10 +1419,10 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                         val quoted = quoting.filter { ChatOrganize.actionMessage(chorus.model.value, it.id, viewingAs, senderAccount) == it }
                         check(quoted.size == quoting.size) { "A quoted message is no longer available." }
                         val payload = ChatCompose.payload(model, channel.id, speakerId, draft, cw,
-                            audience, visibleTo.toSet(), space.kind, replyTo = target?.id, attachmentIds = attachmentIds,
+                            if (audience == "system_only" && !gates.aside) "all" else audience, visibleTo.toSet(), space.kind, replyTo = target?.id, attachmentIds = attachmentIds,
                             accountId = senderAccount,
                             quote = quoted.takeIf { it.isNotEmpty() }?.let { q -> ChatForward.quote(q, ChatForward.sourceName(model.channels.find { it.id == q.first().channelId }, space.id), quotePart) })
-                        if (pollOn) payload.put("poll", Polls.draft(pollOptions.toList(), pollMultiple).getOrThrow())
+                        if (pollOn && gates.poll) payload.put("poll", Polls.draft(pollOptions.toList(), pollMultiple).getOrThrow())
                         chorus.create("message.send", chorus.newId(), payload, scope = scope)
                         history.sent(); jumpTo = null; followNext = true
                         val alsoTo = threadParentChannel?.takeIf { alsoSend && channel.kind == "thread" }
@@ -1417,7 +1453,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 }
             }
             val sheetOptions = buildList {
-                add(AttachOption("poll", "Poll", R.drawable.ic_poll, pollOn, AttachTints.POLL) {
+                if (gates.poll) add(AttachOption("poll", "Poll", R.drawable.ic_poll, pollOn, AttachTints.POLL) {
                     PollDraftFields(pollOn, { pollOn = it }, pollOptions, pollMultiple) { pollMultiple = it }
                 })
                 // Journal (F5.8): one of our posts or entries, as its link (D-109 shows it as an embed)
@@ -1449,7 +1485,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                         if (space.kind == "internal") item {
                             ChatChip("Chosen members", audience == "members") { audience = "members" }
                         }
-                        if (space.kind != "internal") item {
+                        if (space.kind != "internal" && gates.aside) item {
                             ChatChip("Only my system", audience == "system_only") { audience = "system_only" }
                         }
                     }
@@ -1512,7 +1548,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     }
                 })
             }
-            if (moreOpen) AttachSheet(attachPage, { attachPage = it }, attachments.size, sheetOptions,
+            if (moreOpen) AttachSheet(attachPage, { attachPage = it }, attachments.size, sheetOptions, attach = gates.attach,
                 onAdd = { uris ->
                     for (uri in uris) attachments.add(PendingAttachment.of(ctx, uri))
                     moreOpen = false; attachPage = ""
@@ -1526,10 +1562,10 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     sendNow()
                 })
             // what the message carries besides its text: tap one to change it
-            if ((audience != "all" && !asideBar) || cw.isNotBlank() || pollOn) LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            if ((audience != "all" && !asideBar) || cw.isNotBlank() || (pollOn && gates.poll)) LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (audience != "all" && !asideBar) item { ComposerOptionChip(audienceLabel, R.drawable.ic_lock) { attachPage = "audience"; moreOpen = true } }
                 if (cw.isNotBlank()) item { ComposerOptionChip("CW: ${cw.trim()}", R.drawable.ic_format_eye_off) { attachPage = "cw"; moreOpen = true } }
-                if (pollOn) item { ComposerOptionChip("Poll", R.drawable.ic_poll) { attachPage = "poll"; moreOpen = true } }
+                if (pollOn && gates.poll) item { ComposerOptionChip("Poll", R.drawable.ic_poll) { attachPage = "poll"; moreOpen = true } }
             }
             if (channel.kind == "thread" && threadParentChannel != null && threadParent != null) {
                 Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { alsoSend = !alsoSend },
@@ -1608,7 +1644,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             ChatInfoPane(chorus, channel, space, model, messages, library, directory[space.id], { searchHere = true },
                 notifyLevel = model.accountPrefs.channelNotify(channel.id, space.kind), onNotify = ::setNotify,
                 onShowMessage = { jumpTo = it }, modifier = Modifier.width(260.dp), title = infoTitle(channel, space),
-                subtitle = infoSubtitle(channel, space), connections = connections, foreign = foreignAuthors + privateCards,
+                subtitle = infoSubtitle(channel, space), connections = connections, foreign = shownAuthors + privateCards,
                 speakerId = replySpeakerId, onSpaceChanged = { refresh++ }, onOpenChannel = { id -> selectedChannel = id },
                 onLeft = { selectedSpace = ""; selectedChannel = ""; refresh++ },
                 onFolders = { saveFolders(it) }, onNewFolder = { foldersAt = it })
