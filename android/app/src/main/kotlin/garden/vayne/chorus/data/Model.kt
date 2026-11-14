@@ -207,6 +207,10 @@ class Model(
     val accountHandle: String? = null,
     /** Deleted things this account may restore (F9.5, D-053), newest first. */
     val trash: List<TrashItem> = emptyList(),
+    /** Every live message with a `handover` (D-132), oldest first, however old: core's `handover_view` needs them all. */
+    val handoverMessages: List<ChatMessage> = emptyList(),
+    val handoverAcks: List<HandoverAck> = emptyList(),
+    val checklistChecks: List<ChecklistCheck> = emptyList(),
 ) {
     /** The handle a member of ours is shown with (D-126). */
     fun handle(id: String): String? = memberHandles[id]?.shown
@@ -554,7 +558,13 @@ class Model(
                 resolvedReviews = rows(p, "front_review").filter { it.second.present("resolution") }.mapTo(HashSet()) { it.first },
                 memberHandles = Handles.fromProjection(p, accountId),
                 accountHandle = rows(p, "account").firstOrNull { it.first == accountId }?.second?.str("handle"),
-                trash = Trash.items(p, accountId))
+                trash = Trash.items(p, accountId),
+                handoverMessages = messageRows.filter { (_, f) -> f.optJSONObject("handover") != null }
+                    .map { (id, f) -> chatMessage(id, f, attachments, (messageTable?.optJSONObject(id)?.optInt("edits") ?: 0) > 0) }
+                    .sortedWith(compareBy<ChatMessage> { it.occurredAt }.thenBy { it.id }),
+                handoverAcks = rows(p, "handover_ack").map { (_, f) -> HandoverAck(f.optString("message_id"), f.optString("member_id"), f.optLong("acked_at")) },
+                checklistChecks = rows(p, "checklist_item_state").map { (_, f) ->
+                    ChecklistCheck(f.optString("message_id"), f.optString("item_id"), f.optBoolean("done"), f.optString("member_id")) })
         }
     }
 }

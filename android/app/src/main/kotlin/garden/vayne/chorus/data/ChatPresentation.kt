@@ -40,7 +40,8 @@ object ChatPresentation {
         return named.entries(front ?: named.bodyId)
     }
 
-    data class FrontEvent(val at: Long, val text: String)
+    /** [divider]: a line with no time ("Since Foxglove last fronted") rather than something that happened at [at]. */
+    data class FrontEvent(val at: Long, val text: String, val divider: Boolean = false)
 
     data class TimelineMarker(val at: Long, val event: FrontEvent? = null)
     data class TimelinePlan(val before: List<TimelineMarker>, val after: List<TimelineMarker>)

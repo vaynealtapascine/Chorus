@@ -45,6 +45,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.platform.LocalConfiguration
 import garden.vayne.chorus.data.ChatPresentation
+import garden.vayne.chorus.data.Handover
 import garden.vayne.chorus.data.Special
 import garden.vayne.chorus.designsystem.R
 import androidx.compose.material3.VerticalDivider
@@ -921,6 +922,13 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     val paneLocked = channel != null && !shownNow(channel.id)
     val defaultAuthorId = ChatManage.keptSpeaker(paneSides?.mine, channel?.id?.let { ChatSpeaker.pick(model, it) }, here)
     val replySpeakerId = ChatManage.keptSpeaker(paneSides?.mine, selectedAuthor.takeIf { id -> model.active.any { it.id == id } } ?: defaultAuthorId, here)
+    // Handover (D-132, F5.15): its composer chips, checklist draft and what core says of delivery and acks
+    val handoverMode = channel?.special == Special.HANDOVER
+    var handoverNext by rememberSaveable(channel?.id) { mutableStateOf(false) }
+    var checklist by rememberSaveable(channel?.id) { mutableStateOf(emptyList<String>()) }
+    var checklistOpen by rememberSaveable(channel?.id) { mutableStateOf(false) }
+    val handover = rememberHandoverView(chorus, model, channel?.id?.takeIf { handoverMode }, replySpeakerId)
+    val checklistReady = handoverMode && checklist.any { it.isNotBlank() }
     val paneEditable = channel != null && channel.kind != "thread" && !paneLocked && when (space?.kind) {
         "internal" -> !model.isPerson || channel.special != null
         "dm" -> channel.kind == "member_dm" && paneSides?.mine?.isNotEmpty() == true
@@ -1124,10 +1132,14 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 garden.vayne.chorus.data.FrontInterval(it.id, it.presence.subjectType, it.presence.subjectId,
                     it.presence.layerId, it.presence.isPrimary, it.startAt, it.endAt)
             } }
-        val frontLines = remember(model, timelineIntervals, messages.firstOrNull()?.occurredAt, space.kind) { if (space.kind != "internal" || model.isPerson || messages.isEmpty()) emptyList() else
+        val switchLines = remember(model, timelineIntervals, messages.firstOrNull()?.occurredAt, space.kind) { if (space.kind != "internal" || model.isPerson || messages.isEmpty()) emptyList() else
             ChatPresentation.frontEvents(timelineIntervals, messages.first().occurredAt, System.currentTimeMillis(),
                 { type, id -> model.subject(type, id)?.name },
                 { level -> ChatPresentation.layer(model, Entry("member", "", level, false)) }) }
+        // "<name> acknowledged the handover" and "Since <name> last fronted", between messages and not messages (D-003)
+        val frontLines = remember(switchLines, handover, messages.lastOrNull()?.occurredAt, replySpeakerId) { if (!handoverMode || handover == null) switchLines else
+            (switchLines + Handover.ackLines(handover, model.handoverMessages, ::nameOf) +
+                listOfNotNull(Handover.sinceLine(handover.lastFronted, replySpeakerId?.let(::nameOf), messages.lastOrNull()?.occurredAt))).sortedBy { it.at } }
         val everywhere = remember(model, viewingAs) {
             model.chatMessages.filterKeys { shownNow(it) }.values.flatten().associateBy { it.id }
         }
@@ -1222,6 +1234,17 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     onEdit = if (chorus.device?.accountId?.let { it == message.accountId } == true &&
                         heldMessages[message.id] == null)
                         ({ editingMessageId = message.id }) else null,
+                    extras = message.handover?.let { def -> {
+                        HandoverBubble(def, handover?.of(message.id), handover?.waiting(message.id) == true, enabled = replySpeakerId != null) { item ->
+                            val speaker = replySpeakerId ?: return@HandoverBubble
+                            actions.launch {
+                                try {
+                                    chorus.create("checklist.set", message.id, Handover.tickPayload(message.id, item.id, !item.done, speaker),
+                                        scope = "space:${space.id}", memberId = speaker)
+                                } catch (e: Exception) { error = e.message ?: "Could not save that." }
+                            }
+                        }
+                    } },
                     onJump = { target -> showMessage(target, message.id) }, flash = message.id == flashId,
                     onProfile = { account, id -> onOpenProfile(if (account == null || account == chorus.device?.accountId) id else "$account $id") },
                     linked = { id -> garden.vayne.chorus.data.ChatOrganize.actionMessage(model, id, viewingAs, chorus.device?.accountId.orEmpty()) })
@@ -1407,8 +1430,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     onDismiss = { editingFile = null })
             }
             // whether the message can go, with [files] or without; the attach sheet sends from its caption row too (F5.8)
-            fun sendable(files: Boolean) = !busy && pendingPrivateReply == null && (draft.isNotBlank() || files) &&
-                    (if (draft.isBlank()) author != null && files
+            fun sendable(files: Boolean) = !busy && pendingPrivateReply == null && (draft.isNotBlank() || files || checklistReady) &&
+                    (if (draft.isBlank()) author != null && (files || checklistReady)
                         else currentPreview?.authors?.isNotEmpty() == true && (currentPreview.text.isNotBlank() || files)) && (replyTo == null || target != null) &&
                     (audience != "members" || visibleTo.isNotEmpty()) &&
                     // in a private chat a sigil can't hand the message to someone it isn't kept to
@@ -1426,8 +1449,10 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                         check(quoted.size == quoting.size) { "A quoted message is no longer available." }
                         val payload = ChatCompose.payload(model, channel.id, speakerId, draft, cw,
                             if (audience == "system_only" && !gates.aside) "all" else audience, visibleTo.toSet(), space.kind, replyTo = target?.id, attachmentIds = attachmentIds,
-                            accountId = senderAccount,
+                            accountId = senderAccount, allowEmpty = checklistReady,
                             quote = quoted.takeIf { it.isNotEmpty() }?.let { q -> ChatForward.quote(q, ChatForward.sourceName(model.channels.find { it.id == q.first().channelId }, space.id), quotePart) })
+                        // every send from the Handover composer is a handover, so Home lists it (docs/handoff/d132-clients.md section 6)
+                        if (handoverMode) payload.put("handover", Handover.sendDef(handoverNext, checklist))
                         if (pollOn && gates.poll) payload.put("poll", Polls.draft(pollOptions.toList(), pollMultiple).getOrThrow())
                         chorus.create("message.send", chorus.newId(), payload, scope = scope)
                         history.sent(); jumpTo = null; followNext = true
@@ -1437,6 +1462,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                             ChatCompose.payload(model, alsoTo.id, speakerId, draft, cw, audience, visibleTo.toSet(), space.kind,
                                 replyTo = parent.id, attachmentIds = attachmentIds, accountId = senderAccount), scope = scope)
                         alsoSend = false
+                        handoverNext = false; checklist = emptyList(); checklistOpen = false
                         pollOn = false; pollMultiple = false
                         pollOptions.clear(); pollOptions.addAll(listOf("", ""))
                         if (attachmentIds.isNotEmpty()) UploadWork.enqueue(ctx)
@@ -1595,6 +1621,20 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     }
                 }
             }
+            if (handoverMode) {
+                if (checklistOpen) ChecklistEditor(checklist) { checklist = it }
+                HandoverBar(canAcknowledge = handover?.unread?.isNotEmpty() == true && author != null, items = checklist.count { it.isNotBlank() },
+                    nextSwitch = handoverNext, checklistOpen = checklistOpen,
+                    onAcknowledge = {
+                        val id = handover?.unread?.lastOrNull(); val speaker = author?.id
+                        if (id != null && speaker != null) actions.launch {
+                            try { chorus.create("handover.ack", id, Handover.ackPayload(id, speaker), scope = "space:${space.id}", memberId = speaker) }
+                            catch (e: Exception) { error = e.message ?: "Could not acknowledge the handover." }
+                        }
+                    },
+                    onChecklist = { checklistOpen = !checklistOpen; if (checklistOpen && checklist.isEmpty()) checklist = listOf("") },
+                    onNextSwitch = { handoverNext = !handoverNext })
+            }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 var authorsOpen by remember { mutableStateOf(false) }
@@ -1627,7 +1667,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                                 contentAlignment = Alignment.Center) { ChatIcon(R.drawable.ic_emoji, "Emoji") }
                             Box(Modifier.weight(1f).padding(vertical = 12.dp)) {
                                 if (draft.isEmpty()) Text(if (aside) ChatAside.placeholder(model.systemName)
-                                    else if (channel.kind == "thread") "Reply in thread" else "Message", maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    else if (channel.kind == "thread") "Reply in thread" else if (handoverMode) "Write a handover…"
+                                    else if (channel.special == Special.NOTES) "Save a note…" else "Message", maxLines = 1, overflow = TextOverflow.Ellipsis,
                                     color = p.ink3, style = MaterialTheme.typography.bodyLarge)
                                 inner()
                             }
@@ -1853,6 +1894,8 @@ internal fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors:
     linked: ((String) -> ChatMessage?)? = null,
     /** Just jumped to: a moment's ring. */
     flash: Boolean = false,
+    /** What a handover carries besides its text: its checklist and "waiting for next switch" (D-132). */
+    extras: (@Composable () -> Unit)? = null,
     /** Ours only (D-131): [Ticks.PENDING], [Ticks.SAVED] or [Ticks.READ]. */
     tick: String? = null,
     /** Opens an author's profile: (their account when not ours, member id). */
@@ -2040,6 +2083,7 @@ internal fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors:
                         chorus.create("message.poll_close", message.id, JSONObject().put("channel_id", message.channelId), scope = "space:$space")
                         Unit
                     } })
+            extras?.invoke()
         }
         if (thread != null && thread.replies > 0) Row(Modifier.heightIn(min = 48.dp)
             .then(if (onThread != null) Modifier.clickable(onClickLabel = "Open thread", onClick = onThread) else Modifier),
@@ -2359,8 +2403,8 @@ internal suspend fun sendAttachment(chorus: Chorus, ctx: android.content.Context
 private fun FrontLine(line: ChatPresentation.FrontEvent) {
     val p = LocalChorusPalette.current
     Box(Modifier.fillMaxWidth().padding(vertical = 6.dp), contentAlignment = Alignment.Center) {
-        Text(line.text + " · " + DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(line.at)), color = p.ink3,
-            fontSize = 12.sp, lineHeight = 16.sp, textAlign = TextAlign.Center,
+        Text(if (line.divider) line.text else line.text + " · " + DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(line.at)),
+            color = if (line.divider) p.accent else p.ink3, fontSize = 12.sp, lineHeight = 16.sp, textAlign = TextAlign.Center,
             modifier = Modifier.background(p.surface, RoundedCornerShape(20.dp)).padding(horizontal = 12.dp, vertical = 4.dp))
     }
 }

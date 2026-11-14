@@ -43,8 +43,10 @@ object ChatCompose {
         attachmentIds: List<String> = emptyList(),
         accountId: String = "",
         quote: JSONObject? = null,
+        /** A handover with only a checklist has no text of its own (D-132). */
+        allowEmpty: Boolean = false,
     ): JSONObject {
-        require(draft.isNotBlank() || attachmentIds.isNotEmpty()) { "Write a message first." }
+        require(draft.isNotBlank() || attachmentIds.isNotEmpty() || allowEmpty) { "Write a message first." }
         require(audience in setOf("all", "members", "system_only")) { "Choose who can see this message." }
         require(audience != "members" || (spaceKind == "internal" && visibleTo.isNotEmpty())) { "Choose who can see this message." }
         require(audience != "system_only" || spaceKind != "internal") { "Asides belong in a shared space." }
