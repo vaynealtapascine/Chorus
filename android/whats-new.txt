@@ -1,5 +1,5 @@
 # What's new in the next Android build: up to three short lines, shown in the update drawer (F10.5).
 # Rewrite them for each deploy; lines starting with # are skipped.
-Ticks on your messages show when they are sent and read
-Friends see your reads only if you both turn it on (Settings, Advanced)
-In the browser, writing in the Journal is one tap away and keeps drafts
+Handover notes between fronts, with checklists, and Notes to ourselves
+Shared spaces: who can send files, make polls or invite, and what you share there
+Who is fronting on the lock screen, member states friends can see, custom emoji

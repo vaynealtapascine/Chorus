@@ -270,7 +270,7 @@ The shared spacing rhythm is a four-point scale from `spacing` in frontmatter. C
   information panel occupies another 260 px column; below that it overlays from the right. Compact
   web (<1024 px) works like Android (D-120): `#/chat` is the chat list with folder tabs, and a chat
   opens over it with a back arrow. Android opens a foldered chat list, then pushes the chosen
-  conversation; from 840 dp a 240 dp list, flexible conversation and 220 dp read-only context
+  conversation; from 840 dp a 56 dp icon rail in place of the bottom bar, a 240–340 dp list, flexible conversation and a 260–300 dp read-only context
   pane sit beside one another. Android actions use a native dimmed dialog; send-as and attachment
   options use native bottom sheets. The conversation scrolls within its area, keeping the composer
   reachable above navigation/keyboard insets.
