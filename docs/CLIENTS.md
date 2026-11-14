@@ -156,6 +156,15 @@ android/
   saturation, brightness, contrast-aware preview and optional hex precision. Applying a colour
   changes the parent editor draft; saving that editor writes the existing field. Cancel does
   not change the draft. Recent colours stay on this device.
+- **Wide layout (F5.21).** From 840 dp (`ui/WideLayout.kt`, JVM-tested) the app shell swaps the
+  bottom bar for a 56 dp icon rail, for every destination: the same destinations, order, badges and
+  bar customisation (the rail and the bar share one selection rule), icons only with the label as
+  the accessibility description. It pads for the system bars and display cutout. The chat then lays
+  out list + conversation + info in the width left: 340 / 300 dp on roomy windows (Figma's 1280
+  frame), 340 / 260 from about 960 dp, 240 / 260 at 840 dp, so the conversation keeps at least
+  280 dp (320 once the wider list is used). The info pane is always open at these widths. Below
+  840 dp nothing changes: 600 to 840 dp keeps the phone layout with the bottom bar. Not checked on
+  a tablet yet: cutout and rail insets in landscape.
 - **Custom emoji (F5.12, D-054).** The server-wide set is projected into `Model.customEmoji`
   (retired rows kept, so an old message still resolves its `emoji_id`). `RichBody` draws a
   `custom_emoji` entity inline in place of its `:name:` (a placeholder over the same text, so

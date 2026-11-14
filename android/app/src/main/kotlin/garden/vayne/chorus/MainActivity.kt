@@ -14,6 +14,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -39,8 +45,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.NavigationRail
-import androidx.compose.material3.NavigationRailItem
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.DisposableEffect
 import garden.vayne.chorus.data.DeviceNavigation
@@ -65,6 +69,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -262,7 +267,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
         onDispose { navPrefs.unregisterOnSharedPreferenceChangeListener(listener) }
     }
     val motion = garden.vayne.chorus.ui.LocalChorusMotionOverride.current ?: android.animation.ValueAnimator.areAnimatorsEnabled()
-    val expanded = LocalConfiguration.current.screenWidthDp >= 840
+    val expanded = garden.vayne.chorus.ui.WideLayout.isWide(LocalConfiguration.current.screenWidthDp)
     val status by chorus.status.collectAsState()
     val model by chorus.model.collectAsState()
     // Chorus opens on Home (D-130)
@@ -449,10 +454,33 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                 }) { ChorusIcon(t.icon, "${t.label}, $unread unread") } else ChorusIcon(t.icon)
             }
             fun select(t: Tab) { tab = t; settingsOpen = false; searchOpen = false; insightsOpen = false; frontsOpen = false; layersFront = null }
-            if (expanded && !chatStageCapture) NavigationRail(containerColor = p.surface) {
-                destinations.forEach { t -> NavigationRailItem(selected = t == activeTab || (t == Tab.More && activeTab !in destinations && activeTab != Tab.Home),
-                    onClick = { select(t) }, icon = { TabIcon(t) }, label = { Text(t.label) }) }
+            // Front history belongs to Fronting (F3.7) when Fronting is on the bar; settings and insights are More's pages (F10.1)
+            fun barSelected(t: Tab) = (t == activeTab || (t == Tab.Fronting && activeTab == Tab.History) ||
+                (t == Tab.More && activeTab !in destinations && activeTab != Tab.Home && !(activeTab == Tab.History && Tab.Fronting in destinations))) &&
+                !settingsOpen && !searchOpen && !insightsOpen && !frontsOpen ||
+                t == Tab.More && (settingsOpen || insightsOpen) && !searchOpen
+            // the 56 dp icon rail (F5.21) stands in for the bottom bar from 840 dp: same destinations, order and badges
+            if (expanded && !chatStageCapture) Column(
+                Modifier.width(garden.vayne.chorus.ui.WideLayout.RAIL.dp).fillMaxHeight().background(p.surface)
+                    .windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout)
+                        .only(androidx.compose.foundation.layout.WindowInsetsSides.Start + androidx.compose.foundation.layout.WindowInsetsSides.Top + androidx.compose.foundation.layout.WindowInsetsSides.Bottom))
+                    .padding(vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                destinations.forEach { t ->
+                    val on = barSelected(t)
+                    Box(Modifier.size(44.dp).background(if (on) p.accentSoft else androidx.compose.ui.graphics.Color.Transparent, androidx.compose.foundation.shape.RoundedCornerShape(14.dp))
+                        .clickable(role = androidx.compose.ui.semantics.Role.Tab, onClickLabel = t.label) { select(t) }
+                        .semantics(mergeDescendants = true) { this.selected = on; contentDescription = if (t == Tab.Notifications && unread > 0) "${t.label}, $unread unread" else t.label },
+                        contentAlignment = Alignment.Center) {
+                        androidx.compose.runtime.CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides (if (on) p.accent else p.ink3)) {
+                        if (t == Tab.Notifications && unread > 0) BadgedBox(badge = {
+                            Badge(containerColor = p.sun, contentColor = p.onSun) { Text(if (unread > 99) "99+" else unread.toString()) }
+                        }) { ChorusIcon(t.icon) } else ChorusIcon(t.icon)
+                        }
+                    }
+                }
             }
+            if (expanded && !chatStageCapture) androidx.compose.material3.VerticalDivider(Modifier.fillMaxHeight(), color = p.line)
             Column(Modifier.weight(1f).navigationBarsPadding()) {
             // Fronting, its history and its subpages draw their own Figma bars (F3.1, F3.4, F3.7, F3.9)
             val frontingChrome = !person && !searchOpen && !settingsOpen && !insightsOpen && sharedDraft == null &&
@@ -602,12 +630,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                 containerColor = p.surface, tonalElevation = 0.dp, windowInsets = WindowInsets(0, 0, 0, 0),
             ) {
                 destinations.forEach { t -> NavigationBarItem(
-                    // Front history belongs to Fronting (F3.7) when Fronting is on the bar
-                    selected = (t == activeTab || (t == Tab.Fronting && activeTab == Tab.History) ||
-                        (t == Tab.More && activeTab !in destinations && activeTab != Tab.Home && !(activeTab == Tab.History && Tab.Fronting in destinations))) &&
-                        !settingsOpen && !searchOpen && !insightsOpen && !frontsOpen ||
-                        // settings and insights are More's pages (F10.1)
-                        t == Tab.More && (settingsOpen || insightsOpen) && !searchOpen,
+                    selected = barSelected(t),
                     onClick = { select(t) }, icon = { TabIcon(t) }, label = {
                         // "Notifications" is the longest label: let it run into the item's padding rather than cut it
                         Text(t.label, fontSize = 11.sp, lineHeight = 16.sp, maxLines = 1, softWrap = false,

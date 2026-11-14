@@ -211,7 +211,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     // a message to bring into view (from chat info, a reply or a quote), consumed by the list
     var jumpTo by remember { mutableStateOf<String?>(null) }
     var flashId by remember { mutableStateOf<String?>(null) }
-    val expanded = LocalConfiguration.current.screenWidthDp >= 840
+    val expanded = WideLayout.isWide(LocalConfiguration.current.screenWidthDp)
+    val wide = WideLayout.of(LocalConfiguration.current.screenWidthDp)
     var selectedSpace by rememberSaveable { mutableStateOf("") }
     var selectedChannel by rememberSaveable { mutableStateOf("") }
     LaunchedEffect(requestedSpace, requestedChannel, searchHit?.id, sharedDraft?.id, requestedMessage) {
@@ -991,7 +992,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         return@ChorusScene
     }
     Row(Modifier.fillMaxSize().background(p.bg).imePadding()) {
-        if (arrangingPins) ArrangePins(listRows.filter { it.pinned }, if (expanded) Modifier.width(320.dp) else Modifier.weight(1f),
+        if (arrangingPins) ArrangePins(listRows.filter { it.pinned }, if (expanded) Modifier.width(wide.listDp.dp) else Modifier.weight(1f),
             { arrangingPins = false }) { savePins(it); arrangingPins = false }
         else if (foldersAt != null) ChatFoldersScreen(model, listRows, { saveFolders(it) },
             onReadPerMember = { on ->
@@ -1000,9 +1001,9 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     catch (e: Exception) { error = e.message ?: "Could not save that setting." }
                 }
             }, newId = { chorus.newId() }, onClose = { foldersAt = null },
-            modifier = if (expanded) Modifier.width(320.dp) else Modifier.weight(1f), startWith = foldersAt?.ifEmpty { null })
+            modifier = if (expanded) Modifier.width(wide.listDp.dp) else Modifier.weight(1f), startWith = foldersAt?.ifEmpty { null })
         else if (newChat != null && (expanded || pane == "list")) {
-            val pageModifier = if (expanded) Modifier.width(320.dp) else Modifier.weight(1f)
+            val pageModifier = if (expanded) Modifier.width(wide.listDp.dp) else Modifier.weight(1f)
             if (newChat?.endsWith("shared") == true) NewSharedSpacePage(model, connections, syncStatus == Status.Live, busy, error,
                 onBack = { error = null; newChat = if (newChat == "message/shared") "message" else null },
                 onFriends = { newChat = null; onFriends() }, onCreate = ::createSharedSpace, modifier = pageModifier)
@@ -1014,7 +1015,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         }
         else if (expanded || pane == "list") ChatListPane(model, listRows, if (expanded) channel?.id else null, readerName,
             openChat, { error = null; newChat = "message" },
-            { switchOpen = true }, onSearch, if (expanded) Modifier.width(240.dp) else Modifier.weight(1f), readerId = readerId,
+            { switchOpen = true }, onSearch, if (expanded) Modifier.width(wide.listDp.dp) else Modifier.weight(1f), readerId = readerId,
             onNewChannel = { editChannel = false; channelEditor = true }, onRowAction = rowAction, previews = listPreviews,
             onEditFolders = { foldersAt = it ?: "" }, onFolders = { saveFolders(it) }, opened = channel?.id, onSpaceAction = spaceRowsAction,
             onNewShared = { error = null; newChat = "shared" })
@@ -1709,7 +1710,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             VerticalDivider(Modifier.fillMaxHeight(), color = p.line)
             ChatInfoPane(chorus, channel, space, model, messages, library, directory[space.id], { searchHere = true },
                 notifyLevel = model.accountPrefs.channelNotify(channel.id, space.kind, channel.special), onNotify = ::setNotify,
-                onShowMessage = { jumpTo = it }, modifier = Modifier.width(260.dp), title = infoTitle(channel, space),
+                onShowMessage = { jumpTo = it }, modifier = Modifier.width(wide.infoDp.dp), title = infoTitle(channel, space),
                 subtitle = infoSubtitle(channel, space), connections = connections, foreign = shownAuthors + privateCards,
                 speakerId = replySpeakerId, onSpaceChanged = { refresh++ }, onOpenChannel = { id -> selectedChannel = id },
                 onLeft = { selectedSpace = ""; selectedChannel = ""; refresh++ },
