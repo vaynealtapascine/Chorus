@@ -1,5 +1,7 @@
 # Open questions
 
+Owner planning worksheet: [Decisions to revisit](DECISIONS_REVISIT.md) covers fronting, identity, relationships, views, scripting and architecture. Its draft prompts do not change the defaults below or authorize implementation.
+
 Non-blocking. Each has a **default** that implementers use until the owner answers. When answered,
 move the answer into DECISIONS.md and delete it here.
 
