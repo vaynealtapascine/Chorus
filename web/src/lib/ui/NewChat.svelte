@@ -10,6 +10,7 @@
   import { bodyPresence, frontLayers } from '../front-view';
   import { canWriteAs } from '../posts';
   import { memberHandles, shownHandle } from '../handles';
+  import { NEW_SPACE_EVERYONE } from '../space-perms';
   import { accountName, connections, createShared, openDm, type SpaceAccount } from '../spaces';
   import { frontOf, refreshFront } from '../friend-fronts.svelte';
   import { friendLine, friendList, memberLine, memberList, selectedLabel, spaceName, toggle } from '../new-chat';
@@ -122,7 +123,10 @@
     if (busy || !name.trim() || !chosenFriends.length) return;
     busy = true; error = '';
     try {
-      go(`#/chat/space:${await createShared(name.trim(), chosenFriends)}`);
+      const id = await createShared(name.trim(), chosenFriends);
+      // a new space starts as F5.11 draws it: no inviting, history from when people join (D-133)
+      sync.create('space.set_permission', `space:${id}`, id, NEW_SPACE_EVERYONE);
+      go(`#/chat/space:${id}`);
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
       busy = false;

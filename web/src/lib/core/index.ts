@@ -123,6 +123,8 @@ export const core = {
   /** One account's members → their handles (D-126, core handles.rs). */
   memberHandles: (input: Json): Record<string, { default: string; claimed: string[]; shown: string }> =>
     JSON.parse(wasm.memberHandles(JSON.stringify(input))),
+  /** What one account may do in a space (D-133): core's permission rule over the levels; see docs/handoff/d133-clients.md. */
+  spacePerms: (levels: Json): string[] => JSON.parse(wasm.spacePerms(JSON.stringify(levels))),
   adaptColor: (color: string, dark: boolean, intensity: 'off' | 'subtle' | 'vivid' = 'subtle'): MemberColors =>
     JSON.parse(wasm.adaptColor(color, dark, intensity)),
   hlcTick: (last: string, node: number, now = Date.now()): string => wasm.hlcTick(last, node, now),

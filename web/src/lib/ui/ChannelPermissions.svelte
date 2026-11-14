@@ -1,6 +1,7 @@
 <script lang="ts">
   // Channel permissions (Advanced; D-047, server rule in perms.rs): overrides for everyone, a
-  // role, or one account. Letting an account outside the space view a channel shares just that
+  // role, or one account. With no `channelId` it edits the space's own overrides instead
+  // (`space.set_permission`, D-133; the permissions dialog's Exceptions). Letting an account outside the space view a channel shares just that
   // channel with them (how one internal channel is shared with a partner).
   import Button from './kit/Button.svelte';
   import { apiBase } from '../sync/device';
@@ -8,14 +9,20 @@
   import { sync, type Projection } from '../sync/client';
   import type { SpaceInfo } from '../spaces';
 
-  let { projection, channelId, spaceId, info }: {
-    projection: Projection; channelId: string; spaceId: string; info: SpaceInfo | undefined;
+  let { projection, channelId, spaceId, info, open = false }: {
+    projection: Projection; channelId?: string; spaceId: string; info: SpaceInfo | undefined;
+    /** shown unfolded (inside a sheet of its own) */
+    open?: boolean;
   } = $props();
 
-  const PERMS = [
+  const wholeSpace = $derived(!channelId);
+  const entity = $derived(channelId ?? spaceId);
+  const PERMS = $derived([
     { id: 'view', label: 'See it' }, { id: 'send', label: 'Write' }, { id: 'react', label: 'React' },
     { id: 'thread', label: 'Start threads' }, { id: 'pin', label: 'Pin' }, { id: 'manage', label: 'Manage' },
-  ] as const;
+    { id: 'attach', label: 'Photos and files' }, { id: 'poll', label: 'Polls' }, { id: 'aside', label: 'Asides' },
+    ...(wholeSpace ? [{ id: 'invite', label: 'Invite' }, { id: 'history', label: 'History before joining' }] : []),
+  ]);
   type Choice = 'inherit' | 'allow' | 'deny';
   interface Person { id: string; handle: string | null; display_name: string | null }
 
@@ -50,8 +57,8 @@
       : (customRoles.find((r) => r.id === id)?.name ?? id);
 
   const overrides = $derived(
-    Object.entries(projection.rows.channel_permission ?? {})
-      .filter(([key, row]) => key.startsWith(`${channelId}|`) && row.exists)
+    Object.entries((wholeSpace ? projection.rows.space_permission : projection.rows.channel_permission) ?? {})
+      .filter(([key, row]) => key.startsWith(`${entity}|`) && row.exists)
       .map(([key, row]) => {
         const [, type, target] = key.split('|');
         const list = (v: unknown) => (Array.isArray(v) ? v.map(String) : []);
@@ -66,24 +73,29 @@
     // Equal content stays equal when an unrelated message or read mark reprojects the account.
     const [type, id] = target.split(':');
     const found = overrides.find((o) => o.type === type && o.target === id);
-    return JSON.stringify([channelId, target, Object.fromEntries(PERMS.map((p) =>
+    return JSON.stringify([entity, target, Object.fromEntries(PERMS.map((p) =>
       [p.id, found?.deny.includes(p.id) ? 'deny' : found?.allow.includes(p.id) ? 'allow' : 'inherit']))]);
   });
   $effect(() => { choices = JSON.parse(savedChoices)[2]; });
   const outsider = $derived(target.startsWith('account:') && !(info?.accounts ?? []).some((a) => a.id === target.slice(8)));
 
   function save(type: string, id: string, allow: string[], deny: string[]) {
-    sync.create('channel.set_permission', `space:${spaceId}`, channelId, { target_type: type, target_id: id, allow, deny });
+    sync.create(wholeSpace ? 'space.set_permission' : 'channel.set_permission', `space:${spaceId}`, entity, { target_type: type, target_id: id, allow, deny });
   }
   function submit(e: SubmitEvent) {
     e.preventDefault();
     const [type, id] = target.split(':');
-    save(type, id, PERMS.filter((p) => choices[p.id] === 'allow').map((p) => p.id), PERMS.filter((p) => choices[p.id] === 'deny').map((p) => p.id));
+    // what this form doesn't draw stays as it was (another client may have set it)
+    const found = overrides.find((o) => o.type === type && o.target === id);
+    const drawn = new Set<string>(PERMS.map((p) => p.id));
+    save(type, id,
+      [...(found?.allow.filter((p) => !drawn.has(p)) ?? []), ...PERMS.filter((p) => choices[p.id] === 'allow').map((p) => p.id)],
+      [...(found?.deny.filter((p) => !drawn.has(p)) ?? []), ...PERMS.filter((p) => choices[p.id] === 'deny').map((p) => p.id)]);
   }
 </script>
 
-<details class="perms">
-  <summary>Permissions</summary>
+<details class="perms" class:sheet={open} {open}>
+  <summary>{wholeSpace ? 'Exceptions' : 'Permissions'}</summary>
   <p class="hint">A person's own setting beats their role's, which beats Everyone's; at one level, deny beats allow. The space's owner and admins can always do everything.</p>
   {#if overrides.length}
     <ul>
@@ -126,6 +138,8 @@
 <style>
   .perms { display: grid; gap: var(--s-2); padding: var(--s-2) var(--s-3); font-size: var(--fs-sm); border-top: 1px solid var(--line); }
   summary { cursor: pointer; color: var(--ink-2); }
+  .sheet { border-top: 0; padding: 0; }
+  .sheet summary { display: none; }
   ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-1); }
   li { display: flex; flex-wrap: wrap; gap: var(--s-2); align-items: baseline; }
   .allow { color: var(--ink-2); }

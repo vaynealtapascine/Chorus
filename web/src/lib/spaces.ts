@@ -37,6 +37,20 @@ export async function createShared(name: string, accounts: string[]): Promise<st
   return (await call('POST', '/spaces', { kind: 'shared', name, accounts })).id;
 }
 
+/** One other account's shared front in a space, already revealed (`GET /spaces/{id}/fronts`, D-133). */
+export interface SpaceFrontEntry { t: 'subject' | 'someone'; subject_id?: string; level: string; is_primary?: boolean; name: string; color: string | null; glyph: string | null }
+export interface SpaceFront { account_id: string; entries: SpaceFrontEntry[] }
+
+/** Others' fronting status in a shared space. Empty when none is shared or the server can't say (404, offline). */
+export async function spaceFronts(spaceId: string): Promise<SpaceFront[]> {
+  try {
+    const items = (await call('GET', `/spaces/${encodeURIComponent(spaceId)}/fronts`))?.items;
+    return Array.isArray(items) ? (items as SpaceFront[]) : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function addToSpace(spaceId: string, accounts: string[]): Promise<void> {
   await call('POST', `/spaces/${spaceId}/members`, { accounts });
 }

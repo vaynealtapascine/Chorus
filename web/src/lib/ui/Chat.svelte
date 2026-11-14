@@ -53,6 +53,10 @@
   import { groups } from '../data';
   import { handleMentions, memberHandles, shownHandle } from '../handles';
   import { canEditSpace, privateSides, roleIn } from '../chat-manage';
+  import { gatesFrom, OPEN, permsFor } from '../space-perms';
+  import { screens } from '../lazy-screens';
+  import Lazy from './Lazy.svelte';
+  import { accountStandIns } from '../space-fronts';
   import type { MemberChange } from '../many-members';
   import { selfMember, type MemberRow } from '../data';
   import { apiBase } from '../sync/device';
@@ -145,7 +149,13 @@
   let historyError = $state('');
   let historyRevealed = $state(false);
   let directory = $state(new Map<string, SpaceInfo>());
-  const people = $derived(new Map([...cards, ...members(projection)].map((m) => [m.id, m])));
+  // who the cards and our own members name; an author a space withholds (`member_names` off) falls back
+  // to its account's name and picture once the cards are in, never to "Unknown member" (D-133)
+  const known = $derived(new Map([...cards, ...members(projection)].map((m) => [m.id, m])));
+  let cardsOk = $state('');
+  const standIns = $derived(space && space.kind !== 'internal' && cardsOk === space.id
+    ? accountStandIns(msgs, known, directory.get(space.id)?.accounts ?? [], sync.accountId) : []);
+  const people = $derived(new Map([...standIns, ...known.values()].map((m) => [m.id, m])));
   const emojiRows = $derived(customEmojis(projection));
   const emojiById = $derived(new Map(emojiRows.map((e) => [e.id, e])));
   const activeEmoji = $derived(emojiRows.filter((e) => !e.deleted));
@@ -214,7 +224,7 @@
     .entries.filter((e) => e.subject_type === 'member').map((e) => e.subject_id)));
   // members by the name everyone may see (never a private full name, D-126), with their handles
   const ownHandles = $derived(memberHandles(projection, sync.accountId));
-  const mentionable = $derived([...people.values()].filter((m) => !m.deleted && !m.archived));
+  const mentionable = $derived([...known.values()].filter((m) => !m.deleted && !m.archived));
   const mentionOptions = $derived(mentionChoices(mentionable.map((m) => ({
     id: m.id, name: m.display_name ?? m.name, handle: shownHandle(m, ownHandles), foreign: !!m.account_id && m.account_id !== sync.accountId,
   })), groups(projection)));
@@ -577,8 +587,20 @@
   });
   onDestroy(stopTyping);
 
+  // what this space lets us do here (D-133): core's rule over the space's and channel's overrides. The server
+  // is the authority (a refused send lands in "Not sent"); these only hide controls it would refuse.
+  const perms = $derived.by(() => {
+    const info = space ? directory.get(space.id) : undefined;
+    if (!space || !info || (space.kind !== 'shared' && !info.guest)) return null;
+    const channel = current?.kind === 'thread' ? parentChannel : current;
+    return permsFor(projection.rows, { spaceId: space.id, me: sync.accountId, channelId: channel?.id,
+      role: roleIn(projection.rows.space_member, space.id, info, sync.accountId) });
+  });
+  const gates = $derived(perms ? gatesFrom(perms) : OPEN);
+  // without `history` the server sends nothing from before we joined: don't page back to look for it
+  const historyOff = $derived(!!perms && !perms.includes('history'));
   // the audience bar over a shared space's composer (F5.4, F5.16): everyone here, or an aside only our system sees
-  const hasAside = $derived(asideOffered(space?.kind, !!self) && !!current && !lockedOut && current.kind !== 'thread');
+  const hasAside = $derived(asideOffered(space?.kind, !!self) && gates.aside && !!current && !lockedOut && current.kind !== 'thread');
   const aside = $derived(hasAside && visibilityMode === 'system_only');
   const canSend = $derived(!!current && (!!preview?.rich.text.trim() || pending.length > 0) &&
     messageAuthors.length > 0 && messageAuthors.every((id) => canWriteAs(projection, id, sync.accountId)) &&
@@ -591,6 +613,7 @@
   const ownPosts = $derived(attaching ? posts(projection).filter((p) => !p.deleted && !p.repost_of && !p.reply_to && p.account_id === sync.accountId)
     .sort((a, b) => b.occurred_at - a.occurred_at).slice(0, 30).map((p) => ({ id: p.id, label: (p.title || p.text).replace(/\s+/g, ' ').slice(0, 80) || 'Post' })) : []);
   function addFiles(files: FileList | File[]) {
+    if (!gates.attach) return;
     pending = [...pending, ...[...files].map((file) => ({ file, alt: '', spoiler: false }))];
   }
 
@@ -625,7 +648,7 @@
       return;
     }
     if (!canSend) return;
-    const pollDraft = pollOn ? pollPayload(pollOptions, pollMultiple) : {};
+    const pollDraft = pollOn && gates.poll ? pollPayload(pollOptions, pollMultiple) : {};
     pollError = pollDraft.error ?? '';
     if (pollDraft.error) return;
     const authors = messageAuthors;
@@ -660,7 +683,7 @@
       ...(quoting ? { quote: quoteForTarget(quoting, quoteSourceSpaceId || current.space_id, current.space_id) } : {}),
       ...(cw.trim() ? { cw: cw.trim() } : {}),
       ...(visibilityMode === 'members' ? { visibility: { mode: 'members', member_ids: visibleTo } } :
-        visibilityMode === 'system_only' ? { visibility: { mode: 'system_only' } } : {}),
+        visibilityMode === 'system_only' && gates.aside ? { visibility: { mode: 'system_only' } } : {}),
       ...(pollDraft.poll ? { poll: pollDraft.poll } : {}),
       sent_offline: sync.status !== 'live',
     });
@@ -965,6 +988,7 @@
   let infoTab = $state<InfoTab>('media');
   // the chat's folders, from its info
   let folderSheet = $state(false);
+  let spacePerms = $state(false);
   const chatFolder = $derived(current ? folderOf(current, spaces(projection).find((x) => x.id === current.space_id)) : 'internal');
   function toggleFolder(id: string) {
     const folder = folderSettings.custom.find((c) => c.id === id);
@@ -1135,7 +1159,7 @@
   // author cards: fetched when entering a shared space or DM, and again when someone new speaks
   const strangers = $derived(
     space && space.kind !== 'internal'
-      ? [...new Set(visibleMsgs.flatMap((m) => m.authors))].filter((a) => !people.has(a)).sort().join(',')
+      ? [...new Set(visibleMsgs.flatMap((m) => m.authors))].filter((a) => !known.has(a)).sort().join(',')
       : '',
   );
   let cardsFor = '';
@@ -1143,8 +1167,9 @@
     const key = `${space?.id}|${strangers}`;
     if (!space || space.kind === 'internal' || key === cardsFor) return;
     cardsFor = key;
-    authorCards(space.id)
-      .then((c) => (cards = c.members))
+    const spaceId = space.id;
+    authorCards(spaceId)
+      .then((c) => { cards = c.members; cardsOk = spaceId; })
       .catch(() => {});
   });
 
@@ -1449,6 +1474,9 @@
           </article>
         {:else if historyError}<p class="hint" role="status">{historyError}</p>{/if}
       {/if}
+      {#if historyOff && !first && !lockedOut && (olderDone || !windowed)}
+        <p class="history-start" role="status">History starts here</p>
+      {/if}
       {#if windowed && current && !olderDone && !first && !lockedOut}
         <button class="older-load" disabled={olderBusy || !syncLive} onclick={() => void loadOlder()}>
           {olderBusy ? 'Loading…' : 'Older messages (from the server)'}
@@ -1561,6 +1589,7 @@
     {#if optionsOpen && !editing}
       <div class="msg-options" role="group" aria-label="Message options">
         <label>Content warning <input aria-label="Content warning" bind:value={cw} placeholder="Optional label" /></label>
+        {#if gates.poll}
         <details class="poll-draft" bind:open={pollOn}>
           <summary>Add a poll</summary>
           {#each pollOptions as _, i (i)}
@@ -1570,6 +1599,7 @@
           <label><input type="checkbox" bind:checked={pollMultiple} /> Allow more than one choice</label>
           {#if pollError}<p class="error" role="alert">{pollError}</p>{/if}
         </details>
+        {/if}
         {#if space?.kind === 'internal'}
         <label>Visibility
           <select aria-label="Message visibility" bind:value={visibilityMode}>
@@ -1711,7 +1741,7 @@
         {#if !editing}
           <button class="in-pill" class:on={optionsOpen || !!cw.trim() || pollOn || visibilityMode === 'members'} onclick={() => (optionsOpen = !optionsOpen)}
             aria-label="Message options" aria-expanded={optionsOpen} title="Content warning, poll, who can see it"><Icon name="sliders" size={20} /></button>
-          <button class="in-pill" onclick={() => (attaching = true)} title="Attach" aria-label="Attach"><Icon name="attach" size={22} /></button>
+          {#if gates.attach || gates.poll}<button class="in-pill" onclick={() => (attaching = true)} title="Attach" aria-label="Attach"><Icon name="attach" size={22} /></button>{/if}
         {/if}
       </div>
       <button class="send" class:ready={editing ? true : canSend} onclick={() => void send()} aria-label={editing ? 'Save' : aside ? 'Send as aside' : 'Send'} title={editing ? 'Save' : aside ? 'Send as aside' : 'Send'}
@@ -1741,7 +1771,7 @@
       </div>
       {#if space && !lockedOut}
         <SpacePanel {projection} {dark} {space} channel={current} info={directory.get(space.id)} {people} {speaker} isShown={shownNow}
-          onchanged={() => dirTick++} oneditgroup={() => (editingGroup = true)}
+          onchanged={() => dirTick++} oneditgroup={() => (editingGroup = true)} onpermissions={() => (spacePerms = true)}
           oneditchannel={canEditChannel && !(groupEditable && spaceChannels.length <= 1) ? () => (editingChannel = true) : undefined} />
       {/if}
       <div class="info-tabs"><UnderlineTabs tabs={infoTabs} bind:value={infoTab} label="Chat info" /></div>
@@ -1776,6 +1806,9 @@
     </aside>
   {/if}
 </div>
+{#if spacePerms && space && !lockedOut}
+  <Lazy load={screens.spacePermissions} {projection} {space} info={directory.get(space.id)} onclose={() => (spacePerms = false)} />
+{/if}
 {#if folderSheet && current}
   <Sheet title="Folder" onclose={() => (folderSheet = false)}>
     {#each folderSettings.custom as f (f.id)}
@@ -1786,7 +1819,7 @@
   </Sheet>
 {/if}
 {#if attaching && !lockedOut}
-  <AttachSheet bind:pending bind:draft {pollOn} {canSend} journal={ownPosts} onphotos={() => photoInput?.click()} onfiles={() => fileInput?.click()}
+  <AttachSheet bind:pending bind:draft {pollOn} {canSend} attach={gates.attach} poll={gates.poll} journal={ownPosts} onphotos={() => photoInput?.click()} onfiles={() => fileInput?.click()}
     onpoll={() => { optionsOpen = true; pollOn = true; }} onlink={(id) => { draft = draft + (draft && !/\s$/.test(draft) ? ' ' : '') + linkTo(location.origin, { kind: 'post', id }); }}
     onsend={() => void send()} onclose={() => (attaching = false)} />
 {/if}
@@ -1935,6 +1968,7 @@
     color: var(--ink-3);
     margin: 0;
   }
+  .history-start { margin: var(--s-2) auto; color: var(--ink-3); font-size: var(--fs-xs); text-align: center; }
   .older { display: block; margin: 0 auto var(--s-2); font-size: var(--fs-sm); }
   .list {
     flex: 1;

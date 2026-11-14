@@ -6,6 +6,7 @@ export const screens = {
   composerDialog: () => import('./ui/journal/ComposerDialog.svelte'),
   postThread: () => import('./ui/PostThread.svelte'),
   postStage: () => import('./ui/PostStage.svelte'),
+  spacePermissions: () => import('./ui/SpacePermissions.svelte'),
   settings: () => import('./ui/SettingsShell.svelte'),
   stage: () => import('./ui/Stage.svelte'),
 };

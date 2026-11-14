@@ -160,3 +160,33 @@ Nothing is written for a space by default; every value above is the default when
 F5.11 frame's values for a *new* space (e.g. history "From when they join", invite off) are the
 new-space flow's to write right after `POST /spaces`, as `space.set_permission` for `everyone`;
 existing spaces keep today's behaviour.
+
+## 9. Web status (done 2026-11-14)
+
+- [x] **Dialog** `ui/SpacePermissions.svelte` (lazy, `lazy-screens.ts`), opened from chat info → "Permissions"
+  (admins and owner) or "What we share" (any other present member of a shared space). Rows as F5.11:
+  Send messages / photos and files / polls / pin / invite → `space.set_permission` for `everyone` (whole lists,
+  only the changed names touched, others kept); History before they joined (switch, "Everything" / "From when
+  they join") and Allow system asides likewise; Member names and Our fronting status (+ delay segmented, shown
+  when on) → `space.set_sharing`, only changed fields. Switches show what a plain member gets now
+  (`space-perms.ts` `memberSwitches`, through `spacePerms`). Exceptions row → the existing override editor
+  (`ChannelPermissions.svelte` without a channel = `space.set_permission`, all eleven names, unknown ones kept).
+  One Save; Cancel/Close. Non-admins see only the two sharing rows.
+- [x] **Gating** in `Chat.svelte` via `core.spacePerms` (levels from `rows.space_permission`, `rows.channel_permission`,
+  role; a thread asks for its parent's channel): attach button / drop / paste need `attach`, Poll tile and the
+  options poll need `poll`, the Aside bar and `system_only` need `aside`, Add people needs `invite`
+  (`SpacePanel`, now also for admins and inviting members). Only for shared spaces and guest channels, and
+  only once the space directory has loaded. The composer itself is **not** hidden without `send`: not built
+  (the server's refusal shows in "Not sent" as before).
+- [x] **Others' fronts**: `spaces.ts` `spaceFronts` (`GET /spaces/{id}/fronts`, `[]` on any error), polled
+  every 3 minutes by `SpacePanel` while chat info is open; a glyph/colour disc and name under each account in the
+  member list. Nothing is drawn when the endpoint returns nothing. Not in the chat header (no frame for it).
+- [x] **History**: with `history` denied, "History starts here" shows above the first message once the server
+  has nothing older (or the replica holds the whole chat). The "Older messages" button is kept: the server
+  answers it with an empty page.
+- [x] **Reading side of `member_names` off**: authors without a card fall back to their account's name and
+  picture (`space-fronts.ts` `accountStandIns`), after the cards have loaded; they are not mentionable.
+- [x] **New shared space** (`NewChat.svelte`): writes `space.set_permission` for `everyone` denying `invite` and
+  `history` right after `POST /spaces` (`NEW_SPACE_EVERYONE`).
+- Tests: `space-perms.test.ts` (rule through core over ops built with `project`), `space-fronts.test.ts`,
+  `ui/SpacePermissions.test.ts`.

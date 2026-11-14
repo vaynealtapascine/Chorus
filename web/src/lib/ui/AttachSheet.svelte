@@ -9,8 +9,10 @@
   export interface Picked { file: File; alt: string; spoiler: boolean }
   export interface PostChoice { id: string; label: string }
 
-  let { pending = $bindable(), draft = $bindable(), pollOn = false, canSend, journal, onphotos, onfiles, onpoll, onlink, onsend, onclose }: {
+  let { pending = $bindable(), draft = $bindable(), pollOn = false, canSend, attach = true, poll = true, journal, onphotos, onfiles, onpoll, onlink, onsend, onclose }: {
     pending: Picked[]; draft: string; pollOn?: boolean; canSend: boolean;
+    /** what the space lets us add (D-133): photos and files, a poll */
+    attach?: boolean; poll?: boolean;
     /** own recent Journal posts the sheet can link to */
     journal: PostChoice[];
     onphotos: () => void; onfiles: () => void; onpoll: () => void; onlink: (id: string) => void; onsend: () => void; onclose: () => void;
@@ -39,9 +41,11 @@
     <button class="back" onclick={() => (page = '')}><Icon name="back" size={18} />Back</button>
   {:else}
     <div class="tiles">
-      <button class="tile" style="--tint: #45a396" onclick={onphotos}><Icon name="image" size={24} />Photos</button>
-      <button class="tile" style="--tint: #93bdeb" onclick={onfiles}><Icon name="doc" size={24} />Files</button>
-      <button class="tile" class:on={pollOn} style="--tint: #e8836f" onclick={() => { onpoll(); onclose(); }}><Icon name="poll" size={24} />Poll</button>
+      {#if attach}
+        <button class="tile" style="--tint: #45a396" onclick={onphotos}><Icon name="image" size={24} />Photos</button>
+        <button class="tile" style="--tint: #93bdeb" onclick={onfiles}><Icon name="doc" size={24} />Files</button>
+      {/if}
+      {#if poll}<button class="tile" class:on={pollOn} style="--tint: #e8836f" onclick={() => { onpoll(); onclose(); }}><Icon name="poll" size={24} />Poll</button>{/if}
       <button class="tile" style="--tint: #b9a5e8" onclick={() => (page = 'journal')}><Icon name="journal" size={24} />Journal</button>
     </div>
     {#if pending.length}
@@ -64,7 +68,7 @@
 {/snippet}
 
 <style>
-  .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s-2); padding: 0 var(--s-4) var(--s-2); }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(64px, 1fr)); gap: var(--s-2); padding: 0 var(--s-4) var(--s-2); }
   .tile { display: grid; justify-items: center; gap: 6px; padding: var(--s-3) var(--s-1); border: 0; border-radius: var(--r-control); font: inherit; font-size: var(--fs-xs); font-weight: 600;
     background: color-mix(in srgb, var(--tint) 85%, transparent); color: #14231f; cursor: pointer; }
   .tile.on { outline: 2px solid var(--accent); }

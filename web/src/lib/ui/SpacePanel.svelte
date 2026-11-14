@@ -8,12 +8,14 @@
   import { channels, members, selfMember, type ChannelRow, type MemberRow, type SpaceRow } from '../data';
   import { canEditSpace, canInvite, existingPrivate, privateSides, roleIn } from '../chat-manage';
   import { canWriteAs } from '../posts';
-  import { accountName, addToSpace, connections, leaveSpace, type SpaceAccount, type SpaceInfo } from '../spaces';
+  import { accountName, addToSpace, connections, leaveSpace, spaceFronts, type SpaceAccount, type SpaceFrontEntry, type SpaceInfo } from '../spaces';
+  import { canSetPermissions, canShare, permsFor } from '../space-perms';
+  import { discGlyph, frontsByAccount, REFRESH_MS } from '../space-fronts';
   import { sync, type Projection } from '../sync/client';
   import AvatarImage from './AvatarImage.svelte';
   import Icon from './Icon.svelte';
 
-  let { projection, dark, space, channel, info, people, speaker, isShown, onchanged, oneditchannel, oneditgroup }: {
+  let { projection, dark, space, channel, info, people, speaker, isShown, onchanged, oneditchannel, oneditgroup, onpermissions }: {
     projection: Projection; dark: boolean; space: SpaceRow; channel: ChannelRow | undefined; info: SpaceInfo | undefined;
     /** Names for members, ours and other accounts' (author cards). */
     people: Map<string, MemberRow>;
@@ -22,6 +24,8 @@
     /** Whether a chat may be shown now (chat-visible.ts). */
     isShown: (c: ChannelRow) => boolean;
     onchanged: () => void; oneditchannel?: () => void; oneditgroup?: () => void;
+    /** open the permissions dialog (the chat screen shows it, outside this panel's stacking context) */
+    onpermissions?: () => void;
   } = $props();
 
   const scope = $derived(`space:${space.id}`);
@@ -29,6 +33,22 @@
   const role = $derived(roleIn(projection.rows.space_member, space.id, info, me));
   const editable = $derived(canEditSpace(space.kind, role));
   const owner = $derived(canInvite(space.kind, role));
+  // adding people: the owner, admins, or members the space lets invite (D-133); the server decides too
+  const mayAdd = $derived(space.kind === 'shared' && !!role && permsFor(projection.rows, { spaceId: space.id, me, role }).includes('invite'));
+  const permsRow = $derived(canSetPermissions(space.kind, role) ? 'Permissions' : canShare(space.kind, role) ? 'What we share' : '');
+
+  // other accounts' shared fronting status here (`GET /spaces/{id}/fronts`): asked when the list opens and
+  // every few minutes while it stays; nothing is shown when nothing comes back
+  let fronts = $state(new Map<string, SpaceFrontEntry[]>());
+  $effect(() => {
+    const id = space.id;
+    if (space.kind !== 'shared' || !role) { fronts = new Map(); return; }
+    let live = true;
+    const load = () => void spaceFronts(id).then((items) => { if (live) fronts = frontsByAccount(items); });
+    load();
+    const t = setInterval(load, REFRESH_MS);
+    return () => { live = false; clearInterval(t); };
+  });
   const roleOf = (account: string) => {
     if (account === info?.owner_account_id) return 'owner';
     const r = projection.rows.space_member?.[`${space.id}|${account}`]?.fields.role;
@@ -109,9 +129,11 @@
   {#if space.description}<p class="desc">{space.description}</p>{/if}
   {#if editable && oneditgroup}<button class="link" onclick={oneditgroup}><Icon name="edit" size={16} /> Edit group</button>{/if}
 
+  {#if permsRow && onpermissions}<button class="link" onclick={onpermissions}><Icon name="sliders" size={16} /> {permsRow}</button>{/if}
+
   <h3>{info?.accounts.length ?? 0} {info?.accounts.length === 1 ? 'person' : 'people'}</h3>
   <ul class="people" aria-label="People in {space.name}">
-    {#if owner}
+    {#if mayAdd}
       <li><button class="add" onclick={() => void startAdd()}><span class="face plus"><Icon name="plus" size={18} /></span>Add people</button></li>
     {/if}
     {#if adding}
@@ -128,7 +150,11 @@
       {@const r = roleOf(a.id)}
       <li class="person">
         <span class="face">{accountName(a).replace('@', '')[0]?.toUpperCase()}</span>
-        <span class="who">{accountName(a)}{#if a.id === me}<small> (you)</small>{/if}<small>{a.kind === 'person' ? 'person' : 'system'}</small></span>
+        <span class="who">{accountName(a)}{#if a.id === me}<small> (you)</small>{/if}<small>{a.kind === 'person' ? 'person' : 'system'}</small>
+          {#each fronts.get(a.id) ?? [] as f, i (i)}
+            {@const c = core.adaptColor(f.color ?? '#A09184', dark)}
+            <small class="front"><span class="disc" style="background: {c.ring}; color: {c.avatar_ink}" aria-hidden="true">{discGlyph(f)}</span>{f.name}</small>
+          {/each}</span>
         {#if editable && a.id !== info?.owner_account_id && a.id !== me}
           <select aria-label="Role of {accountName(a)}" value={r} onchange={(e) => setRole(a, e.currentTarget.value)}>
             <option value="member">Member</option><option value="read_only">Read-only</option><option value="admin">Admin</option>
@@ -205,6 +231,8 @@
   .face.plus { background: var(--accent-soft); color: var(--accent); }
   .who { flex: 1; min-width: 0; display: grid; font-size: 14px; overflow-wrap: anywhere; }
   .who small { color: var(--ink-3); font-size: var(--fs-xs); }
+  .who .front { display: flex; align-items: center; gap: 4px; color: var(--ink-2); }
+  .disc { width: 14px; height: 14px; flex: none; border-radius: 50%; display: grid; place-items: center; font-size: 9px; font-weight: 700; line-height: 1; }
   .role { color: var(--ink-3); font-size: var(--fs-xs); }
   select { font: inherit; font-size: var(--fs-xs); color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 2px var(--s-1); }
   .x { width: 28px; height: 28px; display: grid; place-items: center; border: 0; border-radius: 50%; background: none; color: var(--ink-3); cursor: pointer; }
