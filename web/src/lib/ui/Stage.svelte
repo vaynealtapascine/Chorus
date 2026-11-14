@@ -6,7 +6,7 @@
   import { onDestroy } from 'svelte';
   import { stagePlan } from '../core/pkg/chorus_wasm.js';
   import { core } from '../core';
-  import { channels, customEmojis, members, messages, reactions, spaces, threadSummaries, type MessageRow } from '../data';
+  import { channels, customEmojis, members, messages, reactions, selfMember, spaces, threadSummaries, type MessageRow } from '../data';
   import { activeViewers, memberVisible } from '../hidden';
   import { chatShown } from '../chat-visible';
   import { segmentRich } from '../segments';
@@ -123,7 +123,8 @@
   })));
 
   const mine = (m: MessageRow) => m.account_id === sync.accountId;
-  const spaceInternal = $derived(space?.kind === 'internal');
+  // a person's own space holds only Notes: nobody to view as (D-093)
+  const spaceInternal = $derived(space?.kind === 'internal' && !selfMember(projection));
 </script>
 
 <StageShell bind:tab bind:capturing {subtitle} closeHref="#/chat/{channelId}" canCapture={list.length > 0} onsave={() => (saving = true)}>

@@ -108,7 +108,8 @@
   function remove() {
     if (!channel) return;
     const name = what === 'member_dm' ? 'this chat' : `#${channel.name}`;
-    if (!confirm(`Delete ${name}?`)) return;
+    // Handover and Notes are tombstoned like any channel and come back from Trash (D-162)
+    if (!confirm(channel.special ? `Move ${channel.name} to Trash?` : `Delete ${name}?`)) return;
     sync.create('channel.delete', `space:${spaceId}`, channel.id, {}, actingOpts(projection, sync.accountId));
     onclose();
     location.hash = '#/chat';
@@ -158,7 +159,7 @@
   </div>
   {/if}
 
-  {#if spaceKind === 'internal'}
+  {#if spaceKind === 'internal' && !channel?.special}
     {#if what === 'text'}
       <fieldset class="field">
         <legend>Who it's for</legend>
@@ -185,7 +186,7 @@
 
   {#if error}<p class="error" role="alert">{error}</p>{/if}
   <div class="actions">
-    {#if channel && canDelete}<Button variant="danger-soft" round class="danger" onclick={remove}>Delete</Button>{/if}
+    {#if channel && canDelete}<Button variant="danger-soft" round class="danger" onclick={remove}>{channel.special ? 'Move to Trash' : 'Delete'}</Button>{/if}
     <span class="why">{problem ?? ''}</span>
     <Button variant="primary" round class="primary" disabled={!!problem || busy} onclick={save}>{channel ? 'Save' : 'Create'}</Button>
   </div>

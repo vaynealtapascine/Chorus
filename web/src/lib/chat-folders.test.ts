@@ -72,7 +72,8 @@ describe('chat folders (D-113)', () => {
   it('start useful folders from suggestions', () => {
     expect(fromSuggestion('n', 'unread', 'Unread', []).unreadOnly).toBe(true);
     expect(fromSuggestion('n', 'unmuted', 'Not muted', []).hideMuted).toBe(true);
-    expect(fromSuggestion('n', 'handover', 'Handover', [{ id: 'a', name: 'Handover' }, { id: 'b', name: 'general' }, { id: 'c', name: 'Front notes' }]).chats)
+    // by role, not by name: an ordinary chat somebody called "Handover" stays out (D-132)
+    expect(fromSuggestion('n', 'handover', 'Handover and notes', [{ id: 'a', special: 'handover' }, { id: 'b' }, { id: 'c', special: 'notes' }]).chats)
       .toEqual(['a', 'c']);
   });
 });

@@ -61,7 +61,7 @@
   const folders = $derived(ordered(settings).filter((id) => !(person && id === 'internal')));
   const rows = $derived(folders.map((id) => ({ id })));
   const suggested = $derived(SUGGESTIONS.filter((s) => !settings.custom.some((f) => f.preset === s.preset)));
-  const ours = $derived(chats.filter((c) => c.own).map((c) => ({ id: c.id, name: c.title })));
+  const ours = $derived(chats.filter((c) => c.own));
   function summary(id: string): string {
     if ((BUILT_IN as readonly string[]).includes(id)) return id === 'all' ? 'Every chat' : 'Built in';
     const f = settings.custom.find((c) => c.id === id)!;

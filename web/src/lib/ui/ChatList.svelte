@@ -11,6 +11,7 @@
   import ChatFolders from './ChatFolders.svelte';
   import { actingOpts, bodyPresence, frontLayers } from '../front-view';
   import { authorCards, spaceTitle, type SpaceInfo } from '../spaces';
+  import { defaultLevel, SPECIAL_LOOK, specialSubtitle } from '../special';
   import { privateSides } from '../chat-manage';
   import { sync, type Projection } from '../sync/client';
   import AvatarImage from './AvatarImage.svelte';
@@ -122,10 +123,12 @@
         : partner ? { glyph: partner.sigils[0] ?? partner.name[0] ?? '?', color: partner.color, blob: partner.avatar_blob ?? undefined }
         : { glyph: c.icon ?? letter, color: c.color ?? discColor(c.id) };
       return {
-        channel: c, space, folder: f, title, icon: sides ? 'lock' : c.kind === 'member_dm' || space?.kind === 'dm' ? null : f === 'internal' ? (c.member_ids?.length ? 'lock' : 'hash') : 'globe',
+        channel: c, space, folder: f, title, icon: c.special ? SPECIAL_LOOK[c.special].icon : sides ? 'lock' : c.kind === 'member_dm' || space?.kind === 'dm' ? null : f === 'internal' ? (c.member_ids?.length ? 'lock' : 'hash') : 'globe',
         at: latest?.occurred_at ?? 0, unread: c.id === currentId ? 0 : unread(projection, c.id, sync.accountId),
         tick: tickOf(c, latest, space),
-        muted: notify === 'none', who: preview.who, text: preview.text, disc, id: c.id, pinned: organize.pins.includes(c.id),
+        muted: (notify ?? defaultLevel(c.special, '')) === 'none', who: preview.who,
+        // Handover and Notes say what they are until something is written there
+        text: !latest && c.special ? specialSubtitle(c.special, person) ?? preview.text : preview.text, disc, id: c.id, pinned: organize.pins.includes(c.id),
         stowed: stillArchived(organize.archived.get(c.id), latest?.occurred_at),
         grouped,
         whose: sides?.mine.map(nameOf).join(' & ') || null,
@@ -144,9 +147,9 @@
   function remove(r: Row) {
     menuFor = null;
     const own = r.space?.kind === 'internal';
-    const what = r.channel.kind === 'member_dm' ? 'this chat' : r.space?.kind === 'dm' ? `your chat with ${r.title}` : `#${r.title}`;
+    const what = r.channel.special ? `${r.title}` : r.channel.kind === 'member_dm' ? 'this chat' : r.space?.kind === 'dm' ? `your chat with ${r.title}` : `#${r.title}`;
     if (own) {
-      if (!confirm(`Delete ${what}?`)) return;
+      if (!confirm(r.channel.special ? `Move ${what} to Trash?` : `Delete ${what}?`)) return;
       sync.create('channel.delete', `space:${r.channel.space_id}`, r.channel.id, {}, actingOpts(projection, sync.accountId));
     } else {
       if (!confirm(`Clear ${what}?`)) return;
@@ -158,7 +161,7 @@
   // Mute is the notification level "none"; unmuting goes back to the default (D-100: DMs tell, other chats mention)
   function mute(r: Row) {
     menuFor = null;
-    sync.create('pref.set', sync.accountScope, null, { device: '', key: `notify_channel:${r.channel.id}`, value: r.muted ? (r.space?.kind === 'dm' ? 'all' : 'mentions') : 'none' });
+    sync.create('pref.set', sync.accountScope, null, { device: '', key: `notify_channel:${r.channel.id}`, value: r.muted ? (r.space?.kind === 'dm' || r.channel.special === 'handover' ? 'all' : 'mentions') : 'none' });
   }
   // archiving is when, so a newer message brings the chat back on every device (D-111)
   function archive(r: Row) {
@@ -332,7 +335,7 @@
             {#if r.icon}<Icon name={r.icon} size={16} />{/if}
             <span class="title" class:fit={r.whose}>{inSpace ? r.channel.name : r.title}</span>
             {#if r.whose}<span class="whose">• {r.whose}</span>{/if}
-            {#if r.muted}<span class="muted-icon" title="Muted"><Icon name="muted" size={14} /></span>{/if}
+            {#if r.muted && r.channel.special !== 'notes'}<span class="muted-icon" title="Muted"><Icon name="muted" size={14} /></span>{/if}
             {#if r.tick}<span class="tick" class:read={r.tick === 'read'}><Icon name={TICK_ICON[r.tick]} size={14} /></span>{/if}
             {#if r.at}<time>{chatTime(r.at)}</time>{/if}
           </span>
@@ -360,14 +363,14 @@
           {:else}
             <button role="menuitem" onclick={() => (folders.custom.length ? (foldersFor = r.id) : (menuFor = null, onfolders(`new:${r.channel.id}`)))}><Icon name="folder" size={16} /> Folders…</button>
           {/if}
-          <button role="menuitem" class="danger" onclick={() => remove(r)}><Icon name="delete" size={16} /> {r.space?.kind === 'internal' ? 'Delete chat' : 'Clear chat'}</button>
+          <button role="menuitem" class="danger" onclick={() => remove(r)}><Icon name="delete" size={16} /> {r.channel.special ? 'Move to Trash' : r.space?.kind === 'internal' ? 'Delete chat' : 'Clear chat'}</button>
         </div>
       {/if}
       </div>
 {/snippet}
 {#if foldersAt !== null}
   <ChatFolders settings={folders} {person} startWith={foldersAt || null} onclose={() => onfolders(null)}
-    chats={rows.map((r) => ({ id: r.channel.id, title: r.title, kind: r.folder, own: r.space?.kind === 'internal' }))} />
+    chats={rows.map((r) => ({ id: r.channel.id, title: r.title, kind: r.folder, own: r.space?.kind === 'internal', special: r.channel.special }))} />
 {/if}
 
 <style>

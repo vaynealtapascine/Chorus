@@ -361,6 +361,8 @@ export interface ChannelRow {
   color?: string;
   /** Representative image (D-088), a blob hash. */
   avatar_blob?: string;
+  /** The system's own Handover or Notes channel (D-132, D-162); never matched by name. */
+  special?: 'handover' | 'notes';
   archived: boolean;
 }
 
@@ -512,6 +514,7 @@ export function channels(p: Projection, spaceId?: string, includeDeleted = false
       icon: str(r.fields.icon),
       color: str(r.fields.color),
       avatar_blob: str(r.fields.avatar_blob),
+      special: (r.fields.special === 'handover' || r.fields.special === 'notes' ? r.fields.special : undefined) as ChannelRow['special'],
       archived: r.fields.archived_at != null,
     }))
     .filter((c) => !spaceId || c.space_id === spaceId)

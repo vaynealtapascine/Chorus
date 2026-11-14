@@ -24,7 +24,7 @@
   import ChatFolderRail from './ChatFolderRail.svelte';
   import ChatList from './ChatList.svelte';
   import { chatPrefs, dayLabel, discColor, dmFace, folderOf, frontEvents, FOLDERS, jumpBack, pushJump } from '../chat-list';
-  import { contains, folderPrefs, holds, label as folderLabel, mutedChat, PREF as FOLDERS_PREF, setChat, toJson, visible as visibleFolders, withCustom } from '../chat-folders';
+  import { contains, folderPrefs, holds, label as folderLabel, mutedChat, PREF as FOLDERS_PREF, setChat, toJson, visible as visibleFolders, visibleFor, withCustom } from '../chat-folders';
   import AttachmentView from './AttachmentView.svelte';
   import AttachSheet from './AttachSheet.svelte';
   import { linkTo } from '../share-links';
@@ -42,7 +42,8 @@
   import ChannelEditor from './ChannelEditor.svelte';
   import NewChat from './NewChat.svelte';
   import ForwardSheet, { type Target } from './ForwardSheet.svelte';
-  import { snapshotsFor, warning as forwardCard } from '../chat-forward';
+  import { snapshotsFor, warning as forwardCard, withSaveToNotes } from '../chat-forward';
+  import { defaultLevel, isPersonHome, SPECIAL_LOOK, specialChannels, specialSubtitle } from '../special';
   import { afterSend, everyone, offered as asideOffered, on as asideOn, placeholder as asidePlaceholder } from '../chat-aside';
   import { startFrom } from '../new-chat';
   import SpacePanel from './SpacePanel.svelte';
@@ -70,8 +71,10 @@
   // chat folders (D-113): which show, in what order, and folders of our own; a hidden or deleted
   // folder falls back to the first shown, and with none shown every chat is listed
   const folderSettings = $derived(folderPrefs(projection.rows.pref ?? {}, sync.accountId));
-  const openFolder = $derived(visibleFolders(folderSettings).includes(folder) ? folder : visibleFolders(folderSettings)[0] ?? 'all');
-  const railFolders = $derived(visibleFolders(folderSettings).map((id) => ({ id, label: folderLabel(folderSettings, id),
+  // a person's own space holds only Notes: there is no Internal folder (D-093)
+  const folderIds = $derived(visibleFor(folderSettings, !!selfMember(projection)));
+  const openFolder = $derived(folderIds.includes(folder) ? folder : folderIds[0] ?? 'all');
+  const railFolders = $derived(folderIds.map((id) => ({ id, label: folderLabel(folderSettings, id),
     icon: FOLDERS.find((f) => f.id === id)?.icon ?? 'folder' })));
   let foldersAt = $state<string | null>(null);
   $effect(() => sessionStorage.setItem('chorus.chat.folder', folder));
@@ -104,10 +107,13 @@
           allChannels.find((c) => c.space_id === channelId.slice(6) && !c.archived && c.kind !== 'thread')
         : undefined) ??
       // nothing asked for: the first chat that isn't someone else's private one (D-097, D-098)
+      allChannels.find((c) => !c.archived && c.kind !== 'thread' && !c.special && shownNow(c)) ??
       allChannels.find((c) => !c.archived && c.kind !== 'thread' && shownNow(c)) ??
       allChannels.find((c) => !c.archived && c.kind !== 'thread'),
   );
   const space = $derived(ss.find((s) => s.id === current?.space_id) ?? ss[0]);
+  // a person's own space holds only Notes: none of the space's chrome shows (D-093)
+  const homeHidden = $derived(isPersonHome(projection, sync.accountId, space?.id));
   // members' private chats only while one of them is here (D-097, D-098), as in ChatList
   const shownNow = $derived(chatShown(projection, sync.accountId, viewingAs));
   // what messages link to (D-109): posts from the replica (others' come from the server), and a
@@ -496,7 +502,7 @@
     if (!forwarding && !replyIn && !quoteIn) return [];
     const own = new Set(members(projection).map((m) => m.id));
     const open = allChannels.filter((c) => !c.archived && c.kind !== 'thread' && shownNow(c));
-    return open.map((c) => {
+    const rows = open.map((c) => {
       const sp = ss.find((x) => x.id === c.space_id);
       const siblings = open.filter((o) => o.space_id === c.space_id).length;
       const sides = privateSides(c, sp, (id) => own.has(id));
@@ -515,6 +521,8 @@
         : { glyph: c.icon ?? letter, color: c.color ?? discColor(c.id) };
       return { id: c.id, title, names: [sp?.name, c.name], at: latestMessage(projection, c.id)?.occurred_at ?? 0, disc };
     });
+    // Save to notes is the first place a forward can go (D-132)
+    return forwarding ? withSaveToNotes(rows, specialChannels(projection, sync.accountId).notes?.id) : rows;
   });
   // the red card (F5.20) when a copy leaves where it was written, and who is on the other side
   function leavingCard(targetId: string) {
@@ -908,10 +916,14 @@
     : space?.kind === 'shared' && spaceChannels.length <= 1 ? space.name
     : current?.name ?? 'Chat');
   // a channel is named with its # (Figma F5.16); a chat that carries a person's or a space's name is not
-  const headTitle = $derived(!lockedOut && current && current.kind !== 'thread' && current.kind !== 'member_dm' && roomTitle === current.name && space?.kind !== 'dm' ? `# ${roomTitle}` : roomTitle);
+  const headTitle = $derived(!lockedOut && current && current.kind !== 'thread' && current.kind !== 'member_dm' && !current.special && roomTitle === current.name && space?.kind !== 'dm' ? `# ${roomTitle}` : roomTitle);
   const roomSubtitle = $derived.by(() => {
     if (lockedOut) return 'Opens while its member is here';
     if (current?.kind === 'thread') return parentChannel ? `in #${parentChannel.name}` : '';
+    if (current?.special) {
+      const line = specialSubtitle(current.special, homeHidden);
+      return current.special === 'handover' && line ? `${line} · ${roomMembers.length} members` : line ?? '';
+    }
     if (sides && space) return sides.mine.length ? `Private · ${sides.mine.map(nameOf).join(' & ')}`
       : `Private chat · ${spaceTitle(space, directory.get(space.id), sync.accountId)}`;
     if (current?.topic) return current.topic;
@@ -932,12 +944,13 @@
     const t = setInterval(() => void refreshFront(id), 60_000);
     return () => clearInterval(t);
   });
-  const roomDisc = $derived.by((): { glyph: string; member?: MemberRow; style: string; blob?: string } => {
+  const roomDisc = $derived.by((): { glyph: string; member?: MemberRow; style: string; blob?: string; icon?: string } => {
     if (lockedOut) return { glyph: '🔒', style: 'background: var(--surface-2); color: var(--ink-2)' };
     if (current?.avatar_blob && current.kind !== 'thread') {
       const c = core.adaptColor(current.color ?? discColor(current.id), dark);
       return { glyph: current.icon ?? (roomTitle.match(/\p{L}|\p{N}/u)?.[0] ?? '#').toUpperCase(), blob: current.avatar_blob, style: `background: ${c.ring}; color: ${c.avatar_ink}` };
     }
+    if (current?.special && !current.icon) return { glyph: '', icon: SPECIAL_LOOK[current.special].icon, style: 'background: var(--accent-soft); color: var(--accent)' };
     if (current?.kind === 'member_dm' && (space?.kind === 'internal' || sides?.theirs.length)) {
       const m = people.get(sides?.theirs[0] ?? current.member_ids?.find((id) => id !== speaker) ?? current.member_ids?.[0] ?? '');
       if (m) { const c = core.adaptColor(m.color, dark); return { glyph: m.sigils[0] ?? m.name[0] ?? '?', member: m, style: `background: ${c.ring}; color: ${c.avatar_ink}` }; }
@@ -1003,7 +1016,7 @@
   })).reverse());
 
   const infoTabs = $derived<{ id: InfoTab; label: string; count: number }[]>([
-    ...(space?.kind === 'internal' ? [{ id: 'members' as const, label: 'Members', count: byLayer.length }] : []),
+    ...(space?.kind === 'internal' && !homeHidden ? [{ id: 'members' as const, label: 'Members', count: byLayer.length }] : []),
     { id: 'media', label: 'Media', count: roomMedia.length }, { id: 'files', label: 'Files', count: roomFiles.length },
     { id: 'links', label: 'Links', count: roomLinks.length }, { id: 'polls', label: 'Polls', count: roomPolls.length }]);
   const infoShown = $derived(infoTabs.some((t) => t.id === infoTab) ? infoTab : infoTabs[0].id);
@@ -1019,7 +1032,7 @@
   // messages with "Today"-style day pills and, in our own chats, who came to the front meanwhile
   const clockFormat = new Intl.DateTimeFormat([], { hour: '2-digit', minute: '2-digit' });
   type Line = { kind: 'msg'; key: string; m: MessageRow; cont: boolean; last: boolean } | { kind: 'day' | 'event'; key: string; text: string };
-  const frontLines = $derived(space?.kind === 'internal' && grouped.length
+  const frontLines = $derived(space?.kind === 'internal' && !homeHidden && current?.special !== 'notes' && grouped.length
     ? frontEvents(projection.fronts[sync.accountId]?.intervals ?? [], grouped[0].m.occurred_at, Date.now(),
       (type, id) => (type === 'member' ? (people.get(id)?.display_name ?? people.get(id)?.name) : undefined), (l) => layerNames.get(l))
     : []);
@@ -1142,7 +1155,7 @@
   const notifyLevel = $derived.by(() => {
     const rows = projection.rows.pref ?? {};
     const v = (rows[`${sync.accountId}||${notifyKey}`] ?? rows[`||${notifyKey}`])?.fields.value;
-    return typeof v === 'string' ? v : space?.kind === 'dm' ? 'all' : 'mentions';
+    return typeof v === 'string' ? v : defaultLevel(current?.special, space?.kind === 'dm' ? 'all' : 'mentions');
   });
   function setNotifyLevel(level: string) {
     sync.create('pref.set', sync.accountScope, null, { device: '', key: notifyKey, value: level });
@@ -1303,7 +1316,7 @@
       {#if current?.kind === 'thread'}
         <a class="icon-button thread-back" href="#/chat/{parentChannel?.id ?? ''}" aria-label="Back to #{parentChannel?.name ?? 'channel'}"><span aria-hidden="true">‹</span></a>
       {/if}
-      <span class="room-disc" style={roomDisc.style}>{#if roomDisc.member}<AvatarImage hash={roomDisc.member.avatar_blob} glyph={roomDisc.glyph} name={roomTitle} />{:else if roomDisc.blob}<AvatarImage hash={roomDisc.blob} glyph={roomDisc.glyph} name={roomTitle} />{:else}{roomDisc.glyph}{/if}</span>
+      <span class="room-disc" style={roomDisc.style}>{#if roomDisc.icon}<Icon name={roomDisc.icon} size={22} />{:else if roomDisc.member}<AvatarImage hash={roomDisc.member.avatar_blob} glyph={roomDisc.glyph} name={roomTitle} />{:else if roomDisc.blob}<AvatarImage hash={roomDisc.blob} glyph={roomDisc.glyph} name={roomTitle} />{:else}{roomDisc.glyph}{/if}</span>
       <button class="titles" onclick={() => (showInfo = !showInfo)} aria-label="Chat info" aria-expanded={showInfo}>
         <h1>{headTitle}</h1>
         {#if typingSubtitle}<span class="sub typing" role="status">{typingSubtitle}</span>{:else if roomSubtitle}<span class="sub">{roomSubtitle}</span>{/if}
@@ -1318,7 +1331,7 @@
             <a href="#/trash/{current.id}"><Icon name="delete" size={18} />Show deleted</a>
             {#if canEditChannel}<button onclick={() => { editingChannel = true; menuOpen = false; }}><Icon name="edit" size={18} />{current.kind === 'member_dm' ? 'Edit chat…' : 'Edit channel…'}</button>{/if}
             {#if space?.kind === 'shared' && canManage}<button onclick={() => { addingChannel = true; menuOpen = false; }}><Icon name="hash" size={18} />New channel in {space.name}…</button>{/if}
-            {#if space?.kind === 'internal'}
+            {#if space?.kind === 'internal' && !homeHidden}
               <label class="notify">Viewing as
                 <select aria-label="Viewing as member" value={viewingAs ?? ''} onchange={(e) => (viewingAs = e.currentTarget.value || null)}>
                   <option value="">Current front</option>
@@ -1370,14 +1383,14 @@
             {#if space?.kind === 'shared' && canManage}
               <SpaceRoles {projection} spaceId={space.id} info={directory.get(space.id)} />
             {/if}
-            {#if space && canManage && space.kind !== 'dm'}
+            {#if space && canManage && space.kind !== 'dm' && !current.special}
               <label class="notify">Slow mode
                 <select value={String(slowMode)} onchange={(e) => setSlowMode(Number(e.currentTarget.value))} aria-label="Slow mode for this channel">
                   {#each [0, 5, 30, 60, 300, 900, 3600] as s (s)}<option value={String(s)}>{s ? `one message every ${slowLabel(s)}` : 'off'}</option>{/each}
                 </select>
               </label>
             {/if}
-            {#if space && canManage && space.kind !== 'dm' && current.kind !== 'thread'}
+            {#if space && canManage && space.kind !== 'dm' && current.kind !== 'thread' && !current.special}
               <ChannelPermissions {projection} channelId={current.id} spaceId={space.id} info={directory.get(space.id)} />
             {/if}
             <label class="notify">Notify me
@@ -1520,7 +1533,7 @@
           onreplyin={() => (replyIn = m)}
           unseen={unseenBy(m).map((id) => people.get(id)?.name ?? '?')}
           tick={ticks.get(m.id)}
-          onreplyprivately={(space?.kind === 'internal' ? m.authors[0] !== speaker : m.account_id !== sync.accountId) ? () => void replyPrivately(m) : undefined}
+          onreplyprivately={(space?.kind === 'internal' ? !homeHidden && m.authors[0] !== speaker : m.account_id !== sync.accountId) ? () => void replyPrivately(m) : undefined}
           onquote={(q) => { quoting = q; forwarding = null; quoteSourceSpaceId = current?.space_id ?? ''; quoteSourceChannelId = current?.id ?? ''; quoteSensitive = !!privacyRoot?.member_ids?.length || !!m.visibility && m.visibility.mode !== 'all'; replyTo = m; editing = null; editingParts = null; box?.focus(); }}
           onedit={() => startEdit(m)}
           ondelete={() => sync.create('message.delete', scope, m.id, {}, { memberId: speaker ?? undefined })}
@@ -1600,7 +1613,7 @@
           {#if pollError}<p class="error" role="alert">{pollError}</p>{/if}
         </details>
         {/if}
-        {#if space?.kind === 'internal'}
+        {#if space?.kind === 'internal' && !homeHidden}
         <label>Visibility
           <select aria-label="Message visibility" bind:value={visibilityMode}>
             <option value="all">Everyone in this space</option>
@@ -1754,14 +1767,14 @@
     <aside class="room-info" aria-label="Chat info">
       <div class="info-heading"><strong>{space?.kind === 'dm' || (current?.kind === 'member_dm' && (current.member_ids?.length ?? 0) <= 2) ? 'Info' : 'Group info'}</strong><button class="icon-button" aria-label="Close chat info" onclick={() => (showInfo = false)}><Icon name="close" size={22} /></button></div>
       <div class="info-hero">
-        <span class="room-symbol" style={roomDisc.style}>{#if roomDisc.member}<AvatarImage hash={roomDisc.member.avatar_blob} glyph={roomDisc.glyph} name={roomTitle} />{:else if roomDisc.blob}<AvatarImage hash={roomDisc.blob} glyph={roomDisc.glyph} name={roomTitle} />{:else}{roomDisc.glyph}{/if}</span>
+        <span class="room-symbol" style={roomDisc.style}>{#if roomDisc.icon}<Icon name={roomDisc.icon} size={32} />{:else if roomDisc.member}<AvatarImage hash={roomDisc.member.avatar_blob} glyph={roomDisc.glyph} name={roomTitle} />{:else if roomDisc.blob}<AvatarImage hash={roomDisc.blob} glyph={roomDisc.glyph} name={roomTitle} />{:else}{roomDisc.glyph}{/if}</span>
         <h2>{roomTitle}</h2>
-        <p class="info-kind">{space?.kind === 'internal' ? `Internal · only ${systemName}` : sides ? roomSubtitle : space?.kind === 'dm' ? 'Direct message'
-          : spaceChannels.length > 1 ? `Shared · ${space?.name ?? 'space'}` : `Group · ${accountsLabel(directory.get(space?.id ?? '')?.accounts ?? []) || 'shared'}`}</p>
+        {#if !homeHidden}<p class="info-kind">{space?.kind === 'internal' ? `Internal · only ${systemName}` : sides ? roomSubtitle : space?.kind === 'dm' ? 'Direct message'
+          : spaceChannels.length > 1 ? `Shared · ${space?.name ?? 'space'}` : `Group · ${accountsLabel(directory.get(space?.id ?? '')?.accounts ?? []) || 'shared'}`}</p>{/if}
         {#if current?.topic}<p class="info-topic">{current.topic}</p>{/if}
       </div>
       <div class="info-actions" hidden={lockedOut}>
-        <button onclick={() => setNotifyLevel(notifyLevel === 'none' ? (space?.kind === 'dm' ? 'all' : 'mentions') : 'none')} aria-pressed={notifyLevel === 'none'}>
+        <button onclick={() => setNotifyLevel(notifyLevel === 'none' ? (space?.kind === 'dm' || current?.special === 'handover' ? 'all' : 'mentions') : 'none')} aria-pressed={notifyLevel === 'none'}>
           <Icon name={notifyLevel === 'none' ? 'muted' : 'muted'} size={20} />{notifyLevel === 'none' ? 'Unmute' : 'Mute'}</button>
         <button onclick={() => { searchHere = true; showInfo = false; }}><Icon name="search" size={20} />Search this chat</button>
         <button onclick={() => { showPins = !showPins; if (window.innerWidth < 1280) showInfo = false; }}><Icon name="pin" size={20} />Pinned{pinned.length ? ` · ${pinned.length}` : ''}</button>
@@ -1769,7 +1782,7 @@
         {#if groupEditable && spaceChannels.length <= 1}<button onclick={() => (editingGroup = true)}><Icon name="edit" size={20} />Edit</button>
         {:else if canEditChannel}<button onclick={() => (editingChannel = true)}><Icon name="edit" size={20} />Edit</button>{/if}
       </div>
-      {#if space && !lockedOut}
+      {#if space && !lockedOut && !homeHidden}
         <SpacePanel {projection} {dark} {space} channel={current} info={directory.get(space.id)} {people} {speaker} isShown={shownNow}
           onchanged={() => dirTick++} oneditgroup={() => (editingGroup = true)} onpermissions={() => (spacePerms = true)}
           oneditchannel={canEditChannel && !(groupEditable && spaceChannels.length <= 1) ? () => (editingChannel = true) : undefined} />

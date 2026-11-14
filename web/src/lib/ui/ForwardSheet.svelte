@@ -12,7 +12,9 @@
   import FormNote from './kit/FormNote.svelte';
   import Switch from './kit/Switch.svelte';
 
-  export interface Target { id: string; title: string; names: (string | null | undefined)[]; at: number; disc: { glyph: string; color: string; blob?: string } }
+  export interface Target { id: string; title: string; names: (string | null | undefined)[]; at: number; disc: { glyph: string; color: string; blob?: string; icon?: string };
+    /** listed ahead of the rest: Save to notes */
+    first?: boolean }
 
   let { targets, dark, speaker = null, busy = false, label, placeholder = 'Forward to…', exclude, warning = () => null, onpick, onsend, onclose }: {
     targets: Target[]; dark: boolean; speaker?: MemberRow | null; busy?: boolean; label: string; placeholder?: string;
@@ -29,7 +31,7 @@
   let chosenId = $state<string | null>(null);
   let comment = $state('');
   let showAuthors = $state(true);
-  const shown = $derived(destinations(targets, query, (t) => [t.title, ...t.names], (t) => t.at, (t) => t.id === exclude));
+  const shown = $derived(destinations(targets, query, (t) => [t.title, ...t.names], (t) => t.at, (t) => t.id === exclude, (t) => !!t.first));
   const chosen = $derived(targets.find((t) => t.id === chosenId));
   const warn = $derived(chosen ? warning(chosen.id) : null);
   const color = (hex: string) => core.adaptColor(hex, dark);
@@ -54,7 +56,7 @@
     {#each shown as t (t.id)}
       {@const c = color(t.disc.color)}
       <button class="face" role="radio" aria-checked={t.id === chosenId} class:on={t.id === chosenId} disabled={busy} onclick={() => choose(t)}>
-        <span class="ring"><span class="disc" style="background: {c.ring}; color: {c.avatar_ink}">{#if t.disc.blob}<AvatarImage hash={t.disc.blob} glyph={t.disc.glyph} name={t.title} />{:else}{t.disc.glyph}{/if}</span>
+        <span class="ring"><span class="disc" style="background: {c.ring}; color: {c.avatar_ink}">{#if t.disc.icon}<Icon name={t.disc.icon} size={24} />{:else if t.disc.blob}<AvatarImage hash={t.disc.blob} glyph={t.disc.glyph} name={t.title} />{:else}{t.disc.glyph}{/if}</span>
           {#if t.id === chosenId}<span class="tick"><Icon name="check" size={14} /></span>{/if}</span>
         <span class="name">{t.title}</span>
       </button>

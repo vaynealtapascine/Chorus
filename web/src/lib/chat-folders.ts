@@ -18,7 +18,7 @@ export interface Custom {
 export interface Settings { order: string[]; hidden: string[]; custom: Custom[]; showHere: boolean; compact: boolean }
 
 /** A chat as the folder editor lists it; `own` = in our own internal space. */
-export interface FolderChat { id: string; title: string; kind: Kind; own: boolean }
+export interface FolderChat { id: string; title: string; kind: Kind; own: boolean; special?: string }
 
 export const DEFAULTS: Settings = { order: [...BUILT_IN], hidden: [], custom: [], showHere: true, compact: false };
 
@@ -32,6 +32,11 @@ export function ordered(s: Settings): string[] {
 /** The folders shown in the rail. */
 export function visible(s: Settings): string[] {
   return ordered(s).filter((id) => !s.hidden.includes(id));
+}
+
+/** The folders a rail or tab bar shows: a person has no Internal folder, their own space holds only Notes (D-093). */
+export function visibleFor(s: Settings, person: boolean): string[] {
+  return visible(s).filter((id) => !(person && id === 'internal'));
 }
 
 const LABELS: Record<string, string> = { all: 'All chats', internal: 'Internal', shared: 'Shared', direct: 'Direct' };
@@ -94,12 +99,13 @@ export const SUGGESTIONS = [
   { preset: 'unmuted', title: 'Not muted', subtitle: 'Every chat but the muted ones' },
 ] as const;
 
-/** A new folder from a suggestion; "Handover and notes" starts with our own chats named that way. */
-export function fromSuggestion(id: string, preset: string, title: string, ours: { id: string; name: string }[]): Custom {
+/** A new folder from a suggestion; "Handover and notes" starts with our own Handover and Notes
+ * chats, found by `special` (D-132), never by name. */
+export function fromSuggestion(id: string, preset: string, title: string, ours: { id: string; special?: string }[]): Custom {
   const base: Custom = { id, name: title, chats: [], kinds: [], except: [], unreadOnly: false, hideMuted: false, preset };
   if (preset === 'unread') return { ...base, kinds: [...KINDS], unreadOnly: true };
   if (preset === 'unmuted') return { ...base, kinds: [...KINDS], hideMuted: true };
-  return { ...base, chats: ours.filter((c) => /handover|notes?\b/i.test(c.name)).map((c) => c.id) };
+  return { ...base, chats: ours.filter((c) => !!c.special).map((c) => c.id) };
 }
 
 function strings(v: unknown): string[] {
