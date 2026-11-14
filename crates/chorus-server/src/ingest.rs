@@ -281,6 +281,17 @@ fn store_and_project(
     {
         crate::notifier::on_policy_change(conn, account, now)?;
     }
+    // the fronting status shared with spaces (D-133): its own reveals, like the follower view's
+    if !preserved {
+        if o.kind.starts_with("front.")
+            && let Some(account) = o.scope.strip_prefix("account:")
+        {
+            let extra = o.payload.get("notify").and_then(serde_json::Value::as_str) == Some("extra_delay");
+            crate::space_fronts::on_change(conn, account, extra, now)?;
+        } else if let Some(account) = crate::space_fronts::affected(o) {
+            crate::space_fronts::on_change(conn, &account, false, now)?;
+        }
+    }
     // a member's state reaches followers only through a reveal of the front (D-138)
     if !preserved
         && crate::notifier::changes_state(o)
@@ -312,6 +323,7 @@ fn store_and_project(
         let subject_type = o.kind.split_once('.').map(|(kind, _)| kind).unwrap_or_default();
         if crate::fronts::has_current_reference(conn, account, subject_type, id)? {
             crate::notifier::on_front_change(conn, account, now)?;
+            crate::space_fronts::on_change(conn, account, false, now)?;
         }
     }
     if !preserved {

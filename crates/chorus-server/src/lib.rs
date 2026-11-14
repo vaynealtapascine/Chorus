@@ -104,3 +104,4 @@ pub(crate) fn hex(bytes: &[u8]) -> String {
 }
 
 pub mod search_view;
+pub mod space_fronts;

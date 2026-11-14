@@ -276,6 +276,23 @@ Rules:
    sooner. Not shown anywhere else: not on member profiles (`/accounts/{id}/members`), not in a DM
    with another account, not in shared feeds' `fronting:`.
 
+11. **Fronting status shared with a space** (D-133, `space_fronts.rs`) is a sharing path of its
+   own, off by default: an account that writes `space.set_sharing {fronts: true}` in a shared space
+   lets the space's present members see its Body front through `GET /spaces/{id}/fronts`. What they
+   see is what a follower with only the account's **default** ceiling would (no bucket, no
+   per-follow override, no additional fronts): its levels and layers, `hidden_subjects`, and the
+   members' `announce` policies (a member announced to nobody or only to buckets never appears).
+   It lives in `space_front_view` and changes **only at reveal time**: a change is queued as
+   `pending` with `due_at` = acceptance + settle + the space's own delay (`fronts_delay_min`,
+   default 15, drawn between it and 1.5×) + extra delays (`notify: extra_delay`, a member's
+   `extra_delay_range`), counted from when the server accepted the change, never from an earlier
+   switch time and never shortened by `notify: now`; a newer change replaces the pending one with
+   its own due time. Names are snapshotted when queued; no avatars, states, times, history, stats,
+   inbox items or pings. Switching it off, leaving or being removed deletes the view at once (and
+   switching it on again starts with a fresh delayed reveal); a viewer who leaves gets 404. The
+   delay is the sharer's choice and may be shorter than its followers' ceiling: a space member who
+   also follows can learn from the space first. Tested in `privacy_audit.rs` a30.
+
 Tests (M8): for random switch sequences and ceilings, assert that the sequence of follower-visible
 states over time (from every surface) equals the sequence of revealed states, and that no surface
 changes between reveal times.

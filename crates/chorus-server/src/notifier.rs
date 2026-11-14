@@ -43,7 +43,7 @@ pub struct Shown {
 }
 
 /// subject id → (name, colour, glyph), snapshotted when a change is queued.
-type Names = BTreeMap<String, (String, Option<String>, Option<String>)>;
+pub(crate) type Names = BTreeMap<String, (String, Option<String>, Option<String>)>;
 
 /// member id → what one follower may see of that member's state (D-138), snapshotted when a
 /// change is queued, like the names.
@@ -124,7 +124,7 @@ fn json_col<T: for<'de> Deserialize<'de> + Default>(s: Option<String>) -> T {
 /// only); `front` '' is Body. The ceiling then decides which original/custom layers pass
 /// (`notify::view_layers`). Unconfigured accounts keep the legacy Body timeline and have no
 /// additional fronts. A deleted or unknown front reveals nothing.
-fn front_presence(
+pub(crate) fn front_presence(
     conn: &Connection,
     account: &str,
     current: Option<&Current>,
@@ -223,8 +223,9 @@ fn active_follows(conn: &Connection, account: &str) -> anyhow::Result<Vec<Follow
     Ok(out)
 }
 
-/// The follower's effective ceiling and the buckets they're in.
-fn ceiling_for(conn: &Connection, account: &str, follow: &Follow) -> anyhow::Result<(Ceiling, BTreeSet<String>)> {
+/// The account's default ceiling for followers (its `follow_ceiling` pref, or the legacy setting),
+/// as stored: a partial ceiling, `{}` when none is set.
+pub(crate) fn default_ceiling(conn: &Connection, account: &str) -> anyhow::Result<Value> {
     let saved_pref: Option<String> = conn
         .query_row(
             "SELECT value FROM pref WHERE account_id = ?1 AND device_id = '' AND key = 'follow_ceiling'",
@@ -238,7 +239,12 @@ fn ceiling_for(conn: &Connection, account: &str, follow: &Follow) -> anyhow::Res
         })
         .optional()?
         .flatten();
-    let default: Value = saved_pref.or(legacy_setting).and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(json!({}));
+    Ok(saved_pref.or(legacy_setting).and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(json!({})))
+}
+
+/// The follower's effective ceiling and the buckets they're in.
+fn ceiling_for(conn: &Connection, account: &str, follow: &Follow) -> anyhow::Result<(Ceiling, BTreeSet<String>)> {
+    let default = default_ceiling(conn, account)?;
     let mut st = conn.prepare_cached(
         "SELECT b.id, b.ceiling FROM bucket b JOIN bucket_assignment a ON a.bucket_id = b.id
          WHERE b.account_id = ?1 AND a.follower_account_id = ?2 AND a.is_present = 1 AND b.deleted_at IS NULL",
@@ -251,7 +257,7 @@ fn ceiling_for(conn: &Connection, account: &str, follow: &Follow) -> anyhow::Res
     Ok((notify::effective_ceiling(&default, &refs, &follow.ceiling), buckets))
 }
 
-fn policies(conn: &Connection, account: &str) -> anyhow::Result<BTreeMap<String, MemberPolicy>> {
+pub(crate) fn policies(conn: &Connection, account: &str) -> anyhow::Result<BTreeMap<String, MemberPolicy>> {
     let mut st = conn.prepare_cached("SELECT id, notify_policy FROM member WHERE account_id = ?1")?;
     let rows = st.query_map([account], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?)))?;
     let mut out = BTreeMap::new();
@@ -276,7 +282,7 @@ fn groups(conn: &Connection, account: &str) -> anyhow::Result<BTreeMap<String, B
     Ok(out)
 }
 
-fn names_for(conn: &Connection, account: &str, seen: &[&Seen]) -> anyhow::Result<Names> {
+pub(crate) fn names_for(conn: &Connection, account: &str, seen: &[&Seen]) -> anyhow::Result<Names> {
     let mut out = BTreeMap::new();
     for s in seen {
         let Seen::Subject { subject_type, subject_id, .. } = s else { continue };
@@ -1060,6 +1066,8 @@ pub fn process_due(conn: &Connection, now: i64) -> anyhow::Result<Processed> {
         pushes.extend(deliver(conn, &first_id, &follower, &mut summary, now)?);
     }
     pushes.extend(crate::activity::process_due(conn, now)?);
+    // fronting status shared with spaces (D-133): its own reveals, no pings
+    crate::space_fronts::process_due(conn, now)?;
     Ok(Processed { handled: n, pushes })
 }
 

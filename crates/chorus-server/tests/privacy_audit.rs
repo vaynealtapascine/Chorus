@@ -984,3 +984,76 @@ fn a29_member_names_withheld_in_a_space_reach_no_other_account() {
     let last = pushed.iter().find(|n| n.contains("violet again")).expect("the reply notified Mallory");
     assert!(!last.contains("Kairos") && !last.contains(&avatar) && last.contains("alice"), "{last}");
 }
+
+#[test]
+fn a30_a_space_sees_our_front_only_when_shared_only_after_its_delay_and_only_while_in_it() {
+    // D-133, NOTIFICATIONS §5 rule 11: the fronting status shared with a space is its own
+    // delayed reveal: never early, never to non-members, never a hidden member, withdrawn at once
+    use chorus_server::space_fronts;
+    let w = World::new();
+    let (space, scope, _) = shared_with_mallory(&w);
+    let kai = w.member(&w.alice, "Kairos", json!({"mode": "server"}));
+    let shy = w.id();
+    let made =
+        w.push(&w.alice, "member.create", &shy, json!({"name": "Shyla", "notify_policy": {"announce": "nobody"}}));
+    assert_eq!(made, None);
+    let switch = |who: &[&str]| {
+        let entries: Vec<Value> = who
+            .iter()
+            .enumerate()
+            .map(|(i, m)| json!({"subject_type": "member", "subject_id": m, "level": "front", "is_primary": i == 0}))
+            .collect();
+        assert_eq!(w.push(&w.alice, "front.switch", &w.id(), json!({"entries": entries})), None);
+        NOW + w.n.get() as i64 * 1000 // the server's clock when it was accepted
+    };
+    let seen = |viewer: &str| space_fronts::list(&w.c, viewer, &space).map(|v| v["items"].to_string());
+    switch(&[&kai, &shy]);
+    space_fronts::process_due(&w.c, i64::MAX / 2).unwrap();
+    assert_eq!(seen(&w.mallory).unwrap(), "[]", "shared before it was switched on");
+    // on, with a 10-minute delay: nothing until then
+    let on = json!({"fronts": true, "fronts_delay_min": 10});
+    assert_eq!(w.push_in(&w.alice, &scope, "space.set_sharing", &space, on), None);
+    let accepted = NOW + w.n.get() as i64 * 1000;
+    let due: i64 =
+        w.c.query_row(
+            "SELECT due_at FROM space_front_view WHERE space_id=?1 AND account_id=?2",
+            params![space, w.alice],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(due >= accepted + 15_000 + 600_000, "due {} ms after it was turned on", due - accepted);
+    space_fronts::process_due(&w.c, due - 1).unwrap();
+    assert_eq!(seen(&w.mallory).unwrap(), "[]", "revealed before its delay");
+    space_fronts::process_due(&w.c, due).unwrap();
+    let shown = seen(&w.mallory).unwrap();
+    assert!(shown.contains("Kairos") && !shown.contains("Shyla") && !shown.contains(&shy), "{shown}");
+    assert!(!shown.contains("since") && !shown.contains("at\""), "no times leave: {shown}");
+    assert!(seen(&w.bob).is_err(), "a non-member saw the space's fronts");
+    assert_eq!(seen(&w.alice).unwrap(), "[]", "an account isn't shown its own");
+    // a switch: the old front stays until the new reveal is due
+    let at = switch(&[&shy]);
+    let due: i64 =
+        w.c.query_row(
+            "SELECT due_at FROM space_front_view WHERE space_id=?1 AND account_id=?2",
+            params![space, w.alice],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(due >= at + 615_000);
+    space_fronts::process_due(&w.c, due - 1).unwrap();
+    assert!(seen(&w.mallory).unwrap().contains("Kairos"), "the switch showed early");
+    space_fronts::process_due(&w.c, due).unwrap();
+    assert!(!seen(&w.mallory).unwrap().contains("Kairos"));
+    // off: withdrawn at once; on again: nothing until a new reveal
+    assert_eq!(w.push_in(&w.alice, &scope, "space.set_sharing", &space, json!({"fronts": false})), None);
+    assert_eq!(seen(&w.mallory).unwrap(), "[]", "still shown after switching it off");
+    assert_eq!(w.push_in(&w.alice, &scope, "space.set_sharing", &space, json!({"fronts": true})), None);
+    assert_eq!(seen(&w.mallory).unwrap(), "[]", "an old view came back at once");
+    space_fronts::process_due(&w.c, i64::MAX / 2).unwrap();
+    assert!(seen(&w.mallory).unwrap().contains(&w.alice));
+    // once Mallory leaves she sees nothing; back in, she sees it again
+    chorus_server::spaces::leave(&w.c, &w.mallory, &space, NOW + w.n.get() as i64 * 1000 + 500).unwrap();
+    assert!(seen(&w.mallory).is_err(), "a former member still sees the space's fronts");
+    assert_eq!(w.push_in(&w.alice, &scope, "space.join", &space, json!({"account_id": w.mallory})), None);
+    assert!(seen(&w.mallory).unwrap().contains(&w.alice));
+}

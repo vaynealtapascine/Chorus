@@ -378,6 +378,13 @@ Implemented so far (`api_data.rs`, `api_reads.rs`; sessions or API tokens):
     everyone in the space can read, or whom a private chat you may view is kept to (D-098, its
     `member_ids`), while their account is in the space, and not while that account has turned
     member names off in the space (D-133, `space.set_sharing {member_names: false}`).
+  - `GET /spaces/{id}/fronts` (D-133) returns `{items: [{account_id, entries: [{t, subject_type?,
+    subject_id?, level, is_primary?, name, color, glyph}]}]}`: for each *other* account in the shared
+    space that shares its fronting status there (`space.set_sharing {fronts: true}`), its Body
+    front as last revealed to the space (`t: "subject"`, or `t: "someone"` with only `level`). Only
+    present members may ask (else 404); an account that hasn't been revealed yet, stopped sharing
+    or left isn't listed. No times, avatars, states, history or stats; it changes only at reveal
+    times (NOTIFICATIONS §5 rule 11), so poll it when a space opens rather than expecting a frame.
   - A space you aren't in is a 404.
 Channel list items also carry nullable `avatar_blob` (D-088). Fetch that hash through the ordinary
 blob endpoint; current channel visibility, including thread-parent privacy, gates image reads.

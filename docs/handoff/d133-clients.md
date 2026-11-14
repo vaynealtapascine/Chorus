@@ -116,6 +116,23 @@ fails safely; show the reason like other refused sends.
 
 - `POST /spaces/{id}/members {accounts: [...]}`: owner, admins, or members with `invite`; each
   account must be connected to the inviter (follow either way). `403` otherwise.
+- `GET /spaces/{id}/fronts` (present members of a shared space; else `404`):
+
+  ```jsonc
+  {"items": [{"account_id": "<other account>",
+              "entries": [{"t": "subject", "subject_type": "member", "subject_id": "<id>",
+                           "level": "front", "is_primary": true,
+                           "name": "Kairos", "color": "#aa5500", "glyph": "🌙"},
+                          {"t": "someone", "level": "cocon", "name": "Someone", "color": null, "glyph": null}]}]}
+  ```
+
+  One item per other account sharing its fronting status here and already revealed (an empty
+  `entries` = nobody it may show is fronting). Our own account is never in it (show our front
+  from our own data). It changes only at reveal times, minutes after a switch: fetch when the space
+  opens or its member list shows, and every few minutes while it stays open; there is no socket
+  frame. Use it for "who's fronting" on that space's member list and header, nowhere else (not as
+  a follower view; the follow paths keep `/accounts/{id}/view`). No avatars: draw the glyph/colour
+  disc. Ids are opaque here too: don't link them to profiles unless the profile path allows it.
 
 ## 7. Status
 
@@ -132,6 +149,14 @@ fails safely; show the reason like other refused sends.
   member"; check that fallback). On the writing side, our own client keeps showing our names. The
   setting row should say plainly that others who can see our members elsewhere (a profile, a front
   view) can still match them, because the opaque ids stay in the messages.
-- Not built yet: the shared fronting
-  status (`GET /spaces/{id}/fronts`). Write the settings, but don't promise their effect in the UI
-  until this section says they are built.
+- Built: the shared fronting status. `fronts` on starts a delayed reveal (default 15 minutes,
+  `fronts_delay_min` 0–1440); off, leaving or removal withdraws it at once. The F5.11 row "Our
+  fronting status" is a switch plus, in Advanced, the delay; say in its help text that everyone in
+  the space sees who is fronting after that delay, as a follower with our default sharing would.
+
+## 8. Defaults for a new space
+
+Nothing is written for a space by default; every value above is the default when absent. The
+F5.11 frame's values for a *new* space (e.g. history "From when they join", invite off) are the
+new-space flow's to write right after `POST /spaces`, as `space.set_permission` for `everyone`;
+existing spaces keep today's behaviour.

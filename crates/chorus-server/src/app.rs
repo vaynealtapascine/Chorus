@@ -202,6 +202,7 @@ pub fn router(state: AppState) -> Router {
         .route("/spaces/{id}/members", post(spaces_add))
         .route("/spaces/{id}/members/me", delete(spaces_leave))
         .route("/spaces/{id}/authors", get(spaces_authors))
+        .route("/spaces/{id}/fronts", get(spaces_fronts))
         .route("/emoji", get(emoji_list))
         .route("/accounts/{id}/view", get(account_view))
         .route("/accounts/{id}/members", get(account_members))
@@ -1523,6 +1524,17 @@ async fn spaces_authors(
     let conn = s.db();
     let me = who(&s, &conn, &headers)?;
     Ok(Json(crate::spaces::authors(&conn, &me.account_id, &id)?))
+}
+
+/// D-133: the fronting status other accounts share with this space, as revealed (space_fronts.rs).
+async fn spaces_fronts(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let me = who(&s, &conn, &headers)?;
+    Ok(Json(crate::space_fronts::list(&conn, &me.account_id, &id)?))
 }
 
 // ─── more reads (api_reads.rs) ───────────────────────────────────────────────

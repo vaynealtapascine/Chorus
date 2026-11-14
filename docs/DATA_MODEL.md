@@ -474,6 +474,13 @@ CREATE TABLE space_sharing (
   member_names INTEGER, fronts INTEGER, fronts_delay_min INTEGER,
   clocks TEXT NOT NULL DEFAULT '{}', PRIMARY KEY (space_id, account_id)
 ) WITHOUT ROWID;
+-- D-133 (0024): the fronting status each account shares with a space, as revealed (server state,
+-- not rebuilt; NOTIFICATIONS §5 rule 11). `entries` changes only when `pending` comes due.
+CREATE TABLE space_front_view (
+  space_id TEXT NOT NULL, account_id TEXT NOT NULL,
+  entries TEXT, revealed_at INTEGER, pending TEXT, due_at INTEGER,
+  PRIMARY KEY (space_id, account_id)
+) WITHOUT ROWID;
 
 CREATE TABLE channel (
   id TEXT PRIMARY KEY,
