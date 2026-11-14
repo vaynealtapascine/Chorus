@@ -1,0 +1,24 @@
+{
+  "description": "D-138: a malformed audience is private (an audience that isn't an object)",
+  "fn": "member_state_parse",
+  "args": [
+    {
+      "tags": [
+        "tired"
+      ],
+      "at": 1,
+      "audience": "friends"
+    }
+  ],
+  "expect": {
+    "tags": [
+      "tired"
+    ],
+    "note": null,
+    "at": 1,
+    "clear_on_leave": false,
+    "audience": {
+      "mode": "private"
+    }
+  }
+}

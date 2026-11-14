@@ -1,0 +1,40 @@
+{
+  "description": "D-138: the shape the clients write; text is only the one-line form once tags exist",
+  "fn": "member_state_parse",
+  "args": [
+    {
+      "tags": [
+        "tired",
+        "state:s1",
+        "humming"
+      ],
+      "note": "Typing only today, please",
+      "at": 1790000000000,
+      "clear_on_leave": true,
+      "audience": {
+        "mode": "buckets",
+        "bucket_ids": [
+          "b1"
+        ]
+      },
+      "text": "Tired · Blurry · humming · Typing only today, please",
+      "later": 1
+    }
+  ],
+  "expect": {
+    "tags": [
+      "tired",
+      "state:s1",
+      "humming"
+    ],
+    "note": "Typing only today, please",
+    "at": 1790000000000,
+    "clear_on_leave": true,
+    "audience": {
+      "mode": "buckets",
+      "bucket_ids": [
+        "b1"
+      ]
+    }
+  }
+}

@@ -714,3 +714,29 @@ fn a25_a_stranger_who_opts_in_still_gets_no_read_receipts_from_a_space_they_are_
     let asked = chorus_server::receipts::reads(&w.c, &chorus_server::api_data::Principal::owner(&w.mallory), "ch");
     assert!(asked.unwrap().is_none(), "Mallory is told the channel isn't there");
 }
+
+#[test]
+fn a26_a_member_state_names_only_our_own_members_and_reaches_no_one_outside_a_reveal() {
+    // D-138, D-119: a state is about one of the account's own members, its audience is one the
+    // server understands, and the member endpoints never carry it (D-101: no fronting data)
+    let w = World::new();
+    let kai = w.member(&w.alice, "Kai", json!({"mode": "followers"}));
+    w.follow(&w.mallory, &w.alice);
+    let state = json!({"tags": ["tired"], "note": "Typing only", "at": NOW, "clear_on_leave": false,
+                       "audience": {"mode": "followers"}});
+    let key = format!("member_status:{kai}");
+    let id = w.id();
+    let refused = w.push(&w.mallory, "pref.set", &id, json!({"device": "", "key": key, "value": state}));
+    assert!(refused.is_some(), "Mallory set a state on Alice's member");
+    let id = w.id();
+    let odd = json!({"tags": ["tired"], "at": NOW, "audience": {"mode": "everyone"}});
+    let refused = w.push(&w.alice, "pref.set", &id, json!({"device": "", "key": key, "value": odd}));
+    assert!(refused.is_some(), "a state went in with an audience the server can't check");
+    let id = w.id();
+    assert_eq!(w.push(&w.alice, "pref.set", &id, json!({"device": "", "key": key, "value": state})), None);
+    let listed = profiles::members(&w.c, &w.mallory, &w.alice).unwrap().to_string();
+    let profile = profiles::profile(&w.c, &w.mallory, &w.alice, &kai).unwrap().unwrap().to_string();
+    for shown in [listed, profile] {
+        assert!(!shown.contains("Typing only") && !shown.contains("tired"), "a state leaked: {shown}");
+    }
+}

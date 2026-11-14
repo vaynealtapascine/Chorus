@@ -1,0 +1,22 @@
+{
+  "description": "D-138: a state is an object or null",
+  "fn": "validate_op",
+  "args": [
+    {
+      "id": "0192f8c2-0000-7000-8000-000000000111",
+      "kind": "pref.set",
+      "v": 1,
+      "scope": "account:0192f8c2-0000-7000-8000-0000000000a1",
+      "hlc": "0000000003e8-0000-00000111",
+      "device_at": 1000,
+      "payload": {
+        "device": "",
+        "key": "member_status:m1",
+        "value": "Tired"
+      }
+    }
+  ],
+  "expect": {
+    "error": true
+  }
+}

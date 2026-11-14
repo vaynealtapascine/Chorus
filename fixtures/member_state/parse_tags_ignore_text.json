@@ -1,0 +1,24 @@
+{
+  "description": "D-138: with tags present a stray text is not a note",
+  "fn": "member_state_parse",
+  "args": [
+    {
+      "tags": [
+        "busy"
+      ],
+      "text": "Busy",
+      "at": 7
+    }
+  ],
+  "expect": {
+    "tags": [
+      "busy"
+    ],
+    "note": null,
+    "at": 7,
+    "clear_on_leave": false,
+    "audience": {
+      "mode": "private"
+    }
+  }
+}

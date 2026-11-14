@@ -1,0 +1,12 @@
+{
+  "description": "D-138: null, a non-object and an empty state hold no state",
+  "fn": "member_state_parse",
+  "args": [
+    {
+      "tags": [],
+      "note": "  ",
+      "at": 7
+    }
+  ],
+  "expect": null
+}

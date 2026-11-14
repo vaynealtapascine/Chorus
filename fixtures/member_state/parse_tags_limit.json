@@ -1,0 +1,41 @@
+{
+  "description": "D-138: tags are de-duplicated, blank ones skipped, each cut to 40 characters, at most 8 kept",
+  "fn": "member_state_parse",
+  "args": [
+    {
+      "tags": [
+        "a",
+        "a",
+        " ",
+        "b",
+        "c",
+        "d",
+        "e",
+        "f",
+        "g",
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "i",
+        "j"
+      ],
+      "at": 1
+    }
+  ],
+  "expect": {
+    "tags": [
+      "a",
+      "b",
+      "c",
+      "d",
+      "e",
+      "f",
+      "g",
+      "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    ],
+    "note": null,
+    "at": 1,
+    "clear_on_leave": false,
+    "audience": {
+      "mode": "private"
+    }
+  }
+}

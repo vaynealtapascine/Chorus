@@ -17,6 +17,7 @@ pub mod hlc;
 pub mod id;
 pub mod import;
 pub mod lww;
+pub mod member_state;
 pub mod mentions;
 pub mod model;
 pub mod notify;

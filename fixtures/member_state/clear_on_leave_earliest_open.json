@@ -1,0 +1,27 @@
+{
+  "description": "D-138: since is the earliest start among the member's open intervals",
+  "fn": "member_state_shown",
+  "args": [
+    {
+      "tags": [
+        "tired"
+      ],
+      "at": 1000000,
+      "clear_on_leave": true
+    },
+    [
+      [
+        1090000,
+        null
+      ],
+      [
+        999990,
+        null
+      ]
+    ]
+  ],
+  "expect": {
+    "since": 999990,
+    "shown": true
+  }
+}

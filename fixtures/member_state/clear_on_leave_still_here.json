@@ -1,0 +1,23 @@
+{
+  "description": "D-138: here since before the state was set: it shows",
+  "fn": "member_state_shown",
+  "args": [
+    {
+      "tags": [
+        "tired"
+      ],
+      "at": 1000000,
+      "clear_on_leave": true
+    },
+    [
+      [
+        995000,
+        null
+      ]
+    ]
+  ],
+  "expect": {
+    "since": 995000,
+    "shown": true
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "description": "D-138: a buckets audience lists bucket ids",
+  "fn": "validate_op",
+  "args": [
+    {
+      "id": "0192f8c2-0000-7000-8000-000000000109",
+      "kind": "pref.set",
+      "v": 1,
+      "scope": "account:0192f8c2-0000-7000-8000-0000000000a1",
+      "hlc": "0000000003e8-0000-00000109",
+      "device_at": 1000,
+      "payload": {
+        "device": "",
+        "key": "member_status:m1",
+        "value": {
+          "tags": [
+            "tired",
+            "state:s1"
+          ],
+          "note": "Typing only",
+          "at": 1000000,
+          "clear_on_leave": true,
+          "audience": {
+            "mode": "buckets"
+          },
+          "text": "Tired · Blurry · Typing only"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "error": true
+  }
+}

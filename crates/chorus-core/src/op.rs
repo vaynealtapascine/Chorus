@@ -677,6 +677,19 @@ fn payload_shape(op: &Op) -> Result<(), OpError> {
             nonempty("target_id")?;
             nonempty("emoji")?;
         }
+        // a member's state (D-138): its shape, so a malformed audience never reaches a friend
+        "pref.set" => {
+            if let Some(key) = p.get("key").and_then(Value::as_str)
+                && key.starts_with(crate::member_state::KEY_PREFIX)
+            {
+                if crate::member_state::member_of(key).is_none() {
+                    return bad("member_status needs a member id");
+                }
+                if let Some(why) = crate::member_state::shape_problem(p.get("value").unwrap_or(&Value::Null)) {
+                    return bad(why);
+                }
+            }
+        }
         _ => {}
     }
     Ok(())

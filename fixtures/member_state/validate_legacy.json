@@ -1,0 +1,23 @@
+{
+  "description": "D-138: a legacy {text, at} is still valid",
+  "fn": "validate_op",
+  "args": [
+    {
+      "id": "0192f8c2-0000-7000-8000-000000000102",
+      "kind": "pref.set",
+      "v": 1,
+      "scope": "account:0192f8c2-0000-7000-8000-0000000000a1",
+      "hlc": "0000000003e8-0000-00000102",
+      "device_at": 1000,
+      "payload": {
+        "device": "",
+        "key": "member_status:m1",
+        "value": {
+          "text": "Tired",
+          "at": 1000000
+        }
+      }
+    }
+  ],
+  "expect": "known"
+}

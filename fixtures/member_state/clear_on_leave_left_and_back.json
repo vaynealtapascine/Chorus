@@ -1,0 +1,27 @@
+{
+  "description": "D-138: they left and came back after the state was set: it is cleared",
+  "fn": "member_state_shown",
+  "args": [
+    {
+      "tags": [
+        "tired"
+      ],
+      "at": 1000000,
+      "clear_on_leave": true
+    },
+    [
+      [
+        991000,
+        1005000
+      ],
+      [
+        1060001,
+        null
+      ]
+    ]
+  ],
+  "expect": {
+    "since": 1060001,
+    "shown": false
+  }
+}

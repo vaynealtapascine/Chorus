@@ -281,6 +281,27 @@ fn store_and_project(
     {
         crate::notifier::on_policy_change(conn, account, now)?;
     }
+    // a member's state reaches followers only through a reveal of the front (D-138)
+    if !preserved
+        && crate::notifier::changes_state(o)
+        && let Some(account) = o.scope.strip_prefix("account:")
+    {
+        crate::notifier::on_state_change(conn, account, now)?;
+    }
+    // a follow that starts or ends changes who the following account's `following` and `friends`
+    // audiences reach, so the states its followers may see are worked out again (D-138)
+    if !preserved
+        && matches!(o.kind.as_str(), "follow.request" | "follow.accept" | "follow.end")
+        && let Some(id) = o.entity()
+    {
+        let follower: Option<String> = conn
+            .prepare_cached("SELECT follower_account_id FROM follow WHERE id = ?1")?
+            .query_row([id], |r| r.get(0))
+            .optional()?;
+        if let Some(account) = follower {
+            crate::notifier::on_audience_change(conn, &account, now)?;
+        }
+    }
     // Offline parents may arrive after the front operation. Retain the reference throughout,
     // but only schedule its reveal once the subject is known to belong to this account.
     if !preserved
@@ -418,6 +439,8 @@ pub(crate) fn foreign_reference(conn: &Connection, author: &str, o: &Op) -> anyh
         }
         // taking another account's member out of one's own group stays possible
         "group.add_member" => named.extend(p("member_id").map(|m| ("member", m))),
+        // a member's state (D-138) is about one of the account's own members
+        "pref.set" => named.extend(p("key").and_then(chorus_core::member_state::member_of).map(|m| ("member", m))),
         "message.send" | "message.edit" | "message.forward" | "post.create" | "post.edit" => {
             for a in o.payload.get("attachments").and_then(serde_json::Value::as_array).into_iter().flatten() {
                 named.extend(a.as_str().map(|a| ("attachment", a)));

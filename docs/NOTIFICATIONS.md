@@ -253,6 +253,22 @@ Rules:
    socket frame, never an op, SSE event, webhook, export, push or inbox item. Ticks between a
    system's own members need none of this: those marks already sync to the account's own devices.
    Receipts grant or bypass no follower-front access, delay or reveal rule.
+10. Member states (D-138, D-159) are front-adjacent: "Tired" next to a name says that member is
+   in the front. A state reaches a follower only on a shown member's entry in
+   `follower_front_view`, and only at a reveal: the queued change snapshots, per follower, the
+   states of the members it shows that are in each state's audience (the profile-part rule,
+   `profiles::Viewer`) and still showing (one that clears on leave is gone once the member's
+   stretch in that front began after it was set; a stretch the server can't place hides it).
+   "Someone" entries carry nothing; only tags and note leave (`state:<id>` tags as the custom
+   state's name), never `at` or the audience; history and stats never carry states. A state
+   change, an audience change (bucket, follow either way, sharing policy) or a clear-on-leave
+   that the follower can't see happen queues a **silent** reveal of the current front: it
+   changes the entries only, never `since`, the history log or the inbox. Any reveal whose
+   states differ from the ones before it is due no sooner than settle + the ceiling's delay after
+   the server accepted the change (`states_due`), so a state set as someone switches in never
+   shows early, and joining a reveal already planned keeps that reveal's ping and never makes it
+   sooner. Not shown anywhere else: not on member profiles (`/accounts/{id}/members`), not in a DM
+   with another account, not in shared feeds' `fronting:`.
 
 Tests (M8): for random switch sequences and ceilings, assert that the sequence of follower-visible
 states over time (from every surface) equals the sequence of revealed states, and that no surface

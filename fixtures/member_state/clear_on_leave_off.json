@@ -1,0 +1,23 @@
+{
+  "description": "D-138: a state not meant to clear shows whatever happened",
+  "fn": "member_state_shown",
+  "args": [
+    {
+      "tags": [
+        "tired"
+      ],
+      "at": 1000000,
+      "clear_on_leave": false
+    },
+    [
+      [
+        1001000000,
+        null
+      ]
+    ]
+  ],
+  "expect": {
+    "since": 1001000000,
+    "shown": true
+  }
+}

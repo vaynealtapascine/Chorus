@@ -1,0 +1,27 @@
+{
+  "description": "D-138: the following audience is kept",
+  "fn": "member_state_parse",
+  "args": [
+    {
+      "tags": [
+        "tired"
+      ],
+      "at": 1,
+      "audience": {
+        "mode": "following",
+        "extra": 1
+      }
+    }
+  ],
+  "expect": {
+    "tags": [
+      "tired"
+    ],
+    "note": null,
+    "at": 1,
+    "clear_on_leave": false,
+    "audience": {
+      "mode": "following"
+    }
+  }
+}

@@ -13,7 +13,7 @@
 
 use std::path::{Path, PathBuf};
 
-use chorus_core::{api, poll};
+use chorus_core::{api, member_state, poll};
 use serde_json::{Value, json};
 
 fn root() -> PathBuf {
@@ -61,6 +61,21 @@ fn call(f: &str, a: &[Value]) -> Result<String, String> {
                 a[1].as_array().ok_or("votes must be an array")?.iter().filter_map(poll::choices).collect();
             let t = poll::tally(&p, votes.iter().map(Vec::as_slice));
             Ok(poll::tally_payload(&t, a[2].as_str()).to_string())
+        }
+        // D-138 member states, test-only like the poll adapters (fixtures/member_state/README.md)
+        "member_state_parse" => Ok(json!(member_state::parse(&a[0])).to_string()),
+        "member_state_shown" => {
+            let st = member_state::parse(&a[0]).ok_or("no state")?;
+            let since = member_state::since(
+                a[1].as_array()
+                    .ok_or("intervals must be an array")?
+                    .iter()
+                    .map(|i| (i[0].as_i64().unwrap_or(0), i[1].as_i64())),
+            );
+            Ok(json!({"since": since, "shown": member_state::shown_own(&st, since)}).to_string())
+        }
+        "member_state_shared" => {
+            Ok(json!(member_state::parse(&a[0]).map(|st| member_state::shared_part(&st))).to_string())
         }
         "parse_markup" => api::parse_markup(&s(a, 0), &s(a, 1)),
         "to_markup" => api::to_markup(&s(a, 0)),

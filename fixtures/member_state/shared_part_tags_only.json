@@ -1,0 +1,20 @@
+{
+  "description": "D-138: no note, no note key",
+  "fn": "member_state_shared",
+  "args": [
+    {
+      "tags": [
+        "busy"
+      ],
+      "at": 1000000,
+      "audience": {
+        "mode": "friends"
+      }
+    }
+  ],
+  "expect": {
+    "tags": [
+      "busy"
+    ]
+  }
+}

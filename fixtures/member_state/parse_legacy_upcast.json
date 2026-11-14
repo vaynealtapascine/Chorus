@@ -1,0 +1,19 @@
+{
+  "description": "D-138: a legacy {text, at} reads as a note, no tags, not cleared on leave, private",
+  "fn": "member_state_parse",
+  "args": [
+    {
+      "text": " Tired ",
+      "at": 5
+    }
+  ],
+  "expect": {
+    "tags": [],
+    "note": "Tired",
+    "at": 5,
+    "clear_on_leave": false,
+    "audience": {
+      "mode": "private"
+    }
+  }
+}

@@ -533,7 +533,7 @@ closes the window with `reconcile-close` or `POST /admin/reconcile/close`.
 Areas: `hlc`, `time`, `lww`, `set`, `groups_cycle`, `front`, `review`, `text_entities` (`fixtures/text/`, headings: `headings_*`, D-134),
 `speaker_parse`, `feed_query`, `visibility`, `digest`, `poll` (D-081/D-086; test-only helper
 adapters documented in `fixtures/poll/README.md`), `search` (message search: the web's word
-index runs these too, `web/src/lib/search.test.ts`). `ticks` (D-131: `ticks_for` and `ticks_upto`; the web and Android clients call the same core). Rust runs all of them in CI. Any non-Rust
+index runs these too, `web/src/lib/search.test.ts`). `ticks` (D-131: `ticks_for` and `ticks_upto`; the web and Android clients call the same core). `member_state` (D-138/D-159: reading a member's state, clear on leave, the shared part, and `validate_op` for its pref; test-only adapters in `fixtures/member_state/README.md`; the web and Android state parsers run the `parse_*` vectors). Rust runs all of them in CI. Any non-Rust
 reimplementation must run them too.
 
 ### 9.2 Convergence simulator

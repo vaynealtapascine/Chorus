@@ -1,0 +1,8 @@
+{
+  "description": "D-138: null clears the state",
+  "fn": "member_state_parse",
+  "args": [
+    null
+  ],
+  "expect": null
+}

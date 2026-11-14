@@ -98,6 +98,31 @@ impl World {
         v["entries"].as_array().unwrap().iter().map(|e| e["name"].as_str().unwrap().to_string()).collect()
     }
 
+    /// Set (or with `null`, clear) a member's state (D-138) from the system's phone.
+    fn set_state(&mut self, member: &str, value: Value, at: i64) {
+        let id = new_id(at as u64, [self.n.wrapping_add(120); 10]);
+        self.push("pref.set", &id, json!({"device": "", "key": format!("member_status:{member}"), "value": value}), at);
+    }
+
+    /// `follower`'s view of the system: each entry's name and state (`null` when none).
+    fn states_of(&self, follower: &str) -> Vec<(String, Value)> {
+        let v = notifier::follower_view(&self.c, follower, &self.sys).unwrap().unwrap();
+        v["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| (e["name"].as_str().unwrap().to_string(), e.get("state").cloned().unwrap_or(Value::Null)))
+            .collect()
+    }
+
+    fn states(&self) -> Vec<(String, Value)> {
+        self.states_of(&self.friend)
+    }
+
+    fn logged(&self) -> i64 {
+        self.c.query_row("SELECT count(*) FROM follower_front_log", [], |r| r.get(0)).unwrap()
+    }
+
     fn inbox(&self) -> Vec<String> {
         let l = notifier::list(&self.c, &self.friend, 50).unwrap();
         l["items"].as_array().unwrap().iter().map(|i| i["text"].as_str().unwrap().to_string()).collect()
@@ -673,6 +698,8 @@ fn follower_surfaces_only_change_at_reveal_times() {
         let mut matched = 0;
         let mut reveals = 0;
         let mut t = NOW;
+        // D-138: Kai's states as they were set (note → when), each note unique
+        let mut set_at: std::collections::BTreeMap<String, i64> = Default::default();
         for _ in 0..240 {
             t += tick;
             if next() % 8 == 0 {
@@ -686,6 +713,17 @@ fn follower_surfaces_only_change_at_reveal_times() {
                 assert_eq!(surfaces(&w, t), before, "seed {seed}: recording a switch changed a follower surface");
                 history.push((at, names));
             }
+            if next() % 6 == 0 {
+                // at the tick, after any switch in it: server receipt times only move forward
+                let at = t;
+                let note = format!("n{at}");
+                let value = json!({"tags": ["tired"], "note": note, "at": at, "clear_on_leave": next() % 2 == 0,
+                                   "audience": {"mode": "followers"}});
+                let before = surfaces(&w, t);
+                w.set_state(&kai, value, at);
+                assert_eq!(surfaces(&w, t), before, "seed {seed}: setting a state changed a follower surface");
+                set_at.insert(note, at);
+            }
             let before = surfaces(&w, t);
             let p = notifier::process_due(&w.c, t).unwrap();
             let after = surfaces(&w, t);
@@ -696,6 +734,16 @@ fn follower_surfaces_only_change_at_reveal_times() {
             }
             let shown = named(&w);
             let old_enough = t - SETTLE - 60_000;
+            for (name, state) in w.states() {
+                if state.is_null() {
+                    continue;
+                }
+                assert_eq!(name, "Kai", "seed {seed}: a state on {name}");
+                let keys: Vec<&String> = state.as_object().unwrap().keys().collect();
+                assert!(keys.iter().all(|k| *k == "tags" || *k == "note"), "seed {seed}: state carries {keys:?}");
+                let note = state["note"].as_str().unwrap();
+                assert!(set_at[note] <= old_enough, "seed {seed}: at {t} a state set at {} shows early", set_at[note]);
+            }
             let at = (matched..history.len()).find(|&i| history[i].0 <= old_enough && history[i].1 == shown);
             let Some(i) = at else {
                 panic!(
@@ -873,4 +921,176 @@ fn asking_again_soon_after_a_no_goes_nowhere() {
     assert!(mine.op.is_some());
     follows::end(&w.c, &friend, &mine.id, after + minute).unwrap();
     assert!(follows::ask(&w.c, &friend, "@stars", after + 2 * minute).unwrap().op.is_some());
+}
+
+/// D-138: a state's value as the clients write it.
+fn state_value(note: &str, at: i64, clear_on_leave: bool, audience: Value) -> Value {
+    json!({"tags": ["tired"], "note": note, "at": at, "clear_on_leave": clear_on_leave, "audience": audience,
+           "text": format!("Tired · {note}")})
+}
+
+fn kai_with(state: Value) -> Vec<(String, Value)> {
+    vec![("Kai".to_string(), state)]
+}
+
+/// D-138: a state reaches a friend only at a reveal, silently, with tags and note only; the time
+/// shown, the inbox and the history don't move.
+#[test]
+fn a_member_state_shows_to_a_friend_only_at_a_silent_reveal() {
+    let (mut w, kai, _, _) = world();
+    let follow: String = w.c.query_row("SELECT id FROM follow", [], |r| r.get(0)).unwrap();
+    let ceiling = json!({"delay": {"min_s": 60, "max_s": 60}, "time": {"mode": "exact"}, "levels": ["front"],
+                         "share_history": true, "share_stats": true});
+    w.push("follow.set_ceiling", &follow, json!({"ceiling": ceiling}), NOW - 2_000);
+    w.switch(&[&kai], NOW);
+    notifier::process_due(&w.c, NOW + SETTLE + DELAY).unwrap();
+    assert_eq!(w.states(), kai_with(Value::Null));
+    let logged = w.logged();
+
+    let t = NOW + 600_000;
+    w.set_state(&kai, state_value("Typing only", t, false, json!({"mode": "followers"})), t);
+    assert_eq!(w.states(), kai_with(Value::Null), "a state showed when it was set");
+    notifier::process_due(&w.c, t + SETTLE + DELAY - 1).unwrap();
+    assert_eq!(w.states(), kai_with(Value::Null), "a state showed before its reveal");
+    notifier::process_due(&w.c, t + SETTLE + DELAY).unwrap();
+    assert_eq!(w.states(), kai_with(json!({"tags": ["tired"], "note": "Typing only"})));
+
+    let v = notifier::follower_view(&w.c, &w.friend, &w.sys).unwrap().unwrap();
+    assert_eq!(v["since"], NOW, "a state moved the time shown");
+    assert_eq!(w.inbox(), ["Kai is fronting"], "a state pinged");
+    assert_eq!(w.logged(), logged, "a state split the history");
+    let everything = format!("{v} {}", notifier::list(&w.c, &w.friend, 50).unwrap());
+    assert!(!everything.contains(&t.to_string()), "the state's time reached the follower: {everything}");
+    assert!(!v["history"].to_string().contains("Typing"), "a state in the history");
+
+    // cleared: gone at the next reveal, not before
+    let c = t + 900_000;
+    w.set_state(&kai, Value::Null, c);
+    notifier::process_due(&w.c, c + SETTLE + DELAY - 1).unwrap();
+    assert!(!w.states()[0].1.is_null(), "a clear showed before its reveal");
+    notifier::process_due(&w.c, c + SETTLE + DELAY).unwrap();
+    assert_eq!(w.states(), kai_with(Value::Null));
+}
+
+/// D-138: a state set as someone switches in never shows before its own delay, and their arrival
+/// still pings once.
+#[test]
+fn a_state_set_with_a_switch_waits_its_own_delay_and_keeps_the_ping() {
+    let (mut w, kai, _, _) = world();
+    w.switch(&[&kai], NOW);
+    w.set_state(&kai, state_value("Hi", NOW + 5_000, false, json!({"mode": "followers"})), NOW + 5_000);
+    notifier::process_due(&w.c, NOW + SETTLE + DELAY).unwrap();
+    assert!(w.view().is_empty(), "the state's own delay holds the reveal it joined");
+    notifier::process_due(&w.c, NOW + 5_000 + SETTLE + DELAY).unwrap();
+    assert_eq!(w.states(), kai_with(json!({"tags": ["tired"], "note": "Hi"})));
+    assert_eq!(w.inbox(), ["Kai is fronting"]);
+}
+
+/// D-138: clear on leave on an account with named fronts, where Body's effective history says
+/// when Kai's stretch began.
+#[test]
+fn a_state_that_clears_on_leave_follows_named_front_history() {
+    let (mut w, kai, _, _) = world();
+    let body = w.sys.clone();
+    let change = |w: &mut World, ids: &[&str], at: i64| {
+        let entries: Vec<Value> =
+            ids.iter().map(|id| json!({"subject_type": "member", "subject_id": id, "layer_id": "front"})).collect();
+        w.push("front.change", &body, json!({"action": "switch", "entries": entries}), at);
+    };
+    change(&mut w, &[&kai], NOW);
+    let t = NOW + 600_000;
+    w.set_state(&kai, state_value("Back soon", t, true, json!({"mode": "followers"})), t);
+    notifier::process_due(&w.c, t + 3_600_000).unwrap();
+    assert_eq!(w.states(), kai_with(json!({"tags": ["tired"], "note": "Back soon"})));
+    let l = t + 7_200_000;
+    change(&mut w, &[], l);
+    change(&mut w, &[&kai], l + 120_000);
+    notifier::process_due(&w.c, l + 3_600_000).unwrap();
+    assert_eq!(w.states(), kai_with(Value::Null));
+}
+
+/// D-138: a legacy `{text, at}` state is private, so it never reaches a friend.
+#[test]
+fn a_legacy_state_stays_private() {
+    let (mut w, kai, _, _) = world();
+    w.switch(&[&kai], NOW);
+    w.set_state(&kai, json!({"text": "Tired", "at": NOW}), NOW + 1_000);
+    notifier::process_due(&w.c, NOW + 3_600_000).unwrap();
+    assert_eq!(w.states(), kai_with(Value::Null));
+    let v = notifier::follower_view(&w.c, &w.friend, &w.sys).unwrap().unwrap();
+    assert!(!v.to_string().contains("Tired"));
+}
+
+/// D-138: the audience narrows who sees a state: a follower in its bucket does, another doesn't,
+/// and leaving the bucket takes it away at the next (silent) reveal.
+#[test]
+fn a_state_reaches_only_the_followers_in_its_audience() {
+    let (mut w, kai, _, _) = world();
+    let sam = new_id(1, [3; 10]);
+    w.c.execute("INSERT INTO account(id, kind, handle, created_at) VALUES (?1, 'person', 'sam', 0)", [&sam]).unwrap();
+    ingest::grant(&w.c, &sam, &format!("account:{sam}")).unwrap();
+    let (follow, _) = follows::request(&w.c, &sam, "@stars", NOW - 5_000).unwrap();
+    w.push("follow.accept", &follow, json!({}), NOW - 4_000);
+    let ceiling = json!({"delay": {"min_s": 60, "max_s": 60}, "time": {"mode": "exact"}, "levels": ["front"]});
+    w.push("follow.set_ceiling", &follow, json!({"ceiling": ceiling}), NOW - 3_000);
+    let close = new_id(2, [33; 10]);
+    w.push("bucket.set", &close, json!({"name": "Close", "ceiling": {}}), NOW - 2_500);
+    let friend = w.friend.clone();
+    w.push("bucket.assign", &close, json!({"follower_account_id": friend}), NOW - 2_000);
+    w.switch(&[&kai], NOW);
+    let t = NOW + 600_000;
+    w.set_state(&kai, state_value("Close only", t, false, json!({"mode": "buckets", "bucket_ids": [close]})), t);
+    notifier::process_due(&w.c, t + 3_600_000).unwrap();
+    let shared = json!({"tags": ["tired"], "note": "Close only"});
+    assert_eq!(w.states(), kai_with(shared.clone()));
+    assert_eq!(w.states_of(&sam), kai_with(Value::Null), "a follower outside the bucket saw it");
+
+    let u = t + 7_200_000;
+    w.push("bucket.unassign", &close, json!({"follower_account_id": friend}), u);
+    assert_eq!(w.states(), kai_with(shared), "an audience change showed before a reveal");
+    notifier::process_due(&w.c, u + 3_600_000).unwrap();
+    assert_eq!(w.states(), kai_with(Value::Null), "leaving the bucket kept the state");
+    assert_eq!(w.inbox(), ["Kai is fronting"]);
+}
+
+/// D-138: "clear when Kai stops fronting" holds for friends: gone with Kai's entry when Kai is
+/// shown leaving, not back when Kai returns, and gone (silently, the shown time unchanged) after
+/// a leave and return the follower is never shown.
+#[test]
+fn a_state_that_clears_on_leave_clears_for_friends_too() {
+    let (mut w, kai, june, _) = world();
+    w.switch(&[&kai], NOW);
+    let t = NOW + 600_000;
+    w.set_state(&kai, state_value("Back soon", t, true, json!({"mode": "followers"})), t);
+    notifier::process_due(&w.c, t + 3_600_000).unwrap();
+    let shared = json!({"tags": ["tired"], "note": "Back soon"});
+    assert_eq!(w.states(), kai_with(shared.clone()));
+
+    // a leave and return inside one reveal window: the follower never sees Kai go
+    let l = t + 7_200_000;
+    let since = notifier::follower_view(&w.c, &w.friend, &w.sys).unwrap().unwrap()["since"].clone();
+    let logged = w.logged();
+    w.switch(&[], l);
+    w.switch(&[&kai], l + 120_000);
+    notifier::process_due(&w.c, l + 120_000 + SETTLE + DELAY - 1).unwrap();
+    assert_eq!(w.states(), kai_with(shared.clone()), "cleared before the return's delay");
+    notifier::process_due(&w.c, l + 120_000 + SETTLE + DELAY).unwrap();
+    assert_eq!(w.states(), kai_with(Value::Null));
+    let v = notifier::follower_view(&w.c, &w.friend, &w.sys).unwrap().unwrap();
+    assert_eq!(v["since"], since, "the hidden leave moved the time shown");
+    assert_eq!(w.logged(), logged);
+    assert_eq!(w.inbox(), ["Kai is fronting"]);
+
+    // set again, then Kai is shown leaving and coming back
+    let s = l + 3_600_000;
+    w.set_state(&kai, state_value("Back soon", s, true, json!({"mode": "followers"})), s);
+    notifier::process_due(&w.c, s + 3_600_000).unwrap();
+    assert_eq!(w.states(), kai_with(shared));
+    let m = s + 7_200_000;
+    w.switch(&[&june], m);
+    notifier::process_due(&w.c, m + 3_600_000).unwrap();
+    assert_eq!(w.states(), vec![("June".to_string(), Value::Null)]);
+    w.switch(&[&kai], m + 7_200_000);
+    notifier::process_due(&w.c, m + 7_200_000 + 3_600_000).unwrap();
+    assert_eq!(w.states(), kai_with(Value::Null), "the state came back with Kai");
 }

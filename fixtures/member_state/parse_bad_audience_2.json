@@ -1,0 +1,27 @@
+{
+  "description": "D-138: a malformed audience is private (buckets without a list)",
+  "fn": "member_state_parse",
+  "args": [
+    {
+      "tags": [
+        "tired"
+      ],
+      "at": 1,
+      "audience": {
+        "mode": "buckets",
+        "bucket_ids": "b1"
+      }
+    }
+  ],
+  "expect": {
+    "tags": [
+      "tired"
+    ],
+    "note": null,
+    "at": 1,
+    "clear_on_leave": false,
+    "audience": {
+      "mode": "private"
+    }
+  }
+}

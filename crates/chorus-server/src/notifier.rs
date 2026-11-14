@@ -18,6 +18,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use chorus_core::front::{Notify, SubjectType};
 use chorus_core::front_projection::Current;
 use chorus_core::front_system::Presence;
+use chorus_core::member_state::{self, Shared};
 use chorus_core::notify::{
     self, Audience, Ceiling, Diff, Draws, MemberPolicy, Pending, Precision, Prefs, Route, RouteIn, ScheduleIn, Seen,
 };
@@ -35,10 +36,18 @@ pub struct Shown {
     pub glyph: Option<String>,
     #[serde(default)]
     pub avatar_blob: Option<String>,
+    /// The member's state (D-138): tags and note, only when this follower is in its audience.
+    /// Never on a "Someone" entry, never in the history log.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state: Option<Shared>,
 }
 
 /// subject id → (name, colour, glyph), snapshotted when a change is queued.
 type Names = BTreeMap<String, (String, Option<String>, Option<String>)>;
+
+/// member id → what one follower may see of that member's state (D-138), snapshotted when a
+/// change is queued, like the names.
+type States = BTreeMap<String, Shared>;
 
 /// Where a queued switch notification is (`Queued.state`, stored in the row's JSON payload under
 /// these names, so rows written before this type existed read the same).
@@ -90,6 +99,21 @@ struct Queued {
     front_name: Option<String>,
     #[serde(default)]
     layer_names: BTreeMap<String, String>,
+    /// Members' states this follower may see (D-138), refreshed while the row is pending.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    states: States,
+    /// Queued because only states changed: the reveal updates the shown entries and nothing else
+    /// (no ping, no new history row, the same `since`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    state_only: bool,
+    /// The earliest these states may show: settle + delay after the newest state difference was
+    /// accepted. A later reveal that carries the same states keeps it.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    states_due: i64,
+}
+
+fn is_zero(v: &i64) -> bool {
+    *v == 0
 }
 
 fn json_col<T: for<'de> Deserialize<'de> + Default>(s: Option<String>) -> T {
@@ -285,8 +309,13 @@ fn names_for(conn: &Connection, account: &str, seen: &[&Seen]) -> anyhow::Result
     Ok(out)
 }
 
-/// The revealed view for (follower, target): `(view, displayed_since)`.
-fn revealed(conn: &Connection, follower: &str, target: &str, front: &str) -> anyhow::Result<(Vec<Seen>, Option<i64>)> {
+/// The revealed view for (follower, target): `(view, states shown with it, displayed_since)`.
+fn revealed(
+    conn: &Connection,
+    follower: &str,
+    target: &str,
+    front: &str,
+) -> anyhow::Result<(Vec<Seen>, States, Option<i64>)> {
     let row: Option<(String, Option<i64>)> = conn
         .query_row(
             "SELECT entries, displayed_since FROM follower_front_view
@@ -298,10 +327,141 @@ fn revealed(conn: &Connection, follower: &str, target: &str, front: &str) -> any
     Ok(match row {
         Some((entries, since)) => {
             let shown: Vec<Shown> = serde_json::from_str(&entries).unwrap_or_default();
-            (shown.into_iter().map(|s| s.seen).collect(), since)
+            let states = shown
+                .iter()
+                .filter_map(|s| match (&s.seen, &s.state) {
+                    (Seen::Subject { subject_id, .. }, Some(st)) => Some((subject_id.clone(), st.clone())),
+                    _ => None,
+                })
+                .collect();
+            (shown.into_iter().map(|s| s.seen).collect(), states, since)
         }
-        None => (Vec::new(), None),
+        None => (Vec::new(), States::new(), None),
     })
+}
+
+/// The account's member states that may reach someone (D-138): parsed, with a non-private
+/// audience. Read once per front change.
+fn member_states(conn: &Connection, account: &str) -> anyhow::Result<BTreeMap<String, member_state::State>> {
+    let mut st = conn.prepare_cached(
+        "SELECT key, value FROM pref WHERE account_id = ?1 AND device_id = ''
+         AND key >= 'member_status:' AND key < 'member_status;'",
+    )?;
+    let rows = st.query_map([account], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+    let mut out = BTreeMap::new();
+    for r in rows {
+        let (key, value) = r?;
+        let (Some(member), Ok(value)) = (member_state::member_of(&key), serde_json::from_str::<Value>(&value)) else {
+            continue;
+        };
+        if let Some(s) = member_state::parse(&value).filter(|s| s.audience["mode"] != "private") {
+            out.insert(member.to_string(), s);
+        }
+    }
+    Ok(out)
+}
+
+/// When each subject's current stretch in `front` began ('' = Body), as Fronting computes it
+/// (`member_state::since`): open intervals of the front's effective history, or the legacy table.
+fn front_since(
+    conn: &Connection,
+    account: &str,
+    front: &str,
+    configured: bool,
+) -> anyhow::Result<BTreeMap<String, i64>> {
+    let mut intervals: Vec<(String, i64, Option<i64>)> = Vec::new();
+    if configured {
+        let ops = crate::fronts::account_ops(conn, account)?;
+        let selected = if front.is_empty() { account } else { front };
+        let history = chorus_core::front_effective::fold(account, selected, &ops);
+        intervals.extend(history.intervals.into_iter().map(|i| (i.subject_id, i.start_at, i.end_at)));
+    } else {
+        let mut st = conn.prepare_cached(
+            "SELECT subject_id, start_at, end_at FROM front_interval WHERE account_id = ?1 AND end_at IS NULL",
+        )?;
+        for r in st.query_map([account], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))? {
+            intervals.push(r?);
+        }
+    }
+    let mut out = BTreeMap::new();
+    for (id, start, end) in intervals {
+        if let Some(s) = member_state::since([(start, end)]) {
+            out.entry(id).and_modify(|x: &mut i64| *x = (*x).min(s)).or_insert(s);
+        }
+    }
+    Ok(out)
+}
+
+/// What the account's member states show, for the follower front views of one change.
+struct StateCtx<'a> {
+    states: BTreeMap<String, member_state::State>,
+    /// front id → member → since; filled per front only when a state clears on leave
+    since: BTreeMap<String, BTreeMap<String, i64>>,
+    account: &'a str,
+    configured: bool,
+}
+
+impl<'a> StateCtx<'a> {
+    fn load(conn: &Connection, account: &'a str, configured: bool) -> anyhow::Result<Self> {
+        Ok(StateCtx { states: member_states(conn, account)?, since: BTreeMap::new(), account, configured })
+    }
+
+    /// Every member state `viewer` may see on `front`: in its audience, and still showing. One
+    /// that clears on leave is gone once the member left the front, or left and came back after
+    /// it was set (the own view's rule, `member_state::shown_own`); with no stretch to go by it
+    /// is hidden, failing closed. `state:<id>` tags become the custom state's name.
+    fn visible(&mut self, conn: &Connection, front: &str, viewer: &crate::profiles::Viewer) -> anyhow::Result<States> {
+        let mut out = States::new();
+        for (member, s) in &self.states {
+            if !viewer.allows(&s.audience) {
+                continue;
+            }
+            if s.clear_on_leave {
+                if !self.since.contains_key(front) {
+                    let since = front_since(conn, self.account, front, self.configured)?;
+                    self.since.insert(front.to_string(), since);
+                }
+                let since = self.since.get(front).and_then(|m| m.get(member)).copied();
+                if since.is_none() || !member_state::shown_own(s, since) {
+                    continue;
+                }
+            }
+            let mut shared = member_state::shared_part(s);
+            let mut tags = Vec::new();
+            for t in shared.tags {
+                match t.strip_prefix("state:") {
+                    Some(id) => tags.extend(custom_state_name(conn, self.account, id)?),
+                    None => tags.push(t),
+                }
+            }
+            shared.tags = tags;
+            if !shared.tags.is_empty() || shared.note.is_some() {
+                out.insert(member.clone(), shared);
+            }
+        }
+        Ok(out)
+    }
+}
+
+fn custom_state_name(conn: &Connection, account: &str, id: &str) -> anyhow::Result<Option<String>> {
+    Ok(conn
+        .prepare_cached("SELECT name FROM custom_state WHERE id = ?1 AND account_id = ?2 AND deleted_at IS NULL")?
+        .query_row(params![id, account], |r| r.get::<_, Option<String>>(0))
+        .optional()?
+        .flatten()
+        .filter(|n| !n.trim().is_empty()))
+}
+
+/// The states of the members shown in `view`.
+fn states_in(all: &States, view: &[Seen]) -> States {
+    view.iter()
+        .filter_map(|s| match s {
+            Seen::Subject { subject_type: SubjectType::Member, subject_id, .. } => {
+                all.get(subject_id).map(|st| (subject_id.clone(), st.clone()))
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 /// Pending (not yet revealed) rows for (follower, target), oldest first.
@@ -332,11 +492,11 @@ fn draws() -> Draws {
 
 /// Queue follower notifications after a front change of `account` (inside the ingest tx).
 pub fn on_front_change(conn: &Connection, account: &str, now: i64) -> anyhow::Result<()> {
-    queue_front_change(conn, account, None, None, now)
+    queue_front_change(conn, account, None, None, false, now)
 }
 
 pub fn on_front_op(conn: &Connection, account: &str, op: &chorus_core::op::Op, now: i64) -> anyhow::Result<()> {
-    queue_front_change(conn, account, Some(op), None, now)
+    queue_front_change(conn, account, Some(op), None, false, now)
 }
 
 /// Does this op change who hears what about the account's front, and when (NOTIFICATIONS §3,
@@ -374,7 +534,10 @@ pub fn on_policy_change(conn: &Connection, account: &str, now: i64) -> anyhow::R
             |r| r.get(0),
         )
         .optional()?;
-    let Some(q) = newest.and_then(|p| serde_json::from_str::<Queued>(&p).ok()) else { return Ok(()) };
+    let Some(q) = newest.and_then(|p| serde_json::from_str::<Queued>(&p).ok()) else {
+        // nothing pending: only states can change now (an audience narrowed or widened, D-138)
+        return on_audience_change(conn, account, now);
+    };
     conn.execute(
         &format!(
             "UPDATE notification SET cancelled_at = ?2 WHERE kind = 'switch' AND delivered_at IS NULL AND cancelled_at IS NULL
@@ -383,7 +546,7 @@ pub fn on_policy_change(conn: &Connection, account: &str, now: i64) -> anyhow::R
         params![account, now],
     )?;
     let at = Latest { id: None, occurred_at: q.occurred_at, tz_offset_min: q.tz_offset_min, notify: q.notify };
-    queue_front_change(conn, account, None, Some(at), now)
+    queue_front_change(conn, account, None, Some(at), false, now)
 }
 
 fn queue_front_change(
@@ -391,6 +554,7 @@ fn queue_front_change(
     account: &str,
     cause: Option<&chorus_core::op::Op>,
     replan: Option<Latest>,
+    only_states: bool,
     now: i64,
 ) -> anyhow::Result<()> {
     let follows = active_follows(conn, account)?;
@@ -418,17 +582,21 @@ fn queue_front_change(
     };
     let policies = policies(conn, account)?;
     let groups = groups(conn, account)?;
+    let mut states = StateCtx::load(conn, account, current.is_some())?;
     let mut presence: BTreeMap<String, Vec<Presence>> = BTreeMap::new();
     for f in follows {
         let (ceiling, buckets) = ceiling_for(conn, account, &f)?;
         let granted = granted_fronts(account, current.as_ref(), &ceiling);
         revoke_ungranted(conn, &f.follower, account, &granted, now)?;
+        let viewer = crate::profiles::Viewer::of(conn, &f.follower, account)?;
         for (front_id, front_name) in granted {
             if !presence.contains_key(&front_id) {
                 let p = front_presence(conn, account, current.as_ref(), &front_id)?;
                 presence.insert(front_id.clone(), p);
             }
-            let ctx = FrontCtx { id: front_id, name: front_name, current: current.as_ref() };
+            let visible = states.visible(conn, &front_id, &viewer)?;
+            let ctx =
+                FrontCtx { id: front_id, name: front_name, current: current.as_ref(), states: visible, only_states };
             let audience = Audience { ceiling: &ceiling, follower_buckets: &buckets, policies: &policies };
             queue_for_front(conn, account, &f, &audience, &groups, &presence[&ctx.id], &ctx, latest.as_ref(), now)?;
         }
@@ -440,6 +608,32 @@ struct FrontCtx<'a> {
     id: String,
     name: Option<String>,
     current: Option<&'a Current>,
+    /// the member states this follower may see on this front now (D-138)
+    states: States,
+    /// only states may change, not who is shown ([`on_audience_change`])
+    only_states: bool,
+}
+
+/// Does this op change a member's state (D-138)? A state reaches followers only through their
+/// front view, so a change queues a silent reveal of the current front.
+pub fn changes_state(o: &chorus_core::op::Op) -> bool {
+    o.kind == "pref.set"
+        && o.payload.get("key").and_then(Value::as_str).is_some_and(|k| k.starts_with(member_state::KEY_PREFIX))
+        && o.payload.get("device").and_then(Value::as_str).unwrap_or("").is_empty()
+}
+
+/// A member's state changed: followers who may see it learn it at the next reveal. A reveal
+/// already pending carries the new state when it is due; otherwise a silent, state-only reveal is
+/// queued with the usual delay, so a state set as someone switches in never shows before them.
+pub fn on_state_change(conn: &Connection, account: &str, now: i64) -> anyhow::Result<()> {
+    queue_front_change(conn, account, None, None, false, now)
+}
+
+/// Who is in a state's audience may have changed (a bucket's followers, a follow either way, the
+/// account's sharing policy): the states each follower may see are worked out again and reach
+/// them through a silent reveal, as a state change does. Who is shown doesn't change here.
+pub fn on_audience_change(conn: &Connection, account: &str, now: i64) -> anyhow::Result<()> {
+    queue_front_change(conn, account, None, None, true, now)
 }
 
 /// A revoked grant (or a deleted front) stops revealing: its pending reveals are cancelled and its
@@ -481,27 +675,49 @@ fn queue_for_front(
 ) -> anyhow::Result<()> {
     let (ceiling, policies) = (audience.ceiling, audience.policies);
     {
-        let after = notify::view_layers(front, audience);
-        let (shown, _) = revealed(conn, &f.follower, account, &ctx.id)?;
-        let queued = pending(conn, &f.follower, account, &ctx.id)?;
-        let base = queued.last().map(|(_, _, q)| q.view.clone()).unwrap_or_else(|| shown.clone());
-        if after == base {
+        let (shown, shown_states, _) = revealed(conn, &f.follower, account, &ctx.id)?;
+        let mut queued = pending(conn, &f.follower, account, &ctx.id)?;
+        let (base, base_states) = queued
+            .last()
+            .map(|(_, _, q)| (q.view.clone(), q.states.clone()))
+            .unwrap_or_else(|| (shown.clone(), shown_states.clone()));
+        // an audience change looks at states only: who is shown changes at the next switch, as for
+        // any other policy change with nothing pending
+        let after = if ctx.only_states { base.clone() } else { notify::view_layers(front, audience) };
+        let after_states = states_in(&ctx.states, &after);
+        if after == base && after_states == base_states {
             return Ok(());
         }
-        if after == shown {
+        // D-138: a state difference is never shown sooner than settle + delay after it happened,
+        // even when it joins a reveal already planned (a state that clears on leave can stand for
+        // a leave and return the follower is never shown)
+        let states_changed = after_states != base_states;
+        // who is shown is what the follower already sees: only a state differs, if anything
+        let state_only = after == shown;
+        if state_only {
             // e.g. an undo: back to what the follower already knows — nothing left to tell
             for (id, _, _) in &queued {
                 conn.execute("UPDATE notification SET cancelled_at = ?2 WHERE id = ?1", params![id, now])?;
             }
-            return Ok(());
+            if after_states == shown_states {
+                return Ok(());
+            }
+            // a silent reveal of states only, timed from now
+            queued.clear();
         }
         // collapse: the survivor replaces everything pending, so it is described relative to what
         // the follower actually knows; sequence: relative to the previous queued item
         let since = if ceiling.stacking == notify::Stacking::Collapse { &shown } else { &base };
         let Diff { arrived, left } = notify::diff(since, &after, audience, &f.prefs, groups);
         let d = draws();
-        let (occurred_at, tz, how) =
-            latest.map_or((now, 0, Notify::Default), |l| (l.occurred_at, l.tz_offset_min, l.notify));
+        // Only states differ from the newest pending reveal: the new one stands in for it, with its
+        // switch time and ping, and is due no sooner than it was.
+        let inherit = (after == base).then(|| queued.last()).flatten();
+        let (occurred_at, tz, how) = match inherit {
+            _ if state_only => (now, latest.map_or(0, |l| l.tz_offset_min), Notify::Silent),
+            Some((_, _, q)) => (q.occurred_at, q.tz_offset_min, q.notify),
+            None => latest.map_or((now, 0, Notify::Default), |l| (l.occurred_at, l.tz_offset_min, l.notify)),
+        };
         let member_extra: Vec<_> = arrived
             .iter()
             .filter_map(|s| match s {
@@ -522,6 +738,23 @@ fn queue_for_front(
                 draws: d,
             },
         );
+        let mut due = due.max(inherit.map_or(i64::MIN, |(_, due, _)| *due));
+        // the same states as the newest pending reveal: they still may not show before it allowed
+        let mut states_due = if states_changed { 0 } else { queued.last().map_or(0, |(_, _, q)| q.states_due) };
+        if states_changed {
+            states_due = notify::due_at(
+                ceiling,
+                &ScheduleIn {
+                    occurred_at: now,
+                    accepted_at: now,
+                    notify: Notify::Default,
+                    settle_ms: notify::DEFAULT_SETTLE_MS,
+                    member_extra: &[],
+                    draws: d,
+                },
+            );
+        }
+        due = due.max(states_due);
         let pend: Vec<Pending> = queued.iter().map(|(id, due, _)| Pending { id: id.clone(), due_at: *due }).collect();
         let (cancel, due) = notify::supersede(ceiling.stacking, &pend, due);
         let id = chorus_core::id::new_id(now as u64, rand::random());
@@ -557,6 +790,10 @@ fn queue_for_front(
             front_id: ctx.id.clone(),
             front_name: ctx.name.clone(),
             layer_names,
+            states: after_states,
+            // the reveal checks that who is shown is still the same before changing states only
+            state_only: state_only || inherit.is_some(),
+            states_due,
         };
         conn.execute(
             "INSERT INTO notification (id, recipient_account_id, kind, source_op_id, payload, created_at, due_at)
@@ -690,7 +927,7 @@ pub fn process_due(conn: &Connection, now: i64) -> anyhow::Result<Processed> {
         }
         if q.state == QueueState::Pending {
             // §5: the follower view changes here and only here
-            let (_, prev_since) = revealed(conn, &follower, &q.target_account_id, &q.front_id)?;
+            let (prev_view, _, prev_since) = revealed(conn, &follower, &q.target_account_id, &q.front_id)?;
             let shown_since =
                 notify::displayed(q.occurred_at, now, ceiling.time, q.tz_offset_min, prev_since, q.draws.jitter);
             let shown: Vec<Shown> = q
@@ -712,9 +949,30 @@ pub fn process_due(conn: &Connection, now: i64) -> anyhow::Result<Processed> {
                             .flatten(),
                         _ => None,
                     };
-                    Ok(Shown { seen: s.clone(), name, color, glyph, avatar_blob })
+                    let state = match s {
+                        Seen::Subject { subject_type: SubjectType::Member, subject_id, .. } => {
+                            q.states.get(subject_id).cloned()
+                        }
+                        _ => None,
+                    };
+                    Ok(Shown { seen: s.clone(), name, color, glyph, avatar_blob, state })
                 })
                 .collect::<anyhow::Result<_>>()?;
+            if q.state_only && prev_view == q.view && !q.view.is_empty() {
+                // D-138: only states changed. The entries change; the time shown, the history log
+                // and the inbox don't.
+                conn.execute(
+                    "UPDATE follower_front_view SET entries = ?4, revealed_at = ?5
+                     WHERE follower_account_id = ?1 AND target_account_id = ?2 AND front_id = ?3",
+                    params![follower, q.target_account_id, q.front_id, serde_json::to_string(&shown)?, now],
+                )?;
+                q.state = QueueState::Revealed;
+                conn.execute(
+                    "UPDATE notification SET cancelled_at = ?2, payload = ?3 WHERE id = ?1",
+                    params![id, now, serde_json::to_string(&q)?],
+                )?;
+                continue;
+            }
             conn.execute(
                 "INSERT INTO follower_front_view
                    (follower_account_id, target_account_id, front_id, front_name, entries, displayed_since, revealed_at)
@@ -734,7 +992,9 @@ pub fn process_due(conn: &Connection, now: i64) -> anyhow::Result<Processed> {
             )?;
             // …and the history/stats log grows here and only here (§5 rule 4); avatars stay out,
             // since blob access follows the *current* view
-            let logged: Vec<Shown> = shown.iter().cloned().map(|s| Shown { avatar_blob: None, ..s }).collect();
+            // and states (D-138) stay out too: history is who was shown, not how they were
+            let logged: Vec<Shown> =
+                shown.iter().cloned().map(|s| Shown { avatar_blob: None, state: None, ..s }).collect();
             conn.execute(
                 "INSERT INTO follower_front_log (follower_account_id, target_account_id, front_id, revealed_at, displayed, entries)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6)",

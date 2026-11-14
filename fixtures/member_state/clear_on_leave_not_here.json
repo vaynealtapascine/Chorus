@@ -1,0 +1,23 @@
+{
+  "description": "D-138: not in the front (no open interval): the own view still shows it",
+  "fn": "member_state_shown",
+  "args": [
+    {
+      "tags": [
+        "tired"
+      ],
+      "at": 1000000,
+      "clear_on_leave": true
+    },
+    [
+      [
+        991000,
+        1005000
+      ]
+    ]
+  ],
+  "expect": {
+    "since": null,
+    "shown": true
+  }
+}

@@ -353,7 +353,13 @@ Implemented so far (`api_data.rs`, `api_reads.rs`; sessions or API tokens):
   `stats: {days, members: [{name, share_pct}]}` when the ceiling has `share_history` or
   `share_stats` (NOTIFICATIONS §3). When the ceiling grants additional fronts (D-084), the view
   adds `fronts: [{id, name, entries, since, revealed_at}]` with only revealed states of those
-  fronts, under the name each had when revealed; `history`/`stats` stay Body's.
+  fronts, under the name each had when revealed; `history`/`stats` stay Body's. Each entry is
+  `{t, subject_type, subject_id, level, is_primary, name, color, glyph, avatar_blob}` (`t: "someone"`
+  entries have no subject and are named "Someone"); a member's entry also carries
+  `state: {tags, note?}` when that member's state (D-138, D-159) reaches you: you are in its
+  audience, it hasn't cleared on leave, and it was revealed with the front. `tags` are built-in
+  keys (`tired`, `nonverbal`, `busy`, `low_spoons`, `needs_quiet`, `out_and_about`), the system's
+  own words, or a custom state's name; never a time or an id. History items never carry a state.
 - `/front/intervals` also takes `subject` (an id) and `level`.
 - **Shared spaces and DMs** (M6.2, `spaces.rs`, signed-in devices only):
   - `GET /spaces` returns your spaces with the accounts in each (id, handle, display_name, kind,

@@ -1,0 +1,44 @@
+{
+  "description": "D-138: at most 8 tags",
+  "fn": "validate_op",
+  "args": [
+    {
+      "id": "0192f8c2-0000-7000-8000-000000000104",
+      "kind": "pref.set",
+      "v": 1,
+      "scope": "account:0192f8c2-0000-7000-8000-0000000000a1",
+      "hlc": "0000000003e8-0000-00000104",
+      "device_at": 1000,
+      "payload": {
+        "device": "",
+        "key": "member_status:m1",
+        "value": {
+          "tags": [
+            "a",
+            "b",
+            "c",
+            "d",
+            "e",
+            "f",
+            "g",
+            "h",
+            "i"
+          ],
+          "note": "Typing only",
+          "at": 1000000,
+          "clear_on_leave": true,
+          "audience": {
+            "mode": "buckets",
+            "bucket_ids": [
+              "b1"
+            ]
+          },
+          "text": "Tired · Blurry · Typing only"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "error": true
+  }
+}

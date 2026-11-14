@@ -1,0 +1,23 @@
+{
+  "description": "D-138: a stretch that began up to a minute after the state still counts as the same one",
+  "fn": "member_state_shown",
+  "args": [
+    {
+      "tags": [
+        "tired"
+      ],
+      "at": 1000000,
+      "clear_on_leave": true
+    },
+    [
+      [
+        1060000,
+        null
+      ]
+    ]
+  ],
+  "expect": {
+    "since": 1060000,
+    "shown": true
+  }
+}
