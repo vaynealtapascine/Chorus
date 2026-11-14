@@ -61,7 +61,12 @@ impl<'a> CurrentView<'a> {
         if self.cutoff(&channel)?.is_some_and(|t| at <= t) {
             return Ok(false);
         }
-        Ok(self.audience(&owner, visibility.as_deref()))
+        if !self.audience(&owner, visibility.as_deref()) {
+            return Ok(false);
+        }
+        // history from before the account joined (D-133)
+        let sql = format!("SELECT {} FROM message m WHERE m.id = ?1", crate::visibility::history_sql("?2", "m"));
+        Ok(self.conn.prepare_cached(&sql)?.query_row(params![id, self.p.account_id], |r| r.get::<_, bool>(0))?)
     }
     fn cutoff(&mut self, channel: &str) -> Result<Option<i64>, DataError> {
         if let Some(cutoff) = self.cutoffs.get(channel) {
@@ -265,8 +270,9 @@ impl<'a> CurrentView<'a> {
         let sql = format!(
             "SELECT m.id,m.account_id,m.visibility FROM message m
              WHERE m.channel_id=?1 AND (m.occurred_at,m.id){op}(?2,?3) AND m.deleted_at IS NULL
-               AND (?4=0 OR m.account_id=?5) AND (?6 IS NULL OR m.occurred_at>?6)
-             ORDER BY m.occurred_at {direction},m.id {direction}"
+               AND (?4=0 OR m.account_id=?5) AND (?6 IS NULL OR m.occurred_at>?6) AND {history}
+             ORDER BY m.occurred_at {direction},m.id {direction}",
+            history = crate::visibility::history_sql("?5", "m"),
         );
         let mut st = self.conn.prepare_cached(&sql)?;
         let mut rows = st.query(params![
@@ -304,12 +310,14 @@ pub fn message_sql(account: &str, channels: &str, front: &str, cutoffs: &str, to
         r#"m.deleted_at IS NULL AND m.channel_id IN (SELECT value FROM json_each({channels}))
       AND ({token}=0 OR m.account_id={account})
       AND NOT EXISTS(SELECT 1 FROM json_each({cutoffs}) h WHERE h.key=m.channel_id AND m.occurred_at<=h.value)
+      AND {history}
       AND CASE WHEN m.visibility IS NULL THEN 1 WHEN NOT json_valid(m.visibility) THEN 0 ELSE
         CASE json_extract(m.visibility,'$.mode') WHEN 'all' THEN 1
           WHEN 'system_only' THEN m.account_id={account}
           WHEN 'members' THEN CASE WHEN json_array_length({front})=0 THEN 0 ELSE
             m.account_id={account} AND json_type(m.visibility,'$.member_ids')='array'
             AND EXISTS(SELECT 1 FROM json_each(m.visibility,'$.member_ids') a WHERE a.type='text' AND a.value IN (SELECT value FROM json_each({front}))) END
-          ELSE 0 END END"#
+          ELSE 0 END END"#,
+        history = crate::visibility::history_sql(account, "m"),
     )
 }

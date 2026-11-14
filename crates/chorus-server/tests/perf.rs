@@ -287,3 +287,63 @@ fn remove_db(path: &std::path::Path) {
         let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
     }
 }
+
+/// D-133's history rule joins every visibility check (`visibility::history_sql`): a late joiner's
+/// catch-up digest over a busy shared space must stay inside the reconnect budget (SPEC §9: a
+/// week offline fully synced ≤ 10 s), and a page of messages from before joining must stay quick.
+/// `CHORUS_PERF_MSGS` sets the number of messages (default 100 000).
+#[test]
+#[ignore]
+fn history_rule_budget() {
+    use chorus_server::{api_data::Principal, messages, visibility};
+    let total: i64 = std::env::var("CHORUS_PERF_MSGS").ok().and_then(|s| s.parse().ok()).unwrap_or(100_000);
+    let mut c = db::open_memory().unwrap();
+    db::migrate(&mut c).unwrap();
+    let tx = c.transaction().unwrap();
+    tx.execute_batch(
+        "INSERT INTO space(id,kind,owner_account_id,created_at) VALUES ('s','shared','a',0);
+         INSERT INTO channel(id,space_id,kind,created_at) VALUES ('c','s','text',0);
+         INSERT INTO scope_access(account_id,scope) VALUES ('a','space:s'),('b','space:s');",
+    )
+    .unwrap();
+    tx.execute(
+        "INSERT INTO space_member(space_id,account_id,role,joined_hlc,joined_at) VALUES ('s','a','member','1',0),('s','b','member','1',?1)",
+        [total / 2],
+    )
+    .unwrap();
+    for i in 0..total {
+        let id = format!("m{i:08}");
+        tx.execute(
+            "INSERT INTO message(id,channel_id,account_id,occurred_at,received_at,text) VALUES (?1,'c','a',?2,?2,'x')",
+            rusqlite::params![id, i],
+        )
+        .unwrap();
+        tx.execute(
+            "INSERT INTO op(id,scope,kind,entity_id,payload,hlc,account_id,device_id,occurred_at,device_at,tz_offset_min,received_at)
+             VALUES (?1,'space:s','message.send',?1,'{\"channel_id\":\"c\"}','0','a','d',?2,?2,0,?2)",
+            rusqlite::params![id, i],
+        )
+        .unwrap();
+    }
+    tx.commit().unwrap();
+    for (label, rule) in [("history allowed", "[]"), ("history denied", "[\"history\"]")] {
+        c.execute(
+            "INSERT OR REPLACE INTO space_permission(space_id,target_type,target_id,allow,deny,hlc) VALUES ('s','role','everyone','[]',?1,'1')",
+            [rule],
+        )
+        .unwrap();
+        let t = Instant::now();
+        let d = visibility::visible_digest(&c, "b", "space:s").unwrap();
+        let digest = t.elapsed().as_secs_f64();
+        let t = Instant::now();
+        let page = messages::Page { before: Some(total / 2), ..Default::default() };
+        messages::list(&c, &Principal::owner("b"), "c", &page).unwrap();
+        let back = t.elapsed().as_secs_f64();
+        println!(
+            "{label}: digest of {total} ops {digest:.2} s ({} visible); a page from before joining {:.0} ms",
+            d.count,
+            back * 1000.0
+        );
+        assert!(digest <= 10.0, "SPEC §9: a late joiner's catch-up digest within the reconnect budget");
+    }
+}

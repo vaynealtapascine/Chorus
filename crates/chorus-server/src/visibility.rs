@@ -22,20 +22,60 @@ pub fn is_public(value: Option<&Value>) -> bool {
 }
 
 /// A message every account that may view its channel may see (not a private aside), for the
-/// account in the SQL expression `account` (e.g. `?2`): public, and the channel's `view`
-/// permission (perms.rs). Readers add "or it's their own".
+/// account in the SQL expression `account` (e.g. `?2`): public, the channel's `view` permission
+/// (perms.rs), and history (D-133, [`history_sql`]) for it and, in a thread, its parent. Readers
+/// add "or it's their own".
 pub fn visible_message_sql(account: &str) -> String {
-    format!("({PUBLIC_MESSAGE_SQL} AND {})", crate::perms::can_sql(account, "m.channel_id", "view"))
+    format!(
+        "({PUBLIC_MESSAGE_SQL} AND {} AND {} AND NOT EXISTS (SELECT 1 FROM channel htc JOIN message hpm
+             ON hpm.id = htc.parent_message_id WHERE htc.id = m.channel_id AND htc.kind = 'thread' AND NOT {}))",
+        crate::perms::can_sql(account, "m.channel_id", "view"),
+        history_sql(account, "m"),
+        history_sql(account, "hpm"),
+    )
+}
+
+/// SQL: the space a channel (an SQL expression) is in; a thread with no `space_id` of its own is
+/// in its parent message's channel's space.
+fn space_of_channel_sql(channel: &str) -> String {
+    format!(
+        "(SELECT coalesce(hc.space_id, (SELECT hpc.space_id FROM message hp JOIN channel hpc ON hpc.id = hp.channel_id
+                                         WHERE hp.id = hc.parent_message_id))
+          FROM channel hc WHERE hc.id = {channel})"
+    )
+}
+
+/// History before joining (D-133): may `account` (SQL) read the message row `m` (an alias) by the
+/// `history` rule? Its own, any message for an account that isn't a present member (a guest's
+/// channel override already decides), one the server received at or after the account's current
+/// join (`space_member.joined_at`; unknown = never, failing closed), or the `history` permission.
+pub fn history_sql(account: &str, m: &str) -> String {
+    let space = space_of_channel_sql(&format!("{m}.channel_id"));
+    format!(
+        "({m}.account_id = {account}
+          OR coalesce({m}.received_at, 0) >= coalesce((SELECT coalesce(hsm.joined_at, 9223372036854775807)
+               FROM space_member hsm WHERE hsm.space_id = {space} AND hsm.account_id = {account} AND hsm.is_present), -1)
+          OR {})",
+        crate::perms::can_space_sql(account, &space, "history")
+    )
 }
 
 /// A channel the account may view that isn't a thread under a message it can't see (a thread
-/// whose parent hasn't arrived yet stays hidden until it does). `c` is the channel.
+/// whose parent hasn't arrived yet stays hidden until it does, and one under a message from before
+/// the account joined stays hidden without `history`). `c` is the channel.
 pub(crate) fn visible_channel_sql(account: &str) -> String {
     format!(
         "({} AND NOT (c.kind = 'thread' AND c.parent_message_id IS NOT NULL
-               AND NOT EXISTS (SELECT 1 FROM message m WHERE m.id = c.parent_message_id AND {PUBLIC_MESSAGE_SQL})))",
-        crate::perms::can_sql(account, "c.id", "view")
+               AND NOT EXISTS (SELECT 1 FROM message m WHERE m.id = c.parent_message_id AND {PUBLIC_MESSAGE_SQL}
+                               AND {})))",
+        crate::perms::can_sql(account, "c.id", "view"),
+        history_sql(account, "m"),
     )
+}
+
+/// The ids among `ids` of messages `account` may not read by the history rule alone.
+fn history_hidden_sql() -> String {
+    format!("SELECT m.id FROM message m WHERE m.id IN ({{ids}}) AND NOT {}", history_sql("?1", "m"))
 }
 
 fn visible_attachment_sql(account: &str) -> String {
@@ -75,14 +115,21 @@ fn message_accessible(conn: &Connection, author: &str, id: &str) -> rusqlite::Re
     if !own_or_public(owner.as_deref(), visibility.as_deref(), author) {
         return Ok(false);
     }
+    // nor one from before the author joined, without `history` (D-133): no reacting to, replying
+    // to, forwarding or threading under what the account can't read
+    let sql = format!("SELECT {} FROM message m WHERE m.id = ?1", history_sql("?2", "m"));
+    if !conn.prepare_cached(&sql)?.query_row(params![id, author], |r| r.get::<_, bool>(0))? {
+        return Ok(false);
+    }
     if let Some(parent) = thread_parent {
         let parent_row: Option<(Option<String>, Option<String>)> = conn
-            .query_row("SELECT account_id, visibility FROM message WHERE id = ?1", [parent], |r| {
+            .query_row("SELECT account_id, visibility FROM message WHERE id = ?1", [&parent], |r| {
                 Ok((r.get(0)?, r.get(1)?))
             })
             .optional()?;
         if let Some((p_owner, p_vis)) = parent_row
-            && !own_or_public(p_owner.as_deref(), p_vis.as_deref(), author)
+            && (!own_or_public(p_owner.as_deref(), p_vis.as_deref(), author)
+                || !conn.prepare_cached(&sql)?.query_row(params![parent, author], |r| r.get::<_, bool>(0))?)
         {
             return Ok(false);
         }
@@ -197,6 +244,8 @@ trait Lookups {
     fn message(&mut self, id: &str) -> anyhow::Result<bool>;
     fn channel(&mut self, id: &str) -> anyhow::Result<bool>;
     fn attachment(&mut self, id: &str) -> anyhow::Result<bool>;
+    /// The message isn't hidden from the account by the history rule (D-133); unknown passes.
+    fn history(&mut self, id: &str) -> anyhow::Result<bool>;
 }
 
 /// The effective per-account sync rule for a shared-space op. The sender always retains their
@@ -214,7 +263,9 @@ fn visible_with(account: &str, o: &Op, look: &mut dyn Lookups) -> anyhow::Result
         return Ok(matches!(k, "space.create" | "space.set") || look.member()?);
     }
     if k == "message.send" || k == "message.forward" {
-        return Ok(is_public(o.payload.get("visibility")) && look.channel(str_of("channel_id").unwrap_or_default())?);
+        return Ok(is_public(o.payload.get("visibility"))
+            && look.channel(str_of("channel_id").unwrap_or_default())?
+            && o.entity().map_or(Ok(true), |m| look.history(m))?);
     }
     if k.starts_with("channel.") {
         // a new thread names its parent; later channel ops find it in the projection
@@ -266,6 +317,10 @@ impl Lookups for Direct<'_> {
         let sql = format!("SELECT {} FROM (SELECT ?2 AS id) a", visible_attachment_sql("?1"));
         Ok(self.conn.prepare_cached(&sql)?.query_row(params![self.account, id], |r| r.get(0))?)
     }
+    fn history(&mut self, id: &str) -> anyhow::Result<bool> {
+        let sql = format!("SELECT NOT EXISTS({})", history_hidden_sql().replace("{ids}", "?2"));
+        Ok(self.conn.prepare_cached(&sql)?.query_row(params![self.account, id], |r| r.get(0))?)
+    }
 }
 
 pub fn op_visible_to(conn: &Connection, account: &str, o: &Op) -> anyhow::Result<bool> {
@@ -279,6 +334,7 @@ struct Record {
     messages: HashSet<String>,
     channels: HashSet<String>,
     attachments: HashSet<String>,
+    history: HashSet<String>,
 }
 
 impl Lookups for Record {
@@ -297,6 +353,10 @@ impl Lookups for Record {
         self.attachments.insert(id.to_string());
         Ok(true)
     }
+    fn history(&mut self, id: &str) -> anyhow::Result<bool> {
+        self.history.insert(id.to_string());
+        Ok(true)
+    }
 }
 
 /// Second pass: the answers, fetched in one query per kind.
@@ -305,6 +365,8 @@ struct Known {
     messages: HashSet<String>,
     channels: HashSet<String>,
     attachments: HashSet<String>,
+    /// messages the history rule hides (D-133)
+    before_join: HashSet<String>,
 }
 
 impl Lookups for Known {
@@ -319,6 +381,9 @@ impl Lookups for Known {
     }
     fn attachment(&mut self, id: &str) -> anyhow::Result<bool> {
         Ok(self.attachments.contains(id))
+    }
+    fn history(&mut self, id: &str) -> anyhow::Result<bool> {
+        Ok(!self.before_join.contains(id))
     }
 }
 
@@ -377,6 +442,7 @@ fn visible_page(
                 visible_attachment_sql("?1")
             ),
         )?,
+        before_join: matching_ids(conn, account, &asked.history, &history_hidden_sql())?,
     };
     let mut digest = Digest::default();
     for o in page.iter().filter(|o| !chorus_core::sync::outside_window(o, window)) {

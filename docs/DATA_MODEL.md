@@ -884,6 +884,18 @@ the space; and a `channel.set` or repeated `channel.create` against an existing 
 applies to the owner too. A refused op is acked `forbidden` with the reason. A join written by an
 account allowed to `invite` (the owner, an admin, or by override) grants the joiner the space's scope.
 
+**History before joining** (`history`, D-133): `visibility::visible_message_sql` (and so sync
+fan-out, catch-up and the digest, REST message reads, polls, receipts and author cards) and the
+search view (`search_view`: search hits, context, blobs) also require `visibility::history_sql`: the
+message is the account's own, or the account isn't a present member (a guest's channel override
+decides alone), or the server received it (`message.received_at`) at or after the account's
+`space_member.joined_at` — the earliest join received after its latest leave, so a rejoin counts
+from the rejoin — or the account has `history`. An unknown `joined_at` hides everything before
+(fails closed). A message in a thread follows its parent too, and a thread under a hidden message
+is hidden. Ingest refuses reactions, replies, forwards, threads and votes on a message the author
+can't read this way (`visibility::message_accessible`). A message sent offline before the join but
+received after it counts as after: the server's clock is the only one it trusts here.
+
 ## 5. What each device stores
 
 | Device | Holds |

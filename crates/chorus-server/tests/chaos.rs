@@ -5,7 +5,8 @@
 //! Three accounts (two systems and a person) share a space, a DM and one channel of an internal
 //! space (a guest), and write random ops of every chat kind while their sockets drop mid-batch,
 //! pushes are sent twice, devices stay offline for a while, follows and space membership change
-//! and channel permissions churn. What a run *does* is decided by its seed; the timing is not.
+//! and channel permissions churn. The shared space denies `history` (D-133), so an account
+//! that leaves and is added again reads only what came after. What a run *does* is decided by its seed; the timing is not.
 //!
 //! At quiescence, per device: its replica holds exactly the ops the server says its account may
 //! see (same ids, same stamps) and projects like them, digests agree, the outbox is empty, every
@@ -645,6 +646,16 @@ impl World {
             .await
             .unwrap();
         w.shared = format!("space:{}", club["id"].as_str().unwrap_or_else(|| panic!("the shared space: {club}")));
+        // D-133: no history before joining, so C, leaving and re-added, is a history-denied joiner
+        let (shared, club_id) = (w.shared.clone(), club["id"].as_str().unwrap().to_string());
+        w.op(
+            A,
+            "space.set_permission",
+            &shared,
+            &club_id,
+            json!({"target_type": "role", "target_id": "everyone", "allow": [], "deny": ["history"]}),
+        )
+        .await;
         let (_, dm) = w.post(A, "/spaces", json!({"kind": "dm", "accounts": [w.accounts[C].id]})).await.unwrap();
         w.dm = format!("space:{}", dm["id"].as_str().unwrap_or_else(|| panic!("the DM: {dm}")));
         w.settle(300).await;

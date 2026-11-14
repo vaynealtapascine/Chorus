@@ -34,6 +34,9 @@ const CHANNELS: &[&str] = &["c0", "c1", "c2"];
 const PERMS: &[&str] = &["view", "send", "react", "thread", "pin", "manage", "attach", "poll", "aside"];
 const SPACE_PERMS: &[&str] = &["invite", "history"];
 
+/// (op id, author, channel it belongs to, the message it is about: (received at, author))
+type Logged = (String, &'static str, Option<String>, Option<(i64, &'static str)>);
+
 /// (place: a channel id or "space", target type, target) → (allow, deny)
 type Overrides = BTreeMap<(String, String, String), (BTreeSet<String>, BTreeSet<String>)>;
 
@@ -44,6 +47,8 @@ struct Model {
     roles: BTreeMap<&'static str, &'static str>,
     custom: Value,
     overrides: Overrides,
+    /// `space_member.joined_at` of each member (D-133: history before it needs `history`)
+    joined: BTreeMap<&'static str, i64>,
 }
 
 impl Model {
@@ -71,6 +76,11 @@ impl Model {
     }
     fn can_space(&self, account: &str, perm: &str) -> bool {
         core_perms::can(&self.levels(account, None), perm)
+    }
+    /// A message the server received at `at` by the history rule: a non-member's channel override
+    /// decides alone; a member needs `history` or to have joined by then.
+    fn history(&self, account: &str, at: i64) -> bool {
+        self.joined.get(account).is_none_or(|j| at >= *j) || self.can_space(account, "history")
     }
 }
 
@@ -103,6 +113,7 @@ fn nothing_reaches_an_account_the_rule_denies() {
             roles: BTreeMap::new(),
             custom: json!([{"id": "cus", "name": "Custom", "perms": ["view", "send", "pin"]}]),
             overrides: BTreeMap::new(),
+            joined: BTreeMap::new(),
         };
         for (account, role) in
             [("owner", "member"), ("adm", "admin"), ("mem", "member"), ("ro", "read_only"), ("cus", "cus")]
@@ -110,12 +121,14 @@ fn nothing_reaches_an_account_the_rule_denies() {
             if account != "owner" && r.below(5) == 0 {
                 continue; // not everyone is in every space
             }
+            let joined = r.below(40) as i64;
             c.execute(
-                "INSERT INTO space_member(space_id,account_id,role,joined_hlc) VALUES ('s',?1,?2,'1:0:1')",
-                [account, role],
+                "INSERT INTO space_member(space_id,account_id,role,joined_hlc,joined_at) VALUES ('s',?1,?2,'1:0:1',?3)",
+                params![account, role, joined],
             )
             .unwrap();
             model.roles.insert(account, role);
+            model.joined.insert(account, joined);
         }
         for a in ACCOUNTS {
             c.execute("INSERT INTO scope_access(account_id,scope) VALUES (?1,'space:s')", [a]).unwrap();
@@ -167,7 +180,8 @@ fn nothing_reaches_an_account_the_rule_denies() {
             }
         }
         // a log: messages (some private asides), threads, edits, reactions, reads, files
-        let mut ops: Vec<(String, &'static str, Option<String>)> = Vec::new(); // (op id, author, channel it belongs to)
+        // (op id, author, channel it belongs to, the message it is about: (received at = its index, author))
+        let mut ops: Vec<Logged> = Vec::new();
         let mut n = 0;
         for i in 0..40 {
             n += 1;
@@ -177,7 +191,7 @@ fn nothing_reaches_an_account_the_rule_denies() {
             let aside = r.below(5) == 0;
             let visibility: Option<&str> = aside.then_some(r#"{"mode":"system_only"}"#);
             c.execute(
-                "INSERT INTO message(id,channel_id,account_id,occurred_at,text,visibility) VALUES (?1,?2,?3,?4,?5,?6)",
+                "INSERT INTO message(id,channel_id,account_id,occurred_at,received_at,text,visibility) VALUES (?1,?2,?3,?4,?4,?5,?6)",
                 params![msg, ch, author, i, format!("violet note {i}"), visibility],
             )
             .unwrap();
@@ -187,7 +201,8 @@ fn nothing_reaches_an_account_the_rule_denies() {
             if aside {
                 payload["visibility"] = json!({"mode": "system_only"});
             }
-            ops.push((put(&c, n, author, "message.send", Some(&msg), payload), author, Some(ch.to_string())));
+            let at = Some((i as i64, author));
+            ops.push((put(&c, n, author, "message.send", Some(&msg), payload), author, Some(ch.to_string()), at));
             let other = *r.pick(ACCOUNTS);
             n += 1;
             let (kind, payload) = match r.below(4) {
@@ -196,7 +211,7 @@ fn nothing_reaches_an_account_the_rule_denies() {
                 2 => ("read.mark", json!({"channel_id": ch, "message_id": msg})),
                 _ => ("message.pin", json!({})),
             };
-            ops.push((put(&c, n, other, kind, Some(&msg), payload), other, Some(ch.to_string())));
+            ops.push((put(&c, n, other, kind, Some(&msg), payload), other, Some(ch.to_string()), at));
             if r.below(6) == 0 {
                 let th = format!("th{i}");
                 c.execute(
@@ -216,12 +231,14 @@ fn nothing_reaches_an_account_the_rule_denies() {
                     ),
                     author,
                     Some(ch.to_string()),
+                    at,
                 ));
                 n += 1;
                 ops.push((
                     put(&c, n, other, "message.send", Some(&format!("t{i}")), json!({"channel_id": th})),
                     other,
                     Some(ch.to_string()),
+                    at,
                 ));
             }
             if r.below(5) == 0 {
@@ -233,18 +250,19 @@ fn nothing_reaches_an_account_the_rule_denies() {
                     put(&c, n, author, "attachment.create", Some(&file), json!({})),
                     author,
                     Some(ch.to_string()),
+                    at,
                 ));
             }
         }
         for (kind, author) in [("space.join", "owner"), ("space.set", "owner"), ("unknown", "owner")] {
             n += 1;
-            ops.push((put(&c, n, author, kind, Some("s"), json!({"account_id": "mem"})), author, None));
+            ops.push((put(&c, n, author, kind, Some("s"), json!({"account_id": "mem"})), author, None, None));
         }
         let log = oplog::scope_after(&c, "space:s", 0, 10_000).unwrap();
         for a in ACCOUNTS {
             let member = a == &"owner" || model.roles.contains_key(a);
             let mut per_op = Digest::default();
-            for (o, (id, author, channel)) in log.iter().zip(&ops) {
+            for (o, (id, author, channel, about)) in log.iter().zip(&ops) {
                 assert_eq!(&o.id, id);
                 let visible = visibility::op_visible_to(&c, a, o).unwrap();
                 if visible {
@@ -256,7 +274,14 @@ fn nothing_reaches_an_account_the_rule_denies() {
                 }
                 match channel {
                     // never past the rule
-                    Some(ch) if visible => assert!(model.can(a, ch, "view"), "seed {seed}: {} leaked to {a}", o.kind),
+                    Some(ch) if visible => {
+                        assert!(model.can(a, ch, "view"), "seed {seed}: {} leaked to {a}", o.kind);
+                        assert!(
+                            about.is_none_or(|(at, by)| by == *a || model.history(a, at)),
+                            "seed {seed}: {} from before {a} joined leaked",
+                            o.kind
+                        );
+                    }
                     None if visible => assert!(
                         member || matches!(o.kind.as_str(), "space.create" | "space.set"),
                         "seed {seed}: {} leaked to guest {a}",
@@ -270,7 +295,9 @@ fn nothing_reaches_an_account_the_rule_denies() {
                     && o.payload["channel_id"].as_str().is_some_and(|ch| ch.starts_with('c'))
                 {
                     let ch = o.payload["channel_id"].as_str().unwrap();
-                    assert_eq!(visible, model.can(a, ch, "view"), "seed {seed}: public send in {ch} for {a}");
+                    let expected =
+                        model.can(a, ch, "view") && about.is_none_or(|(at, by)| by == *a || model.history(a, at));
+                    assert_eq!(visible, expected, "seed {seed}: public send in {ch} for {a}");
                 }
             }
             assert_eq!(
@@ -280,7 +307,7 @@ fn nothing_reaches_an_account_the_rule_denies() {
             );
             // REST and search: own, or public in a channel the account may view
             let p = Principal::owner(a);
-            for i in 0..40 {
+            for i in 0..40i64 {
                 let (ch, author, aside): (String, String, bool) = c
                     .query_row(
                         "SELECT channel_id, account_id, visibility IS NOT NULL FROM message WHERE id=?1",
@@ -288,7 +315,7 @@ fn nothing_reaches_an_account_the_rule_denies() {
                         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
                     )
                     .unwrap();
-                let readable = author == *a || (!aside && model.can(a, &ch, "view"));
+                let readable = author == *a || (!aside && model.can(a, &ch, "view") && model.history(a, i));
                 assert_eq!(
                     messages::one(&c, &p, &format!("msg{i}")).unwrap().is_some(),
                     readable,
@@ -298,7 +325,11 @@ fn nothing_reaches_an_account_the_rule_denies() {
             let q = search::MessageQuery { q: "violet".into(), limit: Some(100), ..Default::default() };
             for hit in search::messages(&c, &p, &q).unwrap()["items"].as_array().unwrap() {
                 let ch = hit["channel_id"].as_str().unwrap();
-                assert!(hit["account_id"] == *a || model.can(a, ch, "view"), "seed {seed}: search leaked {hit} to {a}");
+                let at: i64 = hit["id"].as_str().unwrap().trim_start_matches("msg").parse().unwrap();
+                assert!(
+                    hit["account_id"] == *a || (model.can(a, ch, "view") && model.history(a, at)),
+                    "seed {seed}: search leaked {hit} to {a}"
+                );
             }
         }
     }

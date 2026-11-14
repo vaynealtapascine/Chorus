@@ -119,8 +119,12 @@ fails safely; show the reason like other refused sends.
 
 ## 7. Status
 
-- Built: the permissions (`attach`, `poll`, `aside`, `invite`, `history` as a permission), space
-  overrides, the core rule and its exports, `space.set_sharing` storage, invite through REST.
-- Not built yet: the history clamp itself, the effect of `member_names`, the shared fronting
+- Built: the permissions (`attach`, `poll`, `aside`, `invite`, `history`), space overrides, the
+  core rule and its exports, `space.set_sharing` storage, invite through REST, and the history
+  rule: a member without `history` simply never receives (sync, REST, search, files) messages the
+  server got before its latest join, so clients need no filter; a chat may want a quiet "history
+  starts here" marker at the first message it has, and shouldn't page back past it (REST pages
+  before the join come back empty, slowly).
+- Not built yet: the effect of `member_names`, the shared fronting
   status (`GET /spaces/{id}/fronts`). Write the settings, but don't promise their effect in the UI
   until this section says they are built.

@@ -800,3 +800,135 @@ fn a27_a_member_without_invite_brings_no_one_in_and_permissions_gate_sends() {
     ingest::grant(&w.c, &w.mallory, &theirs).unwrap();
     assert!(w.refused(w.push_in(&w.mallory, &theirs, "space.set_sharing", &elsewhere, json!({"fronts": true}))));
 }
+
+#[test]
+fn a28_history_from_before_joining_stays_unreadable_by_every_path() {
+    // D-133: with `history` denied, a member reads only messages the server received since its
+    // latest join: not through REST, search, files, catch-up, the digest, reactions, threads, poll
+    // tallies or read receipts, and it can't act on them either
+    use chorus_server::{api_data::Principal, messages, oplog, receipts, search, search_view, visibility};
+    let w = World::new();
+    let space = w.space(&w.alice);
+    let scope = format!("space:{space}");
+    assert_eq!(w.push_in(&w.alice, &scope, "space.join", &space, json!({"account_id": w.alice})), None);
+    let ch = w.id();
+    let made =
+        w.push_in(&w.alice, &scope, "channel.create", &ch, json!({"space_id": space, "kind": "text", "name": "c"}));
+    assert_eq!(made, None);
+    let deny = json!({"target_type": "role", "target_id": "everyone", "deny": ["history"]});
+    assert_eq!(w.push_in(&w.alice, &scope, "space.set_permission", &space, deny), None);
+    let kai = w.member(&w.alice, "Kai", json!({"mode": "server"}));
+    // before Mallory joins: a message with a file and a poll, a vote, a thread under it
+    let file = w.id();
+    let hash = "ab".repeat(32);
+    let att = json!({"blob_hash": hash, "filename": "old.png", "mime": "image/png", "size": 10});
+    assert_eq!(w.push_in(&w.alice, &scope, "attachment.create", &file, att), None);
+    let old = w.id();
+    let poll = json!({"options": [{"id": "a", "text": "Soup"}, {"id": "b", "text": "Rice"}]});
+    let send = json!({"channel_id": ch, "authors": [kai], "text": "violet secret from before", "entities": [],
+                      "attachments": [file], "poll": poll});
+    assert_eq!(w.push_in(&w.alice, &scope, "message.send", &old, send), None);
+    assert_eq!(w.push(&w.alice, "poll.vote", &old, json!({"member_id": kai, "choices": ["a"]})), None);
+    let thread = w.id();
+    let t = json!({"space_id": space, "kind": "thread", "name": "T", "parent_message_id": old});
+    assert_eq!(w.push_in(&w.alice, &scope, "channel.create", &thread, t), None);
+    // Mallory joins, on the server's clock between the pushes before and after
+    w.follow(&w.mallory, &w.alice);
+    let joined_now = NOW + w.n.get() as i64 * 1000 + 500;
+    let added = chorus_server::spaces::add(&w.c, &w.alice, &space, std::slice::from_ref(&w.mallory), joined_now);
+    assert!(added.is_ok());
+    let joined: i64 =
+        w.c.query_row(
+            "SELECT joined_at FROM space_member WHERE space_id=?1 AND account_id=?2",
+            params![space, w.mallory],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let old_at: i64 = w.c.query_row("SELECT received_at FROM message WHERE id=?1", [&old], |r| r.get(0)).unwrap();
+    assert!(old_at < joined, "setup: the old message came first");
+    // after: a reaction and a thread reply on the old message, a new vote, and a new message
+    let react = json!({"target_type": "message", "target_id": old, "emoji": "💜", "member_id": kai});
+    assert_eq!(w.push_in(&w.alice, &scope, "reaction.add", &old, react), None);
+    let reply = w.id();
+    let r = json!({"channel_id": thread, "authors": [kai], "text": "violet reply in the old thread", "entities": []});
+    assert_eq!(w.push_in(&w.alice, &scope, "message.send", &reply, r), None);
+    assert_eq!(w.push(&w.alice, "poll.vote", &old, json!({"member_id": kai, "choices": ["b"]})), None);
+    let new = w.id();
+    let n = json!({"channel_id": ch, "authors": [kai], "text": "violet hello after", "entities": []});
+    assert_eq!(w.push_in(&w.alice, &scope, "message.send", &new, n), None);
+
+    let p = Principal::owner(&w.mallory);
+    // REST
+    assert!(messages::one(&w.c, &p, &old).unwrap().is_none(), "REST read an old message");
+    assert!(messages::one(&w.c, &p, &reply).unwrap().is_none(), "REST read a reply under an old message");
+    assert!(messages::one(&w.c, &p, &new).unwrap().is_some());
+    let page = messages::list(&w.c, &p, &ch, &messages::Page::default()).unwrap().unwrap().to_string();
+    assert!(!page.contains(&old) && page.contains(&new), "the channel page showed history: {page}");
+    let opened = messages::thread(&w.c, &p, &old, &messages::Page::default()).unwrap();
+    assert!(opened.is_none_or(|t| !t.to_string().contains("violet reply")), "the old thread opened");
+    // search, and the file rule (blobs::can_read reads message attachments through this view)
+    let q = search::MessageQuery { q: "violet".into(), limit: Some(50), ..Default::default() };
+    let hits = search::messages(&w.c, &p, &q).unwrap().to_string();
+    assert!(!hits.contains("secret") && !hits.contains("old thread") && hits.contains("hello after"), "{hits}");
+    assert!(search::message_by_id(&w.c, &p, &old).unwrap().is_none());
+    let mut view = search_view::CurrentView::new(&w.c, &p).unwrap();
+    assert!(!view.message(&old).unwrap(), "the old message's file would be readable");
+    // catch-up and the digest
+    let log = oplog::scope_after(&w.c, &scope, 0, 10_000).unwrap();
+    let mut digest = chorus_core::sync::Digest::default();
+    for o in &log {
+        let shown = visibility::op_visible_to(&w.c, &w.mallory, o).unwrap();
+        if shown {
+            digest.add(&o.id);
+        }
+        let about_old = [&old, &file, &thread, &reply].iter().any(|id| o.entity() == Some(id.as_str()));
+        assert!(!(shown && about_old), "catch-up sent {} about the old message", o.kind);
+    }
+    assert!(log.iter().any(|o| o.kind == "message.poll_tally"), "setup: tallies were published");
+    assert_eq!(visibility::visible_digest(&w.c, &w.mallory, &scope).unwrap(), digest, "the digest disagrees");
+    // acting on it: no reaction, reply, thread or vote
+    let rin = w.member(&w.mallory, "Rin", json!({"mode": "server"}));
+    let tries = [
+        w.push_in(
+            &w.mallory,
+            &scope,
+            "reaction.add",
+            &old,
+            json!({"target_type": "message", "target_id": old, "emoji": "👀", "member_id": rin}),
+        ),
+        w.push_in(
+            &w.mallory,
+            &scope,
+            "message.send",
+            &w.id(),
+            json!({"channel_id": ch, "authors": [rin], "text": "re", "entities": [], "reply_to": old}),
+        ),
+        w.push_in(
+            &w.mallory,
+            &scope,
+            "channel.create",
+            &w.id(),
+            json!({"space_id": space, "kind": "thread", "name": "Spy", "parent_message_id": old}),
+        ),
+        w.push(&w.mallory, "poll.vote", &old, json!({"member_id": rin, "choices": ["a"]})),
+    ];
+    assert!(tries.iter().all(Option::is_some), "Mallory acted on a message from before she joined: {tries:?}");
+    // read receipts never name it: both opt in, Mallory reads up to her own later message
+    for who in [&w.alice, &w.mallory] {
+        let id = w.id();
+        assert_eq!(w.push(who, "pref.set", &id, json!({"device": "", "key": "share_reads", "value": true})), None);
+    }
+    let mine = w.id();
+    let m = json!({"channel_id": ch, "authors": [rin], "text": "hi", "entities": []});
+    assert_eq!(w.push_in(&w.mallory, &scope, "message.send", &mine, m), None);
+    let at: i64 = w.c.query_row("SELECT occurred_at FROM message WHERE id=?1", [&mine], |r| r.get(0)).unwrap();
+    let mark = json!({"channel_id": ch, "message_id": mine, "message_at": at, "reader_member_id": ""});
+    assert_eq!(w.push_in(&w.mallory, &scope, "read.mark", &w.id(), mark), None);
+    let reads = receipts::reads(&w.c, &Principal::owner(&w.alice), &ch).unwrap().unwrap().to_string();
+    assert!(!reads.contains(&old), "a receipt named a message Mallory can't read: {reads}");
+    assert!(reads.contains(&new), "the receipt names the latest message Mallory can read: {reads}");
+    // with history allowed, it all comes back
+    let allow = json!({"target_type": "role", "target_id": "everyone", "allow": ["history"]});
+    assert_eq!(w.push_in(&w.alice, &scope, "space.set_permission", &space, allow), None);
+    assert!(messages::one(&w.c, &p, &old).unwrap().is_some());
+}

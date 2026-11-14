@@ -168,6 +168,15 @@ perf and review write-ups, are in `git show a9c3c2e:docs/NOTES.md`.
 
 ## Security
 
+- D-133's history rule (`visibility::history_sql`) is evaluated per message row. A late joiner's
+  digest over 100k ops costs 0.54 s (0.46 s with history allowed), but a REST page *before* the
+  join scans every hidden older row and evaluates `can_space` on each: 621 ms for 50k hidden rows
+  (`tests/perf.rs` `history_rule_budget`, gate profile, 2026-11-14). Clients shouldn't page back
+  past "history starts here"; a floor in `messages::list` would fix it if it matters.
+- The history rule trusts `received_at`. Restore pushes keep their original stamps (ingest
+  `preserved`), but an op re-pushed outside the restore window gets a new `received_at` and so
+  counts as "after" any join that happened in between.
+
 - Ingest is where ownership is decided (D-119): projection folds every op on an entity id into its
   row, whatever scope it came from, so a check that only asks "may the author write this scope?"
   lets anyone change anything whose id they learn. New op kinds: give them a `home_table` in
