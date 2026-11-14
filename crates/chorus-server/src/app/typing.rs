@@ -126,6 +126,8 @@ fn relay(
     let Some(account) = peers.get(device).map(|p| p.account.as_str()) else { return };
     let Some((space, kind)) = channel(conn, account, ch) else { return };
     let external = active.audience == Audience::All && kind != "internal" && shared(conn, account);
+    // D-133: an account that withholds its member names in the space types as the system only
+    let anonymous = crate::spaces::names_hidden(conn, account, &space).unwrap_or(true);
     for (id, p) in peers {
         if id == device
             || !p.scopes.contains(&format!("space:{space}"))
@@ -146,8 +148,9 @@ fn relay(
             .map(|a| a.until)
             .max();
         let until = if start { Some(active.until.max(other.unwrap_or(0))) } else { other };
+        let member = if p.account != account && anonymous { None } else { active.member.clone() };
         let _ = p.tx.send(super::Outgoing::Typing(json!({"t":"typing", "channel":ch, "account":account,
-            "member":active.member, "state":if until.is_some() { "start" } else { "stop" },
+            "member":member, "state":if until.is_some() { "start" } else { "stop" },
             "until":until.unwrap_or(now)})));
     }
 }
@@ -255,6 +258,20 @@ mod tests {
         assert_eq!(f.take("desk")[0]["state"], "stop");
         assert!(f.take("friend").is_empty());
         assert_eq!(f.conn.query_row("SELECT count(*) FROM op", [], |r| r.get::<_, i64>(0)).unwrap(), 0);
+    }
+
+    #[test]
+    fn withheld_member_names_type_as_the_system_to_others() {
+        // D-133: our own devices still see who; other accounts only that we are typing
+        let mut f = Fixture::new("shared");
+        f.opt_in();
+        f.conn
+            .execute("INSERT INTO space_sharing(space_id,account_id,member_names) VALUES ('space','own',0)", [])
+            .unwrap();
+        f.send(Some("kai"), Audience::All, State::Start, 1000);
+        assert_eq!(f.take("desk")[0]["member"], "kai");
+        let theirs = f.take("friend");
+        assert_eq!((theirs[0]["member"].clone(), theirs[0]["state"].clone()), (json!(null), json!("start")));
     }
 
     #[test]

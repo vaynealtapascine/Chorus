@@ -376,7 +376,8 @@ Implemented so far (`api_data.rs`, `api_reads.rs`; sessions or API tokens):
     display name, pronouns, colour, sigils, avatar, handle, handles; the name by the D-126 rule
     above; pronouns null unless you may open the profile and its `pronouns` part, D-147) for other accounts' members who wrote a message
     everyone in the space can read, or whom a private chat you may view is kept to (D-098, its
-    `member_ids`), while their account is in the space.
+    `member_ids`), while their account is in the space, and not while that account has turned
+    member names off in the space (D-133, `space.set_sharing {member_names: false}`).
   - A space you aren't in is a 404.
 Channel list items also carry nullable `avatar_blob` (D-088). Fetch that hash through the ordinary
 blob endpoint; current channel visibility, including thread-parent privacy, gates image reads.
@@ -645,7 +646,8 @@ view/scope checks, the 2-second per-device/channel throttle and disconnect stops
 
 Same-account other devices receive it. Cross-account delivery requires a non-internal space,
 `audience: "all"`, and account-level `share_typing: true` (pref.set with `device: ""`, default off).
-Internal typing stays own-account even when a channel has guests. Typing is never persisted,
+Internal typing stays own-account even when a channel has guests. An account with member names
+off in a shared space (D-133) is relayed to other accounts with `member: null`. Typing is never persisted,
 exported, sent through notifications, SSE or webhooks, or replayed. HTTP push/pull fallback
 ignores typing (the current router does not implement those fallback routes).
 

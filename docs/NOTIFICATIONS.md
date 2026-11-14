@@ -227,7 +227,13 @@ Rules:
 5. Followers get no webhooks and no raw op access for other accounts.
 6. Shared-space chat is a known side channel: a message authored as Kai reveals Kai is around at
    that time. The sharing screen says so plainly; systems can post with a "delay send" option
-   (Advanced, per space) that holds outgoing messages for a random 0–N minutes.
+   (Advanced, per space) that holds outgoing messages for a random 0–N minutes. A system can
+   also turn **member names** off in a shared space (D-133, `space.set_sharing`): other accounts
+   there then get no author card for its members (name, avatar, profile link), its message
+   notifications name and draw the system (account display name or @handle, account avatar), and
+   its typing relays carry `member: null`. They still receive the opaque member ids in the
+   messages' `authors`/segments/reactions, so a reader who can see a member some other way (a
+   profile they may open, a follower view, cards cached from before) can still tell who wrote.
 7. Typing indicators (D-087) are an explicit opt-in chat-activity side channel, never a
    notification or follower-front surface. Internal spaces relay only to the same account's
    other devices, including when a guest can view a channel. Shared/DM spaces relay across

@@ -932,3 +932,55 @@ fn a28_history_from_before_joining_stays_unreadable_by_every_path() {
     assert_eq!(w.push_in(&w.alice, &scope, "space.set_permission", &space, allow), None);
     assert!(messages::one(&w.c, &p, &old).unwrap().is_some());
 }
+
+#[test]
+fn a29_member_names_withheld_in_a_space_reach_no_other_account() {
+    // D-133: with "member names on each message" off, other accounts in the space get no name,
+    // avatar or card for our members: not in author cards, search, files, notifications or typing
+    use chorus_server::{api_data::Principal, search, spaces};
+    let w = World::new();
+    let (space, scope, ch) = shared_with_mallory(&w);
+    let avatar = "cd".repeat(32);
+    let kai = w.id();
+    let made = w.push(
+        &w.alice,
+        "member.create",
+        &kai,
+        json!({"name": "Kairos", "avatar_blob": avatar, "visibility": {"mode": "server"}}),
+    );
+    assert_eq!(made, None);
+    let rin = w.member(&w.mallory, "Rin", json!({"mode": "server"}));
+    let theirs = w.id();
+    let m = json!({"channel_id": ch, "authors": [rin], "text": "violet question", "entities": []});
+    assert_eq!(w.push_in(&w.mallory, &scope, "message.send", &theirs, m), None);
+    let ours = w.id();
+    let send = json!({"channel_id": ch, "authors": [kai], "text": "violet answer", "entities": [], "reply_to": theirs});
+    let cards = |who: &str| spaces::authors(&w.c, who, &space).unwrap()["members"].to_string();
+    // on (the default): Mallory sees Kairos
+    assert_eq!(w.push_in(&w.alice, &scope, "message.send", &ours, send), None);
+    assert!(cards(&w.mallory).contains("Kairos"), "setup: names show by default");
+    // off: Alice's own choice, nobody else's
+    let off = json!({"member_names": false});
+    let bad = json!({"member_names": true, "fronts": "x"});
+    assert!(w.push_in(&w.mallory, &scope, "space.set_sharing", &space, bad).is_some(), "a malformed setting went in");
+    assert_eq!(w.push_in(&w.alice, &scope, "space.set_sharing", &space, off), None);
+    assert!(!cards(&w.mallory).contains("Kairos"), "an author card named a withheld member");
+    assert!(!spaces::author_avatar_visible(&w.c, &w.mallory, &avatar).unwrap(), "the member's avatar stayed readable");
+    let p = Principal::owner(&w.mallory);
+    let q = search::MessageQuery { q: "violet".into(), limit: Some(50), ..Default::default() };
+    let hits = search::messages(&w.c, &p, &q).unwrap().to_string();
+    assert!(hits.contains("violet answer") && !hits.contains("Kairos"), "search named the member: {hits}");
+    // a new reply notifies Mallory as the system, not as Kairos
+    let again = w.id();
+    let send = json!({"channel_id": ch, "authors": [kai], "text": "violet again", "entities": [], "reply_to": theirs});
+    assert_eq!(w.push_in(&w.alice, &scope, "message.send", &again, send), None);
+    let pushed: Vec<String> =
+        w.c.prepare("SELECT payload FROM notification WHERE recipient_account_id = ?1 AND source_op_id IS NOT NULL")
+            .unwrap()
+            .query_map([&w.mallory], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+    let last = pushed.iter().find(|n| n.contains("violet again")).expect("the reply notified Mallory");
+    assert!(!last.contains("Kairos") && !last.contains(&avatar) && last.contains("alice"), "{last}");
+}

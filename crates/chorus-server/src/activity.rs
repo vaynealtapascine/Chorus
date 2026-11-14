@@ -824,14 +824,37 @@ fn queue(
         None => AuthorCard::default(),
     };
     let sender = sender_of(&who, &first_author);
+    // D-133: an author account withholding its member names in this shared space is shown to
+    // other accounts as the system only: its name and avatar, never a member's
+    let hidden = match (meta.space_kind.as_deref(), meta.space_id.as_deref(), o.account_id.as_deref()) {
+        (Some("shared"), Some(space), Some(author)) if crate::spaces::names_hidden(conn, author, space)? => {
+            let row: Option<(Option<String>, Option<String>, Option<String>)> = conn
+                .query_row("SELECT display_name, handle, avatar_blob FROM account WHERE id = ?1", [author], |r| {
+                    Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+                })
+                .optional()?;
+            let (display, handle, avatar) = row.unwrap_or_default();
+            let system = display
+                .filter(|d| !d.trim().is_empty())
+                .or_else(|| handle.map(|h| format!("@{h}")))
+                .unwrap_or_else(|| "Someone".into());
+            let card = AuthorCard { glyph: Some(first_glyph(&system, false)), color: None, avatar_blob: avatar };
+            Some((sender_of(&system, &card), system, card))
+        }
+        _ => None,
+    };
     let own_text = p.get("text").and_then(Value::as_str).unwrap_or_default();
     // a forward says only what its forwarder wrote; the forwarded words (its snapshot) are the
     // original's, which the recipient may not be able to see
     let own_text = if o.kind == "message.forward" && own_text.trim().is_empty() { FORWARDED } else { own_text };
     let text: String = own_text.chars().take(280).collect();
     for (recipient, kind) in why {
+        let (sender, who, first_author) = match &hidden {
+            Some((s, w, c)) if o.account_id.as_deref() != Some(recipient.as_str()) => (s, w, c),
+            _ => (&sender, &who, &first_author),
+        };
         let (title, chat) =
-            chat_visual(conn, meta, channel_id, &recipient, o.account_id.as_deref(), &who, &first_author)?;
+            chat_visual(conn, meta, channel_id, &recipient, o.account_id.as_deref(), who, first_author)?;
         let mut payload = json!({
             "t": "message", "kind": kind, "title": title, "text": text,
             "channel_id": channel_id, "message_id": o.entity_id, "scope": o.scope,

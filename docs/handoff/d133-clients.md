@@ -125,6 +125,13 @@ fails safely; show the reason like other refused sends.
   server got before its latest join, so clients need no filter; a chat may want a quiet "history
   starts here" marker at the first message it has, and shouldn't page back past it (REST pages
   before the join come back empty, slowly).
-- Not built yet: the effect of `member_names`, the shared fronting
+- Built: `member_names` off. Other accounts get no author cards for our members in that space
+  (`GET /spaces/{id}/authors` leaves them out), notifications name the system, typing relays
+  carry `member: null`. Clients on the reading side need nothing new: a message whose author id
+  has no card already falls back to the account (show the account's name and avatar, never "Unknown
+  member"; check that fallback). On the writing side, our own client keeps showing our names. The
+  setting row should say plainly that others who can see our members elsewhere (a profile, a front
+  view) can still match them, because the opaque ids stay in the messages.
+- Not built yet: the shared fronting
   status (`GET /spaces/{id}/fronts`). Write the settings, but don't promise their effect in the UI
   until this section says they are built.
