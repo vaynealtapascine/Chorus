@@ -97,6 +97,11 @@ export const core = {
     JSON.parse(wasm.namedFrontDaily(JSON.stringify(intervals), now, JSON.stringify(offsets))),
   frontDaily: (intervals: Json, now: number, offsets: [number, number][]): Json =>
     JSON.parse(wasm.frontDaily(JSON.stringify(intervals), now, JSON.stringify(offsets))),
+  /** Handover delivery, acks, checklists and last-fronted in one call (D-132; core handover.rs). */
+  handoverView: (input: Json): Json => JSON.parse(wasm.handoverView(JSON.stringify(input))),
+  /** The #tags of Notes messages and the chips over them, most used first (D-132, D-091). */
+  noteTags: (messages: { text: string; entities: Entity[] }[]): { tags: string[][]; chips: { tag: string; count: number }[] } =>
+    JSON.parse(wasm.noteTags(JSON.stringify(messages))),
   feedParse: (q: string): Json => JSON.parse(wasm.feedParse(q)),
   /** Who the speaker chip shows before anyone picks (SPEC §5.2, D-074). */
   defaultSpeaker: (context: SpeakerContext): string[] => JSON.parse(wasm.defaultSpeaker(JSON.stringify(context))),

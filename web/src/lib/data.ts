@@ -409,8 +409,14 @@ export interface MessageRow {
   reply_to?: string;
   quote?: QuoteValue;
   forward_snapshot?: SnapshotItem[];
+  /** set on a forward: Notes' "#from chats" (D-132) */
+  forward_of?: string;
+  /** a handover, fixed when it was sent (D-132) */
+  handover?: HandoverDef;
   attachments: AttachmentRow[];
 }
+
+export interface HandoverDef { deliver: 'now' | 'next_switch'; checklist?: { id: string; text: string }[] }
 
 export interface AttachmentRow {
   id: string;
@@ -665,6 +671,12 @@ export function attachmentRowsOf(attachmentRows: unknown, ids: unknown): Attachm
   return out;
 }
 
+function handoverOf(v: unknown): HandoverDef | undefined {
+  const h = v as { deliver?: unknown; checklist?: unknown } | null;
+  if (!h || typeof h !== 'object' || (h.deliver !== 'now' && h.deliver !== 'next_switch')) return undefined;
+  return { deliver: h.deliver, ...(Array.isArray(h.checklist) ? { checklist: h.checklist as HandoverDef['checklist'] } : {}) };
+}
+
 function messageRow(p: Projection, id: string): MessageRow | undefined {
   const r = ((p.rows.message ?? {}) as Record<string, MessageRecord>)[id];
   if (!r?.exists) return undefined;
@@ -695,6 +707,8 @@ function messageRow(p: Projection, id: string): MessageRow | undefined {
     reply_to: str(f.reply_to),
     quote: f.quote && typeof f.quote === 'object' ? (f.quote as QuoteValue) : undefined,
     forward_snapshot: Array.isArray(f.forward_snapshot) ? (f.forward_snapshot as MessageRow['forward_snapshot']) : undefined,
+    forward_of: str(f.forward_of_id),
+    handover: handoverOf(f.handover),
     attachments: attachmentRowsOf(attachmentRows, f.attachments),
   };
   cache.set(r, m);

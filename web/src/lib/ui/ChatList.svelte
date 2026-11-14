@@ -8,7 +8,8 @@
   import { channels, latestMessage, memberMarks, members, readPerMember, shareReads, spaces, unread, fuzzy, type ChannelRow, type MemberRow, type MessageRow, type SpaceRow } from '../data';
   import { ARCHIVED, chatPrefs, chatTime, discColor, dmFace, folderOf, groupsInto, HIDDEN, isSpaceEntry, movePin, orderChats, PINS, previewOf, privateVisible, stillArchived, togglePin, withSpaces, type Folder, type SpaceEntry } from '../chat-list';
   import { contains, holds, PREF as FOLDERS_PREF, setChat, toJson, withCustom, type Settings as FolderSettings } from '../chat-folders';
-  import ChatFolders from './ChatFolders.svelte';
+  import Lazy from './Lazy.svelte';
+  import { screens } from '../lazy-screens';
   import { actingOpts, bodyPresence, frontLayers } from '../front-view';
   import { authorCards, spaceTitle, type SpaceInfo } from '../spaces';
   import { defaultLevel, SPECIAL_LOOK, specialSubtitle } from '../special';
@@ -369,7 +370,7 @@
       </div>
 {/snippet}
 {#if foldersAt !== null}
-  <ChatFolders settings={folders} {person} startWith={foldersAt || null} onclose={() => onfolders(null)}
+  <Lazy load={screens.chatFolders} settings={folders} {person} startWith={foldersAt || null} onclose={() => onfolders(null)}
     chats={rows.map((r) => ({ id: r.channel.id, title: r.title, kind: r.folder, own: r.space?.kind === 'internal', special: r.channel.special }))} />
 {/if}
 

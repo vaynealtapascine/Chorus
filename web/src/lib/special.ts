@@ -64,3 +64,12 @@ export function specialChannels(p: Projection, accountId: string): SpecialChanne
 export function defaultLevel(special: Special | undefined, fallback: string): string {
   return special === 'handover' ? 'all' : special === 'notes' ? 'none' : fallback;
 }
+
+/** The "#from chats" chip's value: no tag can hold a `#`, so it never clashes with one. */
+export const FROM_CHATS = '#from chats';
+
+/** Whether a Notes message shows under the chosen chip ('' is All): it carries the tag, or for
+ * "#from chats" it was forwarded from another chat (`forward_of_id`). */
+export function noteMatches(m: { forward_of?: string }, tags: string[], filter: string): boolean {
+  return !filter || (filter === FROM_CHATS ? !!m.forward_of : tags.includes(filter));
+}

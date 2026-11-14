@@ -4,7 +4,7 @@
   import { onDestroy, tick, untrack } from 'svelte';
   import { core, type Composed, type Entity } from '../core';
   import RichText from './RichText.svelte';
-  import { channels, contentWarningsAutoExpand, customEmojis, lastRead, latestMessage, memberMarks, members, messageById, messagePage, pinnedMessages, reactions, readPerMember, segmentParsing, shareReads, spaces, threadSummaries, unread, type MessageRow, type QuoteValue, type SnapshotItem, type TextRange } from '../data';
+  import { messages as allMessages, channels, contentWarningsAutoExpand, customEmojis, lastRead, latestMessage, memberMarks, members, messageById, messagePage, pinnedMessages, reactions, readPerMember, segmentParsing, shareReads, spaces, threadSummaries, unread, type MessageRow, type QuoteValue, type SnapshotItem, type TextRange } from '../data';
   import { activeViewers, memberVisible } from '../hidden';
   import { router } from '../router.svelte';
   import { quoteForTarget, snapshot } from '../selection';
@@ -39,11 +39,13 @@
   import { carryReply, takeReply } from '../replyElsewhere';
   import ChannelPermissions from './ChannelPermissions.svelte';
   import SpaceRoles from './SpaceRoles.svelte';
-  import ChannelEditor from './ChannelEditor.svelte';
-  import NewChat from './NewChat.svelte';
   import ForwardSheet, { type Target } from './ForwardSheet.svelte';
   import { snapshotsFor, warning as forwardCard, withSaveToNotes } from '../chat-forward';
-  import { defaultLevel, isPersonHome, SPECIAL_LOOK, specialChannels, specialSubtitle } from '../special';
+  import { defaultLevel, FROM_CHATS, isPersonHome, noteMatches, SPECIAL_LOOK, specialChannels, specialSubtitle } from '../special';
+  import { ackLines, ackPayload, bodyIntervals, handoverMessages, handoverView, sendDef, tickPayload } from '../handover';
+  import HandoverBar from './HandoverBar.svelte';
+  import HandoverList from './HandoverList.svelte';
+  import NoteChips from './NoteChips.svelte';
   import { afterSend, everyone, offered as asideOffered, on as asideOn, placeholder as asidePlaceholder } from '../chat-aside';
   import { startFrom } from '../new-chat';
   import SpacePanel from './SpacePanel.svelte';
@@ -246,6 +248,34 @@
       ...activeEmoji.map((e) => [e.name, e.id]), // a primary name wins over an alias collision
     ]),
   });
+
+  // Handover (F5.15): the composer's chips, and core's view of delivery, acks and ticks for the speaker
+  const isHandover = $derived(current?.special === 'handover');
+  let hoNext = $state(false);
+  let hoItems = $state<string[]>([]);
+  let hoEditor = $state(false);
+  const hoList = $derived(isHandover && current ? handoverMessages(projection, current.id) : []);
+  const hoView = $derived.by(() => {
+    void projection.front_systems;
+    return isHandover && current ? handoverView(projection, sync.accountId, current.id, bodyIntervals(projection, sync.accountId), speaker) : null;
+  });
+  const hoReady = $derived(hoItems.some((t) => t.trim()));
+  function ackNewest() {
+    const id = hoView?.unread.at(-1);
+    if (id && speaker) sync.create('handover.ack', scope, id, ackPayload(id, speaker));
+  }
+  function tickItem(id: string, item: string, done: boolean) {
+    if (speaker) sync.create('checklist.set', scope, id, tickPayload(id, item, done, speaker));
+  }
+  // Notes (F5.19): tag chips over the saved messages
+  let noteFilter = $state('');
+  const noteInfo = $derived.by(() => {
+    if (current?.special !== 'notes') return null;
+    const all = allMessages(projection, current.id).filter((m) => !m.deleted);
+    const r = core.noteTags(all.map((m) => ({ text: m.text, entities: m.entities })));
+    return { chips: r.chips, tags: new Map(all.map((m, i) => [m.id, r.tags[i] ?? []])), fromChats: all.some((m) => m.forward_of) };
+  });
+  const noteChip = $derived(noteInfo && (noteFilter === FROM_CHATS ? noteInfo.fromChats : noteInfo.chips.some((c) => c.tag === noteFilter)) ? noteFilter : '');
 
   let draft = $state('');
   let draftDoc = $state<ComposerDraft>({ text: '', entities: [] });
@@ -450,6 +480,7 @@
     cw = '';
     visibilityMode = 'all';
     visibleTo = [];
+    hoNext = hoEditor = false; hoItems = []; noteFilter = '';
     replyIn = null;
     older = [];
     olderDone = false;
@@ -610,7 +641,7 @@
   // the audience bar over a shared space's composer (F5.4, F5.16): everyone here, or an aside only our system sees
   const hasAside = $derived(asideOffered(space?.kind, !!self) && gates.aside && !!current && !lockedOut && current.kind !== 'thread');
   const aside = $derived(hasAside && visibilityMode === 'system_only');
-  const canSend = $derived(!!current && (!!preview?.rich.text.trim() || pending.length > 0) &&
+  const canSend = $derived(!!current && (!!preview?.rich.text.trim() || pending.length > 0 || (isHandover && hoReady)) &&
     messageAuthors.length > 0 && messageAuthors.every((id) => canWriteAs(projection, id, sync.accountId)) &&
     (visibilityMode !== 'members' || visibleTo.length > 0));
   const previewNames = $derived(
@@ -693,6 +724,8 @@
       ...(visibilityMode === 'members' ? { visibility: { mode: 'members', member_ids: visibleTo } } :
         visibilityMode === 'system_only' && gates.aside ? { visibility: { mode: 'system_only' } } : {}),
       ...(pollDraft.poll ? { poll: pollDraft.poll } : {}),
+      // every send from the Handover composer is a handover, so Home lists it
+      ...(isHandover ? { handover: sendDef(hoNext, hoItems) } : {}),
       sent_offline: sync.status !== 'live',
     });
     draft = '';
@@ -703,6 +736,7 @@
     visibilityMode = afterSend(visibilityMode) as typeof visibilityMode;
     visibleTo = [];
     pending = [];
+    hoNext = hoEditor = false; hoItems = [];
     if (sync.status === 'live') void flushUploads(sync.device);
     chosen = null;
     replyTo = null;
@@ -1021,9 +1055,11 @@
     { id: 'links', label: 'Links', count: roomLinks.length }, { id: 'polls', label: 'Polls', count: roomPolls.length }]);
   const infoShown = $derived(infoTabs.some((t) => t.id === infoTab) ? infoTab : infoTabs[0].id);
 
+  // under a Notes chip, only what carries it
+  const shownMsgs = $derived(noteInfo && noteChip ? visibleMsgs.filter((m) => noteMatches(m, noteInfo.tags.get(m.id) ?? [], noteChip)) : visibleMsgs);
   const grouped = $derived(
-    visibleMsgs.map((m, j) => {
-      const prev = visibleMsgs[j - 1];
+    shownMsgs.map((m, j) => {
+      const prev = shownMsgs[j - 1];
       const cont =
         !!prev && !prev.deleted && prev.authors.join() === m.authors.join() && m.occurred_at - prev.occurred_at < 300_000 && m.segments.length === 1;
       return { m, cont };
@@ -1031,11 +1067,17 @@
   );
   // messages with "Today"-style day pills and, in our own chats, who came to the front meanwhile
   const clockFormat = new Intl.DateTimeFormat([], { hour: '2-digit', minute: '2-digit' });
-  type Line = { kind: 'msg'; key: string; m: MessageRow; cont: boolean; last: boolean } | { kind: 'day' | 'event'; key: string; text: string };
-  const frontLines = $derived(space?.kind === 'internal' && !homeHidden && current?.special !== 'notes' && grouped.length
+  type Line = { kind: 'msg'; key: string; m: MessageRow; cont: boolean; last: boolean } | { kind: 'day' | 'event' | 'since'; key: string; text: string };
+  const fronts = $derived(space?.kind === 'internal' && !homeHidden && current?.special !== 'notes' && grouped.length
     ? frontEvents(projection.fronts[sync.accountId]?.intervals ?? [], grouped[0].m.occurred_at, Date.now(),
       (type, id) => (type === 'member' ? (people.get(id)?.display_name ?? people.get(id)?.name) : undefined), (l) => layerNames.get(l))
     : []);
+  // the Handover chat adds who took a handover, and where the speaker's last stretch ended (F5.15)
+  const frontLines = $derived.by((): { at: number; text: string; since?: boolean }[] => {
+    if (!hoView) return fronts;
+    const since = hoView.last_fronted !== null && speaker ? [{ at: hoView.last_fronted + 1, text: `Since ${nameOf(speaker)} last fronted`, since: true }] : [];
+    return [...fronts, ...ackLines(hoView, hoList, nameOf), ...since].sort((a, b) => a.at - b.at);
+  });
   const timeline = $derived.by(() => {
     const out: Line[] = [];
     let day = '';
@@ -1050,14 +1092,16 @@
     for (const { m, cont } of grouped) {
       let broke = false;
       while (e < frontLines.length && frontLines[e].at <= m.occurred_at) {
-        dayIn(frontLines[e].at);
-        out.push({ kind: 'event', key: `front:${frontLines[e].at}:${e}`, text: `${frontLines[e].text} · ${clockFormat.format(frontLines[e].at)}` });
+        const l = frontLines[e];
+        if (l.since) out.push({ kind: 'since', key: `since:${l.at}`, text: l.text });
+        else { dayIn(l.at); out.push({ kind: 'event', key: `front:${l.at}:${e}`, text: `${l.text} · ${clockFormat.format(l.at)}` }); }
         e++; broke = true;
       }
       if (dayIn(m.occurred_at)) broke = true;
       out.push({ kind: 'msg', key: m.id, m, cont: cont && !broke, last: true });
     }
     for (; e < frontLines.length; e++) {
+      if (frontLines[e].since) continue;
       dayIn(frontLines[e].at);
       out.push({ kind: 'event', key: `front:${frontLines[e].at}:${e}`, text: `${frontLines[e].text} · ${clockFormat.format(frontLines[e].at)}` });
     }
@@ -1300,6 +1344,8 @@
 {#snippet pollFor(id: string)}
   {@const poll = pollOf(projection, id)}
   {@const m = messageById(projection, id)}
+  {@const ho = hoView?.handovers.find((h) => h.id === id)}
+  {#if ho}<HandoverList items={ho.checklist} waiting={ho.delivered_at === null} canTick={!!speaker} ontick={(item, done) => tickItem(id, item, done)} />{/if}
   {#if poll}<PollCard {projection} parentId={id} {poll} member={speaker} onclose={m && m.account_id === sync.accountId ? () => closeMessage(scope, id, m.channel_id) : undefined} />{/if}
 {/snippet}
 
@@ -1472,6 +1518,7 @@
       </div>
     {/if}
 
+    {#if noteInfo && (noteInfo.chips.length || noteInfo.fromChats) && !lockedOut}<NoteChips chips={noteInfo.chips} fromChats={noteInfo.fromChats} bind:value={noteFilter} />{/if}
     <div class="list" bind:this={list} onscroll={() => { if (!list) return; atLatest = list.scrollHeight - list.scrollTop - list.clientHeight < 80; if (list.scrollTop < 200) showOlder(); }}>
       {#if first}
         <button class="ghost older" onclick={showOlder}>Show older messages ({first})</button>
@@ -1514,6 +1561,8 @@
           <div class="service day"><span>{line.text}</span></div>
         {:else if line.kind === 'event'}
           <div class="service"><span>{line.text}</span></div>
+        {:else if line.kind === 'since'}
+          <div class="service since"><span>{line.text}</span></div>
         {:else if line.kind === 'msg'}
         {@const m = line.m}
         {#if m.id === firstUnread && boundary > 0}<div class="service unread-divider"><span>{pendingUnread} unread{readerName ? ` for ${readerName}` : ''}</span></div>{/if}
@@ -1679,6 +1728,7 @@
         <button class="aside-pill" aria-pressed={aside} onclick={() => (visibilityMode = aside ? 'all' : 'system_only')}><Icon name="lock" size={14} />Aside</button>
       </div>
     {/if}
+    {#if isHandover && !lockedOut && !editing}<HandoverBar canAck={!!hoView?.unread.length && !!speaker} bind:nextSwitch={hoNext} bind:items={hoItems} bind:editing={hoEditor} onack={ackNewest} />{/if}
     {#if !lockedOut}
     <div class="composer">
       <input class="file-input" type="file" multiple accept="image/*,video/*" bind:this={photoInput} onchange={(e) => { addFiles(e.currentTarget.files ?? []); e.currentTarget.value = ''; }} aria-label="Choose photos" />
@@ -1739,7 +1789,7 @@
               oncompositionend={() => { composing = false; trackCursor(); }}
               onpaste={pasteFiles}
               rows="1"
-              placeholder={editing ? 'Edit message' : !current ? '' : aside ? asidePlaceholder(systemName) : 'Message'}
+              placeholder={editing ? 'Edit message' : !current ? '' : aside ? asidePlaceholder(systemName) : isHandover ? 'Write a handover…' : current.special === 'notes' ? 'Save a note…' : 'Message'}
               aria-label="Message"
             ></textarea>
           {/if}
@@ -1847,16 +1897,16 @@
   <ForwardSheet targets={targetRows} {dark} label="Quote in" placeholder="Quote in…" exclude={current?.id} warning={leavingCard}
     onpick={(id) => { quoteIn = false; moveQuote(id); }} onclose={() => (quoteIn = false)} />
 {/if}
-{#if newChat}<NewChat {projection} {dark} start={newChat} onclose={() => (newChat = false)} />{/if}
+{#if newChat}<Lazy load={screens.newChat} {projection} {dark} start={newChat} onclose={() => (newChat = false)} />{/if}
 {#if editingGroup && space && !lockedOut}
-  <ChannelEditor {projection} {dark} spaceId={space.id} spaceKind={space.kind} group={space}
+  <Lazy load={screens.channelEditor} {projection} {dark} spaceId={space.id} spaceKind={space.kind} group={space}
     channel={spaceChannels.length <= 1 ? spaceChannels[0] : undefined} onclose={() => (editingGroup = false)} />
 {/if}
 {#if addingChannel && space}
-  <ChannelEditor {projection} {dark} spaceId={space.id} spaceKind={space.kind} onclose={() => (addingChannel = false)} onsaved={(id) => router.go(`/chat/${id}`)} />
+  <Lazy load={screens.channelEditor} {projection} {dark} spaceId={space.id} spaceKind={space.kind} onclose={() => (addingChannel = false)} onsaved={(id: string) => router.go(`/chat/${id}`)} />
 {/if}
 {#if editingChannel && current && space && !lockedOut}
-  <ChannelEditor {projection} {dark} spaceId={space.id} spaceKind={space.kind} channel={current}
+  <Lazy load={screens.channelEditor} {projection} {dark} spaceId={space.id} spaceKind={space.kind} channel={current}
     canDelete={space.kind === 'internal' || canManage || !!sides?.mine.length} onclose={() => (editingChannel = false)} />
 {/if}
 
@@ -1951,6 +2001,7 @@
   h1 {
     font-size: var(--fs-lg);
   }
+  .service.since span { background: none; color: var(--accent); }
   .thread-back { color: var(--accent); text-decoration: none; font-size: var(--fs-sm); }
   .room-menu { position: relative; color: var(--ink-3); }
   .room-menu summary { cursor: pointer; list-style: none; }

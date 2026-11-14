@@ -9,6 +9,9 @@ export const screens = {
   spacePermissions: () => import('./ui/SpacePermissions.svelte'),
   settings: () => import('./ui/SettingsShell.svelte'),
   stage: () => import('./ui/Stage.svelte'),
+  newChat: () => import('./ui/NewChat.svelte'),
+  channelEditor: () => import('./ui/ChannelEditor.svelte'),
+  chatFolders: () => import('./ui/ChatFolders.svelte'),
 };
 
 /**
