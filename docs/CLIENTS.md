@@ -313,11 +313,15 @@ op and makes no server call. It posts an ongoing, public-on-lock-screen notifica
 quiet channel `front_ongoing` (low importance, no sound, vibration or badge): one segment per
 layer that has someone in it, from `FrontScene.build` as the front widget uses, e.g. "STEERING
 Foxglove, Amarynthe · CO-CONSCIOUS Nairon · NEARBY Violet", or "No one fronting". **Switch** is an
-Activity intent to the switcher (Android asks to unlock first); tapping opens Home. It is redrawn
+Activity intent to the switcher (Android asks to unlock first); **Handover** (D-132) is an Activity
+intent too (`MainActivity.ACTION_HANDOVER`) that opens the Handover chat with its composer focused and
+"At next switch" on; tapping opens Home. It is redrawn
 from the widget's model hook (`QuickSwitchWidget.install`), so local, synced and background-sync
 changes reach it, and cancelled when the setting goes off or the account signs out. With the
 notification permission missing the setting asks for it. On Android 14+ it can be swiped away and
-returns at the next front change; there is no foreground service. Handover joins it with D-132.
+returns at the next front change; there is no foreground service. The front widget's **Handover** button
+(§3.3, F3.8) does the same as the lock screen's action; with no live Handover chat (in Trash) it says so
+in a toast.
 
 ## 4. Web PWA
 

@@ -34,6 +34,21 @@ object Special {
         return model.channels.firstOrNull { it.special == special && it.kind == "text" && it.spaceId in homes }
     }
 
+    /** Core's `note_tags` over Notes messages in display order: each one's tags (without the `#`) and the chips, most used first. */
+    data class NoteTags(val tags: List<List<String>>, val chips: List<Pair<String, Int>>)
+
+    fun noteTags(messages: List<ChatMessage>): NoteTags {
+        val input = org.json.JSONArray(messages.map { m ->
+            org.json.JSONObject().put("text", m.text).put("entities", runCatching { org.json.JSONArray(m.entities) }.getOrElse { org.json.JSONArray() })
+        })
+        return runCatching {
+            val o = org.json.JSONObject(uniffi.chorus_ffi.noteTags(input.toString()))
+            val tags = o.getJSONArray("tags").let { a -> List(a.length()) { i -> a.getJSONArray(i).let { t -> List(t.length()) { t.getString(it) } } } }
+            val chips = o.getJSONArray("chips").let { a -> List(a.length()) { i -> a.getJSONObject(i).let { it.getString("tag") to it.getInt("count") } } }
+            NoteTags(tags, chips)
+        }.getOrElse { NoteTags(messages.map { emptyList() }, emptyList()) }
+    }
+
     /** The "#from chats" chip's value: no tag can hold a `#`, so it never clashes with one. */
     const val FROM_CHATS = "#from chats"
 

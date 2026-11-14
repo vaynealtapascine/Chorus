@@ -134,3 +134,25 @@ internal fun HandoverBubble(def: HandoverDef, out: HandoverOut?, waiting: Boolea
         }
     }
 }
+
+/** Notes' chips (F5.19): All, the #tags most used first, and #from chats. [selected] is "" for All. */
+@Composable
+internal fun NoteChips(chips: List<Pair<String, Int>>, anyForwarded: Boolean, selected: String, onSelect: (String) -> Unit) {
+    val p = LocalChorusPalette.current
+    Row(Modifier.fillMaxWidth().background(p.surface).horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        NoteChip("All", selected.isEmpty()) { onSelect("") }
+        for ((tag, _) in chips) NoteChip("#$tag", selected == tag) { onSelect(tag) }
+        if (anyForwarded) NoteChip(garden.vayne.chorus.data.Special.FROM_CHATS, selected == garden.vayne.chorus.data.Special.FROM_CHATS) {
+            onSelect(garden.vayne.chorus.data.Special.FROM_CHATS) }
+    }
+}
+
+@Composable
+private fun NoteChip(label: String, on: Boolean, onClick: () -> Unit) {
+    val p = LocalChorusPalette.current
+    Text(label, color = if (on) p.accent else p.ink, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 1,
+        modifier = Modifier.clip(RoundedCornerShape(20.dp)).background(if (on) p.accentSoft else p.surface2)
+            .border(BorderStroke(1.dp, if (on) p.accent else p.line), RoundedCornerShape(20.dp))
+            .clickable(role = Role.Button, onClick = onClick).heightIn(min = 40.dp).padding(horizontal = 14.dp, vertical = 9.dp))
+}

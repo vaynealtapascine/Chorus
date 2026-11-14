@@ -250,3 +250,40 @@ payloads), `ui/HandoverBar.svelte`, `ui/HandoverList.svelte`, `ui/NoteChips.svel
 - **Not built on web:** the widget/lock-screen Handover actions (Android only).
 - **Size.** The opening script was 295.0 KB gz before this work; the feature needed room, so NewChat, ChannelEditor and
   ChatFolders moved to `lazy-screens.ts`.
+
+## 9. Android (done 2026-11-15, claude-sonnet-5.5)
+
+Android follows section 8; where it differs is listed last. Logic is in `data/Special.kt` (roles, person home, note
+tags and chip rule), `data/Handover.kt` (builds `handover_view`'s input, ack lines, divider, Home card, payloads) and
+`Model` (`ChatChannel.special`, `ChatSpace.own`, `Model.personHomes`, `handoverMessages`, `handoverAcks`,
+`checklistChecks`, `ChatMessage.handover` / `forwardOf`); UI in `ui/HandoverUi.kt` and `ui/HomeHandover.kt` with
+small edits to `Chat.kt`, `ChatChrome.kt`, `ChatDetails.kt`, `ChannelEditor.kt`, `ChatFoldersScreen.kt`,
+`ChatForwardSheet.kt`. Tests build models from ops through the projection (`D132Ops`, `SpecialTest`,
+`PersonNotesTest`, `HandoverTest`, plus Inbox, Rings, NotifyCheck, HomeDashboard).
+
+- **Person.** A person's own internal space is an own (`created_by_account_id` ours or unstamped) internal space of an
+  account with a self member (`Model.personHomes`). It is not an Internal folder (chat list tabs, folder editor and its
+  "kind" switches), not a name in the chat-list subtitle, search results, share targets or chat info, has no Members tab,
+  "who it's for", Who-sees picker or Share, and is never a place to make a channel. Notes is one row (bookmark, the
+  server's name, no subtitle). With nothing chosen, Chat opens another space first, and never a special chat by default.
+- **Special chats.** Rows, discs and headers wear their icon (document, bookmark) and say "notes between fronts · N
+  members" / "saved for every member"; levels default `all` / `none` (no muted bell for Notes' default); permissions and
+  slow mode are hidden; rename stays; delete reads "Move to Trash". The folder suggestion goes by `special`. **Save to
+  notes** leads the forward sheet (also Reply in, which shares the sheet).
+- **Handover chat.** As web: placeholder, the three chips and a checklist editor, every send a handover (checklist-only
+  has empty text), tappable boxes writing `checklist.set`, "Waiting for next switch", ack lines and the "Since X last
+  fronted" divider as timeline lines (the existing front-line mechanism, so the divider is not drawn before the first
+  message of the loaded window). Intervals: the account's effective Body history for configured accounts, else the legacy fold.
+- **Home.** The handover section shows its card (newest unread, "N more waiting", **Read** = `handover.ack` as the
+  primary fronter else our first member); tapping opens the chat at it. `HomeDashboard.UNBUILT` is gone.
+- **Notes.** Chips over core `note_tags`; the row shows only with a tag or a forward.
+- **Notifications.** The `handover` push (a message ping, stacked under `chat:<channel>`) opens the chat at its message
+  (`EXTRA_OPEN_MESSAGE`); Notifications lists it (system chip, handover icon); Settings > Notifications > "This phone
+  rings for" has "Handovers when the front changes" (its own Android channel, and the account's `notify_chat.handover`
+  switch, systems only). It is a ring switch like its neighbours rather than a separate Advanced row.
+- **Widget and lock screen.** Both Handover actions are Activity intents opening the Handover composer, At next switch on.
+  The widget's old switcher-with-a-note path (`ACTION_SWITCH` + `EXTRA_HANDOVER`) is no longer used by it.
+- **Differs from web.** (1) Chat keeps only the newest 100 messages per channel, so Notes chips and tags cover those;
+  handovers, acks and ticks are kept in full. (2) The divider is not shown before the first loaded message. (3) A
+  handover Read on Home uses the reader rule, not the Home "Reading as" choice. (4) Trash shows a trashed Handover or Notes
+  as "Channel #name" (restore works); there is no create path. (5) The drafts of a checklist survive rotation, not a restart.

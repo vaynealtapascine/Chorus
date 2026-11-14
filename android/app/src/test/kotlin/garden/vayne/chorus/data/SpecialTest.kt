@@ -105,6 +105,17 @@ class SpecialTest {
         assertFalse(Special.noteMatches(plain, emptyList(), Special.FROM_CHATS))
     }
 
+    @Test fun coreFindsNoteTagsAndTheChipsLeadWithTheMostUsed() {
+        fun note(id: String, text: String) = ChatMessage(id, NOTES, listOf(AMY), text, 1, null, "all", emptySet(), null, null, emptyList())
+        val notes = listOf(note("a", "Ask about the appointment. #Reminders"), note("b", "Library card #codes #reminders"),
+            note("c", "no tags, issue #12"), note("d", "plain").copy(forwardOf = "z"))
+        val t = Special.noteTags(notes)
+        assertEquals(listOf(listOf("reminders"), listOf("codes", "reminders"), emptyList<String>(), emptyList<String>()), t.tags)
+        assertEquals(listOf("reminders" to 2, "codes" to 1), t.chips)
+        assertEquals(listOf("a", "b"), notes.filterIndexed { i, m -> Special.noteMatches(m, t.tags[i], "reminders") }.map { it.id })
+        assertEquals(listOf("d"), notes.filterIndexed { i, m -> Special.noteMatches(m, t.tags[i], Special.FROM_CHATS) }.map { it.id })
+    }
+
     @Test fun aSentHandoverKeepsItsDefinition() {
         val extra = JSONObject().put("handover", JSONObject().put("deliver", "next_switch")
             .put("checklist", JSONArray().put(JSONObject().put("id", "c1").put("text", "Keys"))))

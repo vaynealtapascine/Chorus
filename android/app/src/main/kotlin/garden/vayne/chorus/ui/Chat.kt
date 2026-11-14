@@ -475,11 +475,16 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         guard
     }
     val locked = channel != null && !shownNow(channel.id)
-    val messages = if (locked) emptyList() else history.messages(model,model.chatMessages[channel?.id].orEmpty()).filter {
+    val shownMessages = if (locked) emptyList() else history.messages(model,model.chatMessages[channel?.id].orEmpty()).filter {
         (loadedHistory==null || jumpVisibility.message(it)) &&
         space != null && memberVisible(it, space.kind, model.current, viewingAs) &&
             accountVisible(it, space.kind, chorus.device?.accountId.orEmpty()) && (clearedAt == null || it.occurredAt > clearedAt)
     }
+    // Notes (F5.19): All, #tags most used first, #from chats; core finds the tags
+    var noteFilter by rememberSaveable(channel?.id) { mutableStateOf("") }
+    val noteTags = remember(shownMessages, channel?.special) { if (channel?.special == Special.NOTES) Special.noteTags(shownMessages) else null }
+    val messages = if (noteTags == null || noteFilter.isEmpty()) shownMessages
+        else shownMessages.filterIndexed { i, m -> Special.noteMatches(m, noteTags.tags.getOrElse(i) { emptyList() }, noteFilter) }
     // someone from another account spoke here after the cards were fetched: fetch them again (once
     // per new set of speakers, merged so names already shown stay), else they read "Someone" until
     // the chat is reopened. A member the server keeps hidden just stays unnamed.
@@ -1190,6 +1195,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         val historyStart = atHistoryStart && channel.kind != "thread" && !paneLocked
         // Appearance › Density (F10.2): Compact draws messages closer together
         val compact = garden.vayne.chorus.designsystem.LocalChorusAppearance.current.compact
+        if (noteTags != null && (noteTags.chips.isNotEmpty() || shownMessages.any { it.forwardOf != null }))
+            NoteChips(noteTags.chips, shownMessages.any { it.forwardOf != null }, noteFilter) { noteFilter = it }
         Box(Modifier.weight(1f).fillMaxWidth()) {
         LazyColumn(Modifier.fillMaxSize(), state = listState, reverseLayout = true,
             contentPadding = PaddingValues(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(if (compact) 2.dp else 4.dp)) {
