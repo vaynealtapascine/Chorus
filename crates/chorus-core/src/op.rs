@@ -214,7 +214,12 @@ const CHANNEL_FIELDS: &[&str] = &[
     "member_ids",
     "settings",
     "sort_key",
+    // D-132: the channel's role, set when it is made (create-only)
+    "special",
 ];
+/// A channel's role (D-132): one of each, server-made, in an internal space only.
+pub const SPECIALS: &[&str] = &["handover", "notes"];
+const CHANNEL_CREATE_ONLY: &[&str] = &["space_id", "kind", "parent_message_id", "special"];
 const RELTYPE_FIELDS: &[&str] = &["name", "inverse_name", "is_symmetric", "color", "icon"];
 const REL_FIELDS: &[&str] = &["from_member_id", "to_kind", "to_id", "to_label", "type_id", "note", "visibility"];
 const LIST_FIELDS: &[&str] = &["name", "description", "visibility"];
@@ -304,8 +309,8 @@ pub static CATALOGUE: &[KindSpec] = &[
     // D-133: space-wide overrides (admins), and what each account shares in the space (its own)
     k!("space.set_permission", "space_permission", Space, Special),
     k!("space.set_sharing", "space_sharing", Space, Special),
-    k!("channel.create", "channel", Space, Create, CHANNEL_FIELDS, &["space_id", "kind", "parent_message_id"]),
-    k!("channel.set", "channel", Space, Set, CHANNEL_FIELDS, &["space_id", "kind", "parent_message_id"]),
+    k!("channel.create", "channel", Space, Create, CHANNEL_FIELDS, CHANNEL_CREATE_ONLY),
+    k!("channel.set", "channel", Space, Set, CHANNEL_FIELDS, CHANNEL_CREATE_ONLY),
     k!("channel.archive", "channel", Space, Archive),
     k!("channel.unarchive", "channel", Space, Unarchive),
     k!("channel.delete", "channel", Space, Delete),
@@ -318,6 +323,9 @@ pub static CATALOGUE: &[KindSpec] = &[
     k!("message.restore", "message", Space, Restore),
     k!("message.pin", "message", Space, Special),
     k!("message.unpin", "message", Space, Special),
+    // D-132: a member took a handover / ticked an item of its checklist; entity = the message
+    k!("handover.ack", "handover_ack", Space, Special),
+    k!("checklist.set", "checklist_item_state", Space, Special),
     k!("reaction.add", "reaction", Space, SetAdd),
     k!("reaction.remove", "reaction", Space, SetRemove),
     k!("read.mark", "read_state", Space, Special),
@@ -586,6 +594,31 @@ fn payload_shape(op: &Op) -> Result<(), OpError> {
                     return bad(crate::poll::POLL_RULE);
                 }
             }
+            // D-132: a handover is fixed when it is sent, and only `message.send` makes one
+            if let Some(h) = p.get("handover") {
+                if op.kind != "message.send" {
+                    return bad("only message.send carries a handover, fixed when it is sent");
+                }
+                if !h.is_null() && crate::handover::definition(h).is_none() {
+                    return bad(crate::handover::RULE);
+                }
+            }
+        }
+        // D-132: entity = the handover message, which `message_id` repeats (purge finds it by that)
+        "handover.ack" | "checklist.set" => {
+            if op.entity_id.is_none() {
+                return Err(OpError::MissingEntity);
+            }
+            if p.get("message_id").and_then(Value::as_str) != op.entity() {
+                return bad("message_id must be the handover message (the op's entity)");
+            }
+            nonempty("member_id")?;
+            if op.kind == "checklist.set" {
+                nonempty("item_id")?;
+                if !p.get("done").is_some_and(Value::is_boolean) {
+                    return bad("done must be true or false");
+                }
+            }
         }
         "poll.vote" => {
             if op.entity_id.is_none() {
@@ -638,6 +671,13 @@ fn payload_shape(op: &Op) -> Result<(), OpError> {
         }
         "channel.create" | "channel.set" => {
             one_of("kind", &["text", "thread", "member_dm"], false)?;
+            // a special channel (D-132) is a plain text channel, never a thread
+            if p.get("special").is_some_and(|s| !s.is_null())
+                && (p.get("kind").is_some_and(|k| k != "text")
+                    || p.get("parent_message_id").is_some_and(|m| !m.is_null()))
+            {
+                return bad("a special channel is a text channel");
+            }
             if let Some(v) = p.get("member_ids")
                 && !v.is_null()
                 && !v.as_array().is_some_and(|ids| ids.iter().all(Value::is_string))
@@ -743,6 +783,7 @@ pub const FIELD_RULES: &[(&str, &str, &[Rule])] = {
         ("attachment", "is_spoiler", &[Bool, NotNull]),
         ("bucket", "ceiling", &[Json, NotNull]),
         ("channel", "kind", &[OneOf(&["text", "thread", "member_dm"])]),
+        ("channel", "special", &[OneOf(SPECIALS)]),
         ("channel", "member_ids", &[Json]),
         ("channel", "settings", &[Json, NotNull]),
         ("custom_emoji", "aliases", &[Json, NotNull]),
@@ -774,6 +815,7 @@ pub const FIELD_RULES: &[(&str, &str, &[Rule])] = {
         ("post", "visibility", &[Json, NotNull]),
         ("post", "sent_offline", &[Bool, NotNull]),
         ("message", "poll", &[Json]),
+        ("message", "handover", &[Json]),
         ("post", "poll", &[Json]),
         ("relationship", "visibility", &[Json, NotNull]),
         ("relationship_type", "is_symmetric", &[Bool, NotNull]),
@@ -1077,6 +1119,59 @@ mod tests {
         let p = crate::model::project([&b, &a]);
         let row = &p.rows["space_sharing"][&format!("{}|acc", a.entity().unwrap())];
         assert_eq!((row.fields["member_names"].clone(), row.fields["fronts"].clone()), (json!(false), json!(true)));
+    }
+
+    #[test]
+    fn handover_ops_and_special_channels_have_their_shapes() {
+        let space = format!("space:{}", new_id(1, [8; 10]));
+        let send = |kind: &str, h: Value| {
+            validate_new(&op(kind, &space, json!({"channel_id": "c", "text": "x", "handover": h})))
+        };
+        assert!(
+            send("message.send", json!({"deliver": "next_switch", "checklist": [{"id": "a", "text": "Keys"}]})).is_ok()
+        );
+        assert!(send("message.send", json!({"deliver": "soon"})).is_err());
+        assert!(send("message.edit", json!({"deliver": "now"})).is_err(), "fixed when sent");
+        assert!(send("message.forward", json!({"deliver": "now"})).is_err());
+        let mut ack = op("handover.ack", &space, json!({"member_id": "fox"}));
+        assert!(validate_new(&ack).is_err(), "message_id repeats the entity");
+        ack.payload["message_id"] = json!(ack.entity_id.clone());
+        assert!(validate_new(&ack).is_ok());
+        let mut check = op("checklist.set", &space, json!({"member_id": "fox", "item_id": "a", "done": "yes"}));
+        check.payload["message_id"] = json!(check.entity_id.clone());
+        assert!(validate_new(&check).is_err());
+        check.payload["done"] = json!(true);
+        assert!(validate_new(&check).is_ok());
+        assert!(validate_new(&op("channel.create", &space, json!({"special": "notes", "kind": "text"}))).is_ok());
+        assert!(validate_new(&op("channel.create", &space, json!({"special": "diary"}))).is_err());
+        assert!(validate_new(&op("channel.create", &space, json!({"special": "notes", "kind": "thread"}))).is_err());
+        assert_eq!(
+            validate(&op("channel.set", &space, json!({"special": "notes"}))),
+            Err(OpError::CreateOnly("special".into()))
+        );
+        // an edit can't add a handover to the projected message either
+        let mut sent = op("message.send", &space, json!({"text": "x", "handover": {"deliver": "now"}}));
+        sent.account_id = Some("a".into());
+        let mut edit = op("message.edit", &space, json!({"text": "y", "handover": {"deliver": "next_switch"}}));
+        edit.id = new_id(1_790_000_000_003, [7; 10]);
+        edit.hlc = Hlc::new(5, 0, 1);
+        let p = crate::model::project([&sent, &edit]);
+        assert_eq!(p.row("message", sent.entity().unwrap()).unwrap().fields["handover"], json!({"deliver": "now"}));
+        // acks and ticks: LWW per (message, member) and (message, item)
+        let mut t1 = check.clone();
+        let mut t2 = check.clone();
+        t2.id = new_id(1_790_000_000_004, [6; 10]);
+        t2.hlc = Hlc::new(9, 0, 1);
+        t2.payload["done"] = json!(false);
+        t2.payload["member_id"] = json!("nai");
+        t1.payload["done"] = json!(true);
+        ack.id = new_id(1_790_000_000_005, [5; 10]);
+        let p = crate::model::project([&t2, &t1, &ack]);
+        let key = format!("{}|a", check.entity().unwrap());
+        assert_eq!(p.rows["checklist_item_state"][&key].fields["done"], json!(false));
+        assert_eq!(p.rows["checklist_item_state"][&key].fields["member_id"], json!("nai"));
+        let key = format!("{}|fox", ack.entity().unwrap());
+        assert!(p.rows["handover_ack"][&key].fields["acked_at"].is_i64());
     }
 
     #[test]

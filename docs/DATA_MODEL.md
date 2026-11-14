@@ -118,7 +118,10 @@ checks more than `op::validate`'s field names: every payload field stored in a c
 `{offset, length}` ranges (UTF-16) inside the text with a `type`/`authors` (so another
 account's message can't make a renderer slice out of range),
 `space.set_roles` a list of `{id, name, perms}`, a channel's `settings.slow_mode_s` whole seconds
-up to 21 600). A test compares `FIELD_RULES` with the SQL
+up to 21 600; D-132: a channel's `special` is `handover`/`notes` on a text channel, a message's
+`handover` only on `message.send` with `deliver` `now`/`next_switch` and an optional 1–30 item
+checklist, `handover.ack`/`checklist.set` a `message_id` equal to their entity, a `member_id`, and
+for a tick an `item_id` and a boolean `done`). A test compares `FIELD_RULES` with the SQL
 schema, so a migration that adds a constraint must add its rule. The rules apply to **new** ops
 only: projection (`model::apply_op`, the server's rebuild) and restore pushes use the structural
 `op::validate`, so an op stored before a rule existed keeps projecting exactly as before.
@@ -195,12 +198,14 @@ Merge column: **LWW-F** = field-level last-writer-wins by HLC · **SET** = LWW e
 | `front.change` | `{action, ...}`; independent presence, Resume or own-history controls, with optional `effective_at`/`history_only` on presence (FRONTS.md) | TL + write-ordered controls |
 | `space.create` / `space.set` / `space.delete` | | LWW-F |
 | `space.join` / `space.leave` / `space.set_role` | `{account_id, role}` | SET / LWW-F |
-| `channel.create` / `channel.set` / `channel.archive` / `channel.delete` / `channel.restore` | | LWW-F |
+| `channel.create` / `channel.set` / `channel.archive` / `channel.delete` / `channel.restore` | `special?: handover or notes` is create-only (D-132): only in an `internal` space, by its owner, one live channel of each per space (§4.5) | LWW-F |
+| `handover.ack` | `{message_id, member_id}` — entity = the handover message (`message_id` repeats it); in its `space:` scope; the system's own live member took it (D-132, §4.5) | LWW per (message, member) on `acked_at` |
+| `checklist.set` | `{message_id, item_id, done: bool, member_id}` — entity = the handover message; `item_id` is one of its checklist's (D-132, §4.5) | LWW per (message, item) |
 | `channel.set_permission` | `{target_type: role or account, target_id, allow:[…], deny:[…]}`; lists of channel permissions (§4.4; not `invite`/`history`) | LWW-F per (channel, target) |
 | `space.set_permission` | `{target_type: role or account, target_id, allow:[…], deny:[…]}`; entity is the space; any permission, `invite` and `history` included (D-133, §4.4); admins only | LWW-F per (space, target) |
 | `space.set_sharing` | `{member_names?: bool, fronts?: bool, fronts_delay_min?: 0–1440}`; entity is the space; what the **writing** account shares there, keyed (space, author) so an account only sets its own; shared spaces only, members only (D-133) | LWW-F per (space, account, field) |
 | `space.set_roles` | custom roles for shared spaces `{roles:[{id,name,color,perms}]}` | LWW-F |
-| `message.send` | `{channel_id, authors:[member_id], text, entities, segments?:[{offset,length,authors}], reply_to?, quote?, forward?, cw?, visibility?, attachments?:[attachment_id], sent_offline:bool, poll?:{question?, options:[{id,text}], multiple, closes_at?}}`; segment offsets/lengths are UTF-16. `poll` is fixed at creation (edits may not carry it; POLLS.md). `quote` is a single `{message_id,offset,length,text}` or a bundle `{items:[snapshot]}` (D-048). | APP |
+| `message.send` | `{channel_id, authors:[member_id], text, entities, segments?:[{offset,length,authors}], reply_to?, quote?, forward?, cw?, visibility?, attachments?:[attachment_id], sent_offline:bool, poll?:{question?, options:[{id,text}], multiple, closes_at?}, handover?:{deliver: now or next_switch, checklist?:[{id,text}]}}`; segment offsets/lengths are UTF-16. `poll` is fixed at creation (edits may not carry it; POLLS.md). `handover` (D-132, §4.5) only on `message.send`, only in the `handover` channel, fixed at sending; 1–30 checklist items, ids 1–16 and text 1–200 characters, ids unique. `quote` is a single `{message_id,offset,length,text}` or a bundle `{items:[snapshot]}` (D-048). | APP |
 | `message.edit` | `{message_id, text, entities, segments?, cw?}` → new revision; supply updated segments when editing text so attribution and offsets stay aligned (D-045); structural fields (`channel_id`, `visibility`, `reply_to`, `quote`, `forward_*`, `poll`…) and managed columns in the payload are ignored (D-123) | APP (latest HLC shown) |
 | `message.delete` / `message.restore` | `{message_id}` — restore clears `deleted_at` with a newer HLC | LWW-F |
 | `message.forward` | `{channel_id, authors, text, entities, forward_of_id, forward_snapshot:[{message_id, channel_name?, authors, text, entities, offset?, length?, occurred_at}]}` → a new message with source snapshots captured by the sending client (D-048) | APP |
@@ -492,9 +497,22 @@ CREATE TABLE channel (
   member_ids TEXT CHECK (member_ids IS NULL OR json_valid(member_ids)),  -- member_dm participants
   settings TEXT NOT NULL DEFAULT '{}',          -- slow_mode_s (Q17), lock (autoproxy is the account's pref, D-074)
   sort_key TEXT,
+  special TEXT CHECK (special IS NULL OR special IN ('handover','notes')),  -- D-132 (0025): the channel's role, set at creation
   created_at INTEGER NOT NULL, archived_at INTEGER, deleted_at INTEGER,
   clocks TEXT NOT NULL DEFAULT '{}'
 );
+CREATE INDEX channel_special ON channel(space_id, special) WHERE special IS NOT NULL;
+
+-- D-132 (0025): who took a handover (`handover.ack`, LWW per (message, member)) and the ticks on
+-- its checklist (`checklist.set`, LWW per (message, item)); derived, rebuilt from the log.
+CREATE TABLE handover_ack (
+  message_id TEXT NOT NULL, member_id TEXT NOT NULL, acked_at INTEGER NOT NULL, hlc TEXT NOT NULL,
+  PRIMARY KEY (message_id, member_id)
+) WITHOUT ROWID;
+CREATE TABLE checklist_item_state (
+  message_id TEXT NOT NULL, item_id TEXT NOT NULL, done INTEGER NOT NULL, member_id TEXT, hlc TEXT NOT NULL,
+  PRIMARY KEY (message_id, item_id)
+) WITHOUT ROWID;
 
 CREATE TABLE message (
   id               TEXT PRIMARY KEY,
@@ -519,6 +537,7 @@ CREATE TABLE message (
   pinned_at        INTEGER, pinned_by_member TEXT,
   deleted_at       INTEGER,
   thread_channel_id TEXT,
+  handover         TEXT CHECK (handover IS NULL OR json_valid(handover)),  -- D-132 (0025): {deliver, checklist?}, fixed at sending
   char_count       INTEGER GENERATED ALWAYS AS (length(text)) VIRTUAL,
   clocks           TEXT NOT NULL DEFAULT '{}'
 );
@@ -902,6 +921,41 @@ from the rejoin — or the account has `history`. An unknown `joined_at` hides e
 is hidden. Ingest refuses reactions, replies, forwards, threads and votes on a message the author
 can't read this way (`visibility::message_accessible`). A message sent offline before the join but
 received after it counts as after: the server's clock is the only one it trusts here.
+
+### 4.5 Special channels: Handover and Notes to ourselves (D-132, D-162)
+
+Two **channels with a role** (`channel.special`): `handover` (notes from one front to whoever
+fronts next, Figma F5.15, F0.1) and `notes` (saved messages for every member, F5.19). They are
+ordinary text channels in every other way: messages, replies, quotes, attachments, voice, search,
+pins, Trash, exports and purge all work as in any channel, and deleting one is a tombstone that
+Trash restores.
+
+- **Creation.** The server makes them as ordinary ops (`channel.create {special}` by the account,
+  device `server`), so every device converges. See D-162 for when, where, and for persons.
+- **Rules at ingest** (`perms::special_denied`, for every author, the owner included): `special`
+  only on a new text channel (never a thread) in an `internal` space, by the space's owner; at most
+  one **live** (not deleted) channel of each role per space (a second `channel.create`, or a
+  `channel.restore` while another is live, is refused: clients offer Restore, not a new one); the
+  role is create-only (`channel.set` can't carry it; a repeated `channel.create` can't give an
+  existing channel a role or take it away, `perms::foreign_space`).
+- **Never shared out.** `channel.set_permission` on a special channel is refused, and nobody but
+  the owner joins an internal space (`space.join` naming another account there is refused). The
+  view rule (`perms::can_sql`, so sync, catch-up, digests, search, REST reads, blobs, notifications
+  and receipts) gives a special channel to its space's owner only, whatever any override or
+  membership says.
+- **Handover.** `message.send` may carry `handover: {deliver, checklist?}` only in the `handover`
+  channel, as the owner; it is fixed at sending (edits and forwards can't carry it; an edit's copy
+  is ignored by the projection, D-123). `handover.ack {message_id, member_id}` and
+  `checklist.set {message_id, item_id, done, member_id}` (entity = the message) are accepted only
+  from the owner, on a live handover in a `handover` channel, as one of its own live members, and a
+  tick only for an item the checklist has. Projected to `handover_ack` and `checklist_item_state`
+  (core rows keyed `<message>|<member>` and `<message>|<item>`); they sync only where the message
+  does (`visibility::visible_with`). Delivery, unread, the checklist and "last fronted" are pure
+  functions of those rows and the Body front's folded history (`chorus_core::handover`,
+  `fixtures/handover/`).
+- **Notes.** No payload of its own: its tag chips read `#tags` from the text
+  (`chorus_core::text::hashtags`), "#from chats" is `forward_of_id` set, and Save to notes is an
+  ordinary `message.forward` into it (D-048).
 
 ## 5. What each device stores
 

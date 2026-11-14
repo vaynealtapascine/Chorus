@@ -9,3 +9,7 @@ fixtures`. Expected results are hand-written, not blessed.
 (`front`, `cocon`): who is there and on which of the two; `present` and custom layers don't count.
 Retracted switches are already gone from the folded intervals the caller passes, and a back-dated
 switch sits where it is dated, so both resolve the same way on every device.
+
+`checklist_lww.json` runs the real projection (`project`) over two `checklist.set` ops and a
+`handover.ack`: the later clock wins whatever order they arrive in, and the rows are keyed
+`<message>|<item>` and `<message>|<member>` as the clients read them.

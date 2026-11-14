@@ -235,6 +235,7 @@ const REVISE_IMMUTABLE_FIELDS: &[&str] = &[
     "kind",
     "sent_offline",
     "poll",
+    "handover",
 ];
 
 /// Apply one op to a projection (the body of [`project`]; also used by the incremental
@@ -376,6 +377,25 @@ fn special(p: &mut Projection, o: &Op, payload: &Map<String, Value>, reads: &mut
                 let id = format!("{entity}|{}", member.as_str().unwrap_or_default());
                 set_fields(p, "poll_nudge", &id, o.hlc, &one("nudged_at", Value::from(o.time()))).exists = true;
             }
+        }
+        // D-132: who took a handover, LWW per (message, member), keyed `<message>|<member>`
+        "handover.ack" => {
+            let member = str_field(o, "member_id");
+            let mut f = Map::new();
+            f.insert("message_id".into(), json!(entity));
+            f.insert("member_id".into(), json!(member));
+            f.insert("acked_at".into(), json!(o.time()));
+            set_fields(p, "handover_ack", &format!("{entity}|{member}"), o.hlc, &f).exists = true;
+        }
+        // D-132: a tick on a handover's checklist, LWW per (message, item), keyed `<message>|<item>`
+        "checklist.set" => {
+            let item = str_field(o, "item_id");
+            let mut f = Map::new();
+            f.insert("message_id".into(), json!(entity));
+            f.insert("item_id".into(), json!(item));
+            f.insert("done".into(), json!(payload.get("done").and_then(Value::as_bool).unwrap_or(false)));
+            f.insert("member_id".into(), json!(str_field(o, "member_id")));
+            set_fields(p, "checklist_item_state", &format!("{entity}|{item}"), o.hlc, &f).exists = true;
         }
         "front.review_resolve" => {
             if let Some((id, resolution)) = front::review_resolution(o) {

@@ -38,7 +38,8 @@ use crate::sync::Digest;
 /// Bump for changes to projection shape, recognized operations or projection semantics. This
 /// versions a replaceable local UI cache; it is independent of the network sync digest.
 /// v8: `space_permission` and `space_sharing` rows (D-133).
-pub const PROJECTION_VERSION: u32 = 8;
+/// v9: `channel.special`, `message.handover`, `handover_ack` and `checklist_item_state` rows (D-132).
+pub const PROJECTION_VERSION: u32 = 9;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

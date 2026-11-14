@@ -216,7 +216,12 @@ pub fn related_write_allowed(conn: &Connection, author: &str, o: &Op) -> anyhow:
         }
         return Ok(true);
     }
-    if o.kind.starts_with("message.") || o.kind.starts_with("reaction.") || o.kind.starts_with("read.") {
+    if o.kind.starts_with("message.")
+        || o.kind.starts_with("reaction.")
+        || o.kind.starts_with("read.")
+        || o.kind.starts_with("handover.")
+        || o.kind.starts_with("checklist.")
+    {
         if let Some(cid) = o.payload.get("channel_id").and_then(Value::as_str)
             && !channel_accessible(conn, author, cid)?
         {
@@ -281,6 +286,10 @@ fn visible_with(account: &str, o: &Op, look: &mut dyn Lookups) -> anyhow::Result
     if k.starts_with("reaction.") {
         let id = str_of("target_id").or_else(|| str_of("message_id")).or_else(|| o.entity());
         return id.map_or(Ok(false), |m| look.message(m));
+    }
+    // D-132: an ack or tick goes where its handover goes (the owner's devices only)
+    if k.starts_with("handover.") || k.starts_with("checklist.") {
+        return o.entity().map_or(Ok(false), |m| look.message(m));
     }
     if k.starts_with("read.") {
         // read marks are the account's own (unread counts, "track reading per member"): nobody

@@ -90,6 +90,11 @@ const KEYS: &[&str] = &[
     "member_names",
     "fronts",
     "fronts_delay_min",
+    // D-132
+    "handover",
+    "item_id",
+    "done",
+    "special",
 ];
 
 struct World {

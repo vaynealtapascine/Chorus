@@ -330,6 +330,11 @@ impl World {
                 {
                     p["attachments"] = json!([a]);
                 }
+                // D-132: sometimes a handover, with a checklist the ticks below can name
+                if self.rng.chance(15) {
+                    let deliver = if self.rng.chance(50) { "now" } else { "next_switch" };
+                    p["handover"] = json!({"deliver": deliver, "checklist": [{"id": "a", "text": "Keys"}, {"id": "b", "text": "Meds"}]});
+                }
                 self.pools.messages.entry(scope.clone()).or_default().push((id, at, channel));
                 ("message.send", scope, p)
             }
@@ -352,9 +357,15 @@ impl World {
             60..=61 => {
                 let scope = self.rng.pick(&spaces).cloned().unwrap_or_default();
                 let channel = self.channel_in(&scope);
-                let pick = self.rng.below(8);
-                // D-133's two space ops are keyed by the space, the rest by the channel
-                entity = if pick >= 6 { scope.strip_prefix("space:").map(str::to_string) } else { Some(channel) };
+                let pick = self.rng.below(10);
+                // D-133's two space ops are keyed by the space, D-132's by a message, the rest by the channel
+                let msgs = self.pools.messages.get(&scope).cloned().unwrap_or_default();
+                let message = self.rng.pick(&msgs).map(|m| m.0.clone()).unwrap_or_else(|| self.new_id());
+                entity = match pick {
+                    6 | 7 => scope.strip_prefix("space:").map(str::to_string),
+                    8 | 9 => Some(message.clone()),
+                    _ => Some(channel),
+                };
                 let (k, p) = match pick {
                     0 | 1 => ("channel.set", json!({"name": format!("r{}", self.rng.below(50)), "topic": "t"})),
                     2 => ("channel.archive", json!({})),
@@ -371,10 +382,20 @@ impl World {
                             json!({"target_type": "role", "target_id": "everyone", "allow": allow, "deny": deny}),
                         )
                     }
-                    _ => (
+                    7 => (
                         "space.set_sharing",
                         json!({"member_names": self.rng.chance(50), "fronts_delay_min": self.rng.below(30)}),
                     ),
+                    // D-132: taking a handover and ticking its checklist, LWW per member / per item
+                    8 => ("handover.ack", json!({"message_id": message, "member_id": member(self)})),
+                    _ => {
+                        let item = if self.rng.chance(50) { "a" } else { "b" };
+                        let who = member(self);
+                        (
+                            "checklist.set",
+                            json!({"message_id": message, "item_id": item, "done": self.rng.chance(60), "member_id": who}),
+                        )
+                    }
                 };
                 (k, scope, p)
             }

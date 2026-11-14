@@ -1057,3 +1057,60 @@ fn a30_a_space_sees_our_front_only_when_shared_only_after_its_delay_and_only_whi
     assert_eq!(w.push_in(&w.alice, &scope, "space.join", &space, json!({"account_id": w.mallory})), None);
     assert!(seen(&w.mallory).unwrap().contains(&w.alice));
 }
+
+#[test]
+fn a31_another_account_cannot_take_tick_see_or_be_given_our_handover() {
+    // D-132: Handover and Notes are the system's alone: no guest grant, no join, no ack or tick
+    // from another account by any scope, and none of it syncs to anyone else
+    let w = World::new();
+    let home = w.id();
+    let scope = format!("space:{home}");
+    ingest::grant(&w.c, &w.alice, &scope).unwrap();
+    for (kind, entity, p) in [
+        ("space.create", home.clone(), json!({"kind": "internal", "name": "Home"})),
+        ("space.join", home.clone(), json!({"account_id": w.alice})),
+    ] {
+        ingest::server_op(&w.c, &w.alice, kind, &scope, Some(&entity), p, NOW).unwrap();
+    }
+    let handover = w.id();
+    let made = json!({"space_id": home, "kind": "text", "name": "Handover", "special": "handover"});
+    ingest::server_op(&w.c, &w.alice, "channel.create", &scope, Some(&handover), made, NOW).unwrap();
+    let amy = w.member(&w.alice, "Amarynthe", json!({"mode": "private"}));
+    let msg = w.id();
+    let send = json!({"channel_id": handover, "authors": [amy], "text": "Keys by the door", "entities": [],
+                      "handover": {"deliver": "now", "checklist": [{"id": "a", "text": "Keys"}]}});
+    assert_eq!(w.push_in(&w.alice, &scope, "message.send", &msg, send), None, "setup: handover");
+    let mal = w.member(&w.mallory, "Mal", json!({"mode": "private"}));
+    let ack = json!({"message_id": msg, "member_id": mal});
+    let tick = json!({"message_id": msg, "item_id": "a", "done": true, "member_id": mal});
+    // in her own scope, in Alice's own space, and in a space she shares with Alice
+    assert!(w.push(&w.mallory, "handover.ack", &msg, ack.clone()).is_some());
+    assert!(w.refused(w.push_in(&w.mallory, &scope, "handover.ack", &msg, ack.clone())));
+    assert!(w.refused(w.push_in(&w.mallory, &scope, "checklist.set", &msg, tick.clone())));
+    let (_, shared_scope, _) = shared_with_mallory(&w);
+    assert!(w.refused(w.push_in(&w.mallory, &shared_scope, "handover.ack", &msg, ack)));
+    assert!(w.refused(w.push_in(&w.mallory, &shared_scope, "checklist.set", &msg, tick)));
+    // as one of Alice's members, from the shared space
+    let as_amy = json!({"message_id": msg, "member_id": amy});
+    assert!(w.refused(w.push_in(&w.mallory, &shared_scope, "handover.ack", &msg, as_amy)));
+    let n: i64 = w.c.query_row("SELECT count(*) FROM handover_ack", [], |r| r.get(0)).unwrap();
+    assert_eq!(n, 0, "someone else took Alice's handover");
+    // Alice can't share it out either: no guest grant, no join into her own space
+    let guest = json!({"target_type": "account", "target_id": w.mallory, "allow": ["view"], "deny": []});
+    assert!(w.refused(w.push_in(&w.alice, &scope, "channel.set_permission", &handover, guest)));
+    assert!(w.refused(w.push_in(&w.alice, &scope, "space.join", &home, json!({"account_id": w.mallory}))));
+    let access: i64 =
+        w.c.query_row(
+            "SELECT count(*) FROM scope_access WHERE account_id = ?1 AND scope = ?2",
+            params![w.mallory, scope],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(access, 0, "Mallory got Alice's own space");
+    // and were she let into the scope, nothing in the channel would sync to her (the space's own
+    // name and kind go to anyone with the scope, as for any guest)
+    let ops = chorus_server::oplog::scope_after(&w.c, &scope, 0, 1000).unwrap();
+    for o in ops.iter().filter(|o| !o.kind.starts_with("space.")) {
+        assert!(!chorus_server::visibility::op_visible_to(&w.c, &w.mallory, o).unwrap(), "{} reached Mallory", o.kind);
+    }
+}

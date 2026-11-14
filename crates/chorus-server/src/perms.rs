@@ -16,6 +16,9 @@
 //!   (`visibility::op_visible_to`) lets through only the channels it may view, plus the space's
 //!   name. Guests have no role, so only account overrides apply to them.
 //! - An unknown channel grants nothing (ops that name it wait until it arrives).
+//! - **Special channels** (D-132: Handover, Notes to ourselves) are the space owner's alone,
+//!   whatever any override or membership says, and nothing can share them out
+//!   ([`special_denied`]).
 
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
@@ -74,6 +77,7 @@ fn one_sql(account: &str, channel: &str, perm: &str) -> String {
     format!(
         "coalesce((SELECT CASE
             WHEN perm_s.owner_account_id = {account} THEN 1
+            WHEN perm_c.special IS NOT NULL THEN 0
             WHEN perm_sm.role IS NOT NULL AND perm_s.kind = 'dm' THEN 1
             WHEN perm_sm.role = 'admin' THEN 1
             WHEN {acct_deny} THEN 0
@@ -259,6 +263,10 @@ pub fn write_denied(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<O
     {
         return Ok(Some(why));
     }
+    // Handover and Notes (D-132): the owner's alone, one live of each, never shared out
+    if let Some(why) = special_denied(conn, author, o, space, &owner, kind.as_deref())? {
+        return Ok(Some(why));
+    }
     // what an account shares in a space is its own business, and only shared spaces have it (D-133)
     if o.kind == "space.set_sharing" {
         return Ok(if kind.as_deref() != Some("shared") {
@@ -365,6 +373,108 @@ pub fn write_denied(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<O
         _ if k.starts_with("attachment.") => None,
         _ => role.is_none().then(|| "only the space's members can do that".into()),
     })
+}
+
+/// A channel's role (D-132), if it has one.
+pub fn special_of(conn: &Connection, channel: &str) -> rusqlite::Result<Option<String>> {
+    conn.prepare_cached("SELECT special FROM channel WHERE id = ?1")?
+        .query_row([channel], |r| r.get(0))
+        .optional()
+        .map(Option::flatten)
+}
+
+/// Is there a live (not deleted) channel with this role in the space, other than `except`?
+fn live_special(conn: &Connection, space: &str, special: &str, except: Option<&str>) -> rusqlite::Result<bool> {
+    conn.prepare_cached(
+        "SELECT EXISTS (SELECT 1 FROM channel WHERE space_id = ?1 AND special = ?2 AND deleted_at IS NULL
+                          AND id <> coalesce(?3, ''))",
+    )?
+    .query_row(params![space, special, except], |r| r.get(0))
+}
+
+/// D-132's rules for the special channels, checked for every author, the space's owner included:
+/// a role only on a new text channel in an internal space, by its owner, one live channel of each
+/// role per space (a deleted one is restored, not made again); never shared out (no channel
+/// overrides on one, and nobody else joins an internal space); a `handover` only on a message in
+/// the `handover` channel; and an ack or tick only by the owner, as one of its own live members,
+/// on a handover there (a tick on an item its checklist has). `Some(reason)`: refused.
+fn special_denied(
+    conn: &Connection,
+    author: &str,
+    o: &Op,
+    space: &str,
+    owner: &str,
+    kind: Option<&str>,
+) -> anyhow::Result<Option<String>> {
+    let p = &o.payload;
+    let refuse = |why: &str| Ok(Some(why.to_string()));
+    match o.kind.as_str() {
+        "channel.create" => {
+            let Some(special) = str_of(p, "special") else { return Ok(None) };
+            if kind != Some("internal") || author != owner {
+                return refuse("only a system's own space has Handover and Notes");
+            }
+            if live_special(conn, space, special, o.entity())? {
+                return Ok(Some(format!("this space already has its {special} channel; restore it instead")));
+            }
+        }
+        "channel.restore" => {
+            if let Some(id) = o.entity()
+                && let Some(special) = special_of(conn, id)?
+                && live_special(conn, space, &special, Some(id))?
+            {
+                return Ok(Some(format!("this space already has another {special} channel")));
+            }
+        }
+        "channel.set_permission" => {
+            if o.entity().map(|c| special_of(conn, c)).transpose()?.flatten().is_some() {
+                return refuse("Handover and Notes are never shared");
+            }
+        }
+        "space.join" if kind == Some("internal") => {
+            if str_of(p, "account_id").is_some_and(|a| a != owner) {
+                return refuse("a system's own space is never shared; share a channel instead");
+            }
+        }
+        "message.send" if p.get("handover").is_some_and(|h| !h.is_null()) => {
+            let channel = str_of(p, "channel_id").map(|c| special_of(conn, c)).transpose()?.flatten();
+            if channel.as_deref() != Some("handover") || author != owner {
+                return refuse("a handover goes in the Handover channel");
+            }
+        }
+        "handover.ack" | "checklist.set" => {
+            if author != owner {
+                return refuse("only the system takes its own handovers");
+            }
+            let row: Option<(Option<String>, Option<String>)> = conn
+                .prepare_cached(
+                    "SELECT c.special, m.handover FROM message m JOIN channel c ON c.id = m.channel_id
+                     WHERE m.id = ?1 AND m.deleted_at IS NULL",
+                )?
+                .query_row([o.entity().unwrap_or_default()], |r| Ok((r.get(0)?, r.get(1)?)))
+                .optional()?;
+            let def = match row {
+                Some((Some(special), Some(h))) if special == "handover" => {
+                    serde_json::from_str::<Value>(&h).ok().and_then(|h| chorus_core::handover::definition(&h))
+                }
+                _ => None,
+            };
+            let Some(def) = def else { return refuse("no such handover") };
+            let own: bool = conn
+                .prepare_cached(
+                    "SELECT EXISTS (SELECT 1 FROM member WHERE id = ?1 AND account_id = ?2 AND deleted_at IS NULL)",
+                )?
+                .query_row(params![str_of(p, "member_id").unwrap_or_default(), author], |r| r.get(0))?;
+            if !own {
+                return refuse("a handover is taken as one of the system's own members");
+            }
+            if o.kind == "checklist.set" && !def.checklist.iter().any(|i| Some(i.id.as_str()) == str_of(p, "item_id")) {
+                return refuse("that handover's checklist has no such item");
+            }
+        }
+        _ => {}
+    }
+    Ok(None)
 }
 
 /// D-098: the members of `account` a chat in a DM space is kept to (its `member_ids`, in their
@@ -528,11 +638,12 @@ fn foreign_space(conn: &Connection, o: &Op, space: &str) -> anyhow::Result<Optio
             return Ok(Some("channel"));
         }
         if let Some(id) = o.entity() {
-            let existing: Option<(Option<String>, Option<String>, Option<String>)> = conn
-                .prepare_cached("SELECT space_id, kind, parent_message_id FROM channel WHERE id = ?1")?
-                .query_row([id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            type Structural = (Option<String>, Option<String>, Option<String>, Option<String>);
+            let existing: Option<Structural> = conn
+                .prepare_cached("SELECT space_id, kind, parent_message_id, special FROM channel WHERE id = ?1")?
+                .query_row([id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
                 .optional()?;
-            if let Some((home, kind, parent)) = existing {
+            if let Some((home, kind, parent, special)) = existing {
                 if home.as_deref().is_some_and(|home| home != space) {
                     return Ok(Some("channel"));
                 }
@@ -540,7 +651,10 @@ fn foreign_space(conn: &Connection, o: &Op, space: &str) -> anyhow::Result<Optio
                 // not move a channel across scopes or redirect a private thread to an open
                 // parent (or turn a private channel into such a thread). Missing fields are
                 // untouched by the core's LWW fold; matching repeated creates remain valid.
-                for (key, before) in [("space_id", home), ("kind", kind), ("parent_message_id", parent)] {
+                // (D-132: nor give an existing channel a role, or take its role away)
+                for (key, before) in
+                    [("space_id", home), ("kind", kind), ("parent_message_id", parent), ("special", special)]
+                {
                     if let Some(after) = p.get(key)
                         && after.as_str() != before.as_deref()
                     {

@@ -1299,6 +1299,34 @@ fn special(conn: &Connection, o: &Op) -> anyhow::Result<()> {
             }
             Ok(())
         }
+        // D-132: who took a handover (LWW per message and member), as the core model keys it
+        "handover.ack" => {
+            let key = [("message_id", o.entity().unwrap_or("").to_string()), ("member_id", p("member_id"))];
+            if newer_than_stored(conn, "handover_ack", &key, o)? {
+                exec(
+                    conn,
+                    "INSERT INTO handover_ack (message_id, member_id, acked_at, hlc) VALUES (?1, ?2, ?3, ?4)
+                     ON CONFLICT(message_id, member_id) DO UPDATE SET acked_at = excluded.acked_at, hlc = excluded.hlc",
+                    params![key[0].1, key[1].1, o.time(), o.hlc.to_string()],
+                )?;
+            }
+            Ok(())
+        }
+        // D-132: a tick on a handover's checklist (LWW per message and item)
+        "checklist.set" => {
+            let key = [("message_id", o.entity().unwrap_or("").to_string()), ("item_id", p("item_id"))];
+            if newer_than_stored(conn, "checklist_item_state", &key, o)? {
+                let done = o.payload.get("done").and_then(Value::as_bool).unwrap_or(false);
+                exec(
+                    conn,
+                    "INSERT INTO checklist_item_state (message_id, item_id, done, member_id, hlc) VALUES (?1, ?2, ?3, ?4, ?5)
+                     ON CONFLICT(message_id, item_id) DO UPDATE SET done = excluded.done,
+                       member_id = excluded.member_id, hlc = excluded.hlc",
+                    params![key[0].1, key[1].1, done, p("member_id"), o.hlc.to_string()],
+                )?;
+            }
+            Ok(())
+        }
         "pref.set" => lww_keyed(
             conn,
             o,
@@ -1604,6 +1632,8 @@ pub(crate) const DERIVED: &[&str] = &[
     "channel_permission",
     "space_permission",
     "space_sharing",
+    "handover_ack",
+    "checklist_item_state",
     "message",
     "message_segment",
     "message_segment_author",
