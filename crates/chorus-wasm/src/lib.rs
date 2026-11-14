@@ -151,6 +151,18 @@ pub fn space_perms(levels_json: &str) -> Result<String, JsError> {
     wrap(api::space_perms(levels_json))
 }
 
+/// D-132: the Handover chat and Home card in one call (see `chorus_core::api::handover_view`).
+#[wasm_bindgen(js_name = handoverView)]
+pub fn handover_view(input_json: &str) -> Result<String, JsError> {
+    wrap(api::handover_view(input_json))
+}
+
+/// D-132: Notes' `#tags`, per message and as chips (see `chorus_core::api::note_tags`).
+#[wasm_bindgen(js_name = noteTags)]
+pub fn note_tags(messages_json: &str) -> Result<String, JsError> {
+    wrap(api::note_tags(messages_json))
+}
+
 #[wasm_bindgen(js_name = searchParse)]
 pub fn search_parse(query: &str) -> Result<String, JsError> {
     wrap(api::search_parse(query))

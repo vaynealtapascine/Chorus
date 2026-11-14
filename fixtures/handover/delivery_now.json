@@ -1,0 +1,47 @@
+{
+  "description": "deliver now: delivered when sent, whatever the front does",
+  "fn": "handover_view",
+  "args": [
+    {
+      "intervals": [
+        {
+          "subject_id": "amy",
+          "layer": "front",
+          "start_at": 0,
+          "end_at": 1000
+        },
+        {
+          "subject_id": "fox",
+          "layer": "front",
+          "start_at": 1000,
+          "end_at": null
+        }
+      ],
+      "handovers": [
+        {
+          "id": "h1",
+          "sent_at": 500,
+          "deliver": "now",
+          "authors": [
+            "amy"
+          ]
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "handovers": [
+      {
+        "id": "h1",
+        "delivered_at": 500,
+        "acks": [],
+        "acked": false,
+        "checklist": []
+      }
+    ],
+    "unread": [
+      "h1"
+    ],
+    "last_fronted": null
+  }
+}

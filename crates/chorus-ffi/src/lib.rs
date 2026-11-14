@@ -155,6 +155,19 @@ pub fn space_perms(levels_json: String) -> Result<String, CoreError> {
     wrap(api::space_perms(&levels_json))
 }
 
+/// D-132: the Handover chat and Home card in one call (`chorus_core::api::handover_view`;
+/// docs/handoff/d132-clients.md has the shapes).
+#[uniffi::export]
+pub fn handover_view(input_json: String) -> Result<String, CoreError> {
+    wrap(api::handover_view(&input_json))
+}
+
+/// D-132: Notes' `#tags`, per message and as chips (`chorus_core::api::note_tags`).
+#[uniffi::export]
+pub fn note_tags(messages_json: String) -> Result<String, CoreError> {
+    wrap(api::note_tags(&messages_json))
+}
+
 /// A message search box → query JSON (SPEC §5.3: words, from:, in:, has:, before:/after:,
 /// is:pinned), or an error with `{"pos", "message"}`.
 #[uniffi::export]

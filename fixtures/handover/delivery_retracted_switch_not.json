@@ -1,0 +1,39 @@
+{
+  "description": "a retracted switch leaves no interval in the folded history, so the handover still waits",
+  "fn": "handover_view",
+  "args": [
+    {
+      "intervals": [
+        {
+          "subject_id": "amy",
+          "layer": "front",
+          "start_at": 0,
+          "end_at": null
+        }
+      ],
+      "handovers": [
+        {
+          "id": "h1",
+          "sent_at": 500,
+          "deliver": "next_switch",
+          "authors": [
+            "amy"
+          ]
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "handovers": [
+      {
+        "id": "h1",
+        "delivered_at": null,
+        "acks": [],
+        "acked": false,
+        "checklist": []
+      }
+    ],
+    "unread": [],
+    "last_fronted": null
+  }
+}

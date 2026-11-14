@@ -1,0 +1,59 @@
+{
+  "description": "the same members trading places between fronting and co-conscious is a change",
+  "fn": "handover_view",
+  "args": [
+    {
+      "intervals": [
+        {
+          "subject_id": "amy",
+          "layer": "front",
+          "start_at": 0,
+          "end_at": 900
+        },
+        {
+          "subject_id": "fox",
+          "layer": "cocon",
+          "start_at": 0,
+          "end_at": 900
+        },
+        {
+          "subject_id": "amy",
+          "layer": "cocon",
+          "start_at": 900,
+          "end_at": null
+        },
+        {
+          "subject_id": "fox",
+          "layer": "front",
+          "start_at": 900,
+          "end_at": null
+        }
+      ],
+      "handovers": [
+        {
+          "id": "h1",
+          "sent_at": 500,
+          "deliver": "next_switch",
+          "authors": [
+            "amy"
+          ]
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "handovers": [
+      {
+        "id": "h1",
+        "delivered_at": 900,
+        "acks": [],
+        "acked": false,
+        "checklist": []
+      }
+    ],
+    "unread": [
+      "h1"
+    ],
+    "last_fronted": null
+  }
+}

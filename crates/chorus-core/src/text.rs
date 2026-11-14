@@ -230,6 +230,46 @@ pub fn utf16_len(s: &str) -> u32 {
     s.encode_utf16().count() as u32
 }
 
+/// The longest tag [`hashtags`] reads; a longer run is not a tag.
+pub const MAX_HASHTAG_CHARS: usize = 64;
+
+/// The `#tags` of a message, for Notes to ourselves' tag chips (D-132): `#` at the start or after
+/// a character that isn't a letter, digit or `_`, then up to [`MAX_HASHTAG_CHARS`] letters, digits
+/// and `_` with at least one that isn't a digit. Not inside `code`, `pre` or `url` entities
+/// (`entities` as stored, UTF-16 ranges). Folded to lowercase in ASCII only (D-091), without the
+/// `#`, each once, in order of appearance.
+pub fn hashtags(text: &str, entities: &[serde_json::Value]) -> Vec<String> {
+    let skip: Vec<(u64, u64)> = entities
+        .iter()
+        .filter(|e| matches!(e.get("type").and_then(serde_json::Value::as_str), Some("code" | "pre" | "url")))
+        .filter_map(|e| {
+            let n = |k: &str| e.get(k).and_then(serde_json::Value::as_u64);
+            Some((n("offset")?, n("offset")? + n("length")?))
+        })
+        .collect();
+    let word = |c: char| c.is_alphanumeric() || c == '_';
+    let chars: Vec<char> = text.chars().collect();
+    let mut out: Vec<String> = Vec::new();
+    let (mut i, mut u) = (0usize, 0u64);
+    while i < chars.len() {
+        let c = chars[i];
+        let start_ok = c == '#' && (i == 0 || !word(chars[i - 1])) && !skip.iter().any(|(s, e)| *s <= u && u < *e);
+        if start_ok {
+            let len = chars[i + 1..].iter().take_while(|c| word(**c)).count();
+            let tag: String = chars[i + 1..i + 1 + len].iter().map(|c| c.to_ascii_lowercase()).collect();
+            if len > 0 && len <= MAX_HASHTAG_CHARS && !tag.chars().all(|c| c.is_ascii_digit()) && !out.contains(&tag) {
+                out.push(tag);
+            }
+            u += 1 + chars[i + 1..i + 1 + len].iter().map(|c| c.len_utf16() as u64).sum::<u64>();
+            i += 1 + len;
+            continue;
+        }
+        u += c.len_utf16() as u64;
+        i += 1;
+    }
+    out
+}
+
 /// Substring by UTF-16 range (clamped; never splits a surrogate pair).
 pub fn utf16_slice(s: &str, offset: u32, length: u32) -> &str {
     let (mut start, mut end) = (s.len(), s.len());

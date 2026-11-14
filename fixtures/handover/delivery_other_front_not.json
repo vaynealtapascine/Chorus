@@ -1,0 +1,55 @@
+{
+  "description": "only Body counts: a change in another named front doesn't deliver",
+  "fn": "handover_view",
+  "args": [
+    {
+      "body": "acct",
+      "intervals": [
+        {
+          "subject_id": "amy",
+          "layer": "front",
+          "start_at": 0,
+          "end_at": null,
+          "front": "acct"
+        },
+        {
+          "subject_id": "amy",
+          "layer": "front",
+          "start_at": 0,
+          "end_at": 700,
+          "front": "work"
+        },
+        {
+          "subject_id": "fox",
+          "layer": "front",
+          "start_at": 700,
+          "end_at": null,
+          "front": "work"
+        }
+      ],
+      "handovers": [
+        {
+          "id": "h1",
+          "sent_at": 500,
+          "deliver": "next_switch",
+          "authors": [
+            "amy"
+          ]
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "handovers": [
+      {
+        "id": "h1",
+        "delivered_at": null,
+        "acks": [],
+        "acked": false,
+        "checklist": []
+      }
+    ],
+    "unread": [],
+    "last_fronted": null
+  }
+}

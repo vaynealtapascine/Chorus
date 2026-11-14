@@ -392,6 +392,38 @@ pub fn space_perms(levels_json: &str) -> Result<String, String> {
     Ok(js(&crate::perms::allowed(&l)))
 }
 
+/// Handover (D-132, `handover::view`): `{body?, intervals: [{subject_id, layer, start_at, end_at,
+/// front?}], handovers: [{id, sent_at, deliver, authors, checklist}], acks: [{message_id,
+/// member_id, acked_at}], checks: [{message_id, item_id, done, member_id}], member?}` →
+/// `{handovers: [{id, delivered_at, acks, acked, checklist: [{id, text, done, by}]}], unread,
+/// last_fronted}` (docs/handoff/d132-clients.md).
+pub fn handover_view(input_json: &str) -> Result<String, String> {
+    let input: crate::handover::ViewIn = parse("handover", input_json)?;
+    Ok(js(&crate::handover::view(&input)))
+}
+
+/// Notes' tag chips (D-132, `text::hashtags`): `[{text, entities}]` → `{tags: [[tag]] per
+/// message, chips: [{tag, count}]}`, chips most used first, then by tag.
+pub fn note_tags(messages_json: &str) -> Result<String, String> {
+    let msgs: Vec<Value> = parse("messages", messages_json)?;
+    let tags: Vec<Vec<String>> = msgs
+        .iter()
+        .map(|m| {
+            let entities = m.get("entities").and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]);
+            crate::text::hashtags(m.get("text").and_then(Value::as_str).unwrap_or(""), entities)
+        })
+        .collect();
+    let mut counts: std::collections::BTreeMap<&str, u32> = std::collections::BTreeMap::new();
+    for t in tags.iter().flatten() {
+        *counts.entry(t.as_str()).or_default() += 1;
+    }
+    let mut chips: Vec<(&str, u32)> = counts.into_iter().collect();
+    crate::sort::by(&mut chips, |a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
+    let chips: Vec<Value> =
+        chips.into_iter().map(|(tag, count)| serde_json::json!({"tag": tag, "count": count})).collect();
+    Ok(js(&serde_json::json!({"tags": tags, "chips": chips})))
+}
+
 /// The latest of our messages (`[{at, id}]`) at or before a reader's mark `{at, id}`: `{at, id}`
 /// or `null` (D-131: all a receipt may say).
 pub fn ticks_upto(mark_json: &str, own_json: &str) -> Result<String, String> {

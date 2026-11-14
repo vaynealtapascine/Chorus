@@ -1,0 +1,63 @@
+{
+  "description": "unread handovers come in delivery order (a next-switch one delivered later than a later now one)",
+  "fn": "handover_view",
+  "args": [
+    {
+      "intervals": [
+        {
+          "subject_id": "amy",
+          "layer": "front",
+          "start_at": 0,
+          "end_at": 1000
+        },
+        {
+          "subject_id": "fox",
+          "layer": "front",
+          "start_at": 1000,
+          "end_at": null
+        }
+      ],
+      "handovers": [
+        {
+          "id": "h1",
+          "sent_at": 100,
+          "deliver": "next_switch",
+          "authors": [
+            "amy"
+          ]
+        },
+        {
+          "id": "h2",
+          "sent_at": 200,
+          "deliver": "now",
+          "authors": [
+            "amy"
+          ]
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "handovers": [
+      {
+        "id": "h1",
+        "delivered_at": 1000,
+        "acks": [],
+        "acked": false,
+        "checklist": []
+      },
+      {
+        "id": "h2",
+        "delivered_at": 200,
+        "acks": [],
+        "acked": false,
+        "checklist": []
+      }
+    ],
+    "unread": [
+      "h2",
+      "h1"
+    ],
+    "last_fronted": null
+  }
+}

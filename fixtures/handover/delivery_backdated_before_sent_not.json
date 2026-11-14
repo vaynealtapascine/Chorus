@@ -1,0 +1,45 @@
+{
+  "description": "a switch logged later but dated before the handover was sent is the front it was sent to, not the next one",
+  "fn": "handover_view",
+  "args": [
+    {
+      "intervals": [
+        {
+          "subject_id": "amy",
+          "layer": "front",
+          "start_at": 0,
+          "end_at": 400
+        },
+        {
+          "subject_id": "fox",
+          "layer": "front",
+          "start_at": 400,
+          "end_at": null
+        }
+      ],
+      "handovers": [
+        {
+          "id": "h1",
+          "sent_at": 500,
+          "deliver": "next_switch",
+          "authors": [
+            "amy"
+          ]
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "handovers": [
+      {
+        "id": "h1",
+        "delivered_at": null,
+        "acks": [],
+        "acked": false,
+        "checklist": []
+      }
+    ],
+    "unread": [],
+    "last_fronted": null
+  }
+}

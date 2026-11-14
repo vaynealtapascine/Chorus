@@ -1,0 +1,53 @@
+{
+  "description": "a co-conscious member joining is a change; someone only present is not",
+  "fn": "handover_view",
+  "args": [
+    {
+      "intervals": [
+        {
+          "subject_id": "amy",
+          "layer": "front",
+          "start_at": 0,
+          "end_at": null
+        },
+        {
+          "subject_id": "sky",
+          "layer": "present",
+          "start_at": 600,
+          "end_at": null
+        },
+        {
+          "subject_id": "nai",
+          "layer": "cocon",
+          "start_at": 800,
+          "end_at": null
+        }
+      ],
+      "handovers": [
+        {
+          "id": "h1",
+          "sent_at": 500,
+          "deliver": "next_switch",
+          "authors": [
+            "amy"
+          ]
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "handovers": [
+      {
+        "id": "h1",
+        "delivered_at": 800,
+        "acks": [],
+        "acked": false,
+        "checklist": []
+      }
+    ],
+    "unread": [
+      "h1"
+    ],
+    "last_fronted": null
+  }
+}

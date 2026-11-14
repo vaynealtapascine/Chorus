@@ -1,0 +1,46 @@
+{
+  "description": "when the member last stopped fronting: touching front and co-con intervals are one stretch, and the stretch still open doesn't count",
+  "fn": "handover_view",
+  "args": [
+    {
+      "member": "fox",
+      "intervals": [
+        {
+          "subject_id": "fox",
+          "layer": "front",
+          "start_at": 0,
+          "end_at": 100
+        },
+        {
+          "subject_id": "fox",
+          "layer": "front",
+          "start_at": 200,
+          "end_at": 300
+        },
+        {
+          "subject_id": "fox",
+          "layer": "cocon",
+          "start_at": 300,
+          "end_at": 400
+        },
+        {
+          "subject_id": "fox",
+          "layer": "present",
+          "start_at": 400,
+          "end_at": 450
+        },
+        {
+          "subject_id": "fox",
+          "layer": "front",
+          "start_at": 500,
+          "end_at": null
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "handovers": [],
+    "unread": [],
+    "last_fronted": 400
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "description": "the checklist in written order; a state for an unknown item is ignored; who ticked last is `by`",
+  "fn": "handover_view",
+  "args": [
+    {
+      "handovers": [
+        {
+          "id": "h1",
+          "sent_at": 100,
+          "deliver": "now",
+          "authors": [
+            "amy"
+          ],
+          "checklist": [
+            {
+              "id": "a",
+              "text": "Keys"
+            },
+            {
+              "id": "b",
+              "text": "Meds at 20:00"
+            }
+          ]
+        }
+      ],
+      "checks": [
+        {
+          "message_id": "h1",
+          "item_id": "b",
+          "done": true,
+          "member_id": "fox"
+        },
+        {
+          "message_id": "h1",
+          "item_id": "zz",
+          "done": true,
+          "member_id": "fox"
+        },
+        {
+          "message_id": "h1",
+          "item_id": "a",
+          "done": false,
+          "member_id": "nai"
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "handovers": [
+      {
+        "id": "h1",
+        "delivered_at": 100,
+        "acks": [],
+        "acked": false,
+        "checklist": [
+          {
+            "id": "a",
+            "text": "Keys",
+            "done": false,
+            "by": "nai"
+          },
+          {
+            "id": "b",
+            "text": "Meds at 20:00",
+            "done": true,
+            "by": "fox"
+          }
+        ]
+      }
+    ],
+    "unread": [
+      "h1"
+    ],
+    "last_fronted": null
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "description": "Notes' #tags: after a non-word character, letters/digits/_ with one non-digit, ASCII lowercase, each once per message; not in code, pre or url; chips most used first then by tag",
+  "fn": "note_tags",
+  "args": [
+    [
+      {
+        "text": "Ask about moving the appointment. #Reminders #reminders",
+        "entities": []
+      },
+      {
+        "text": "Bus times #codes #2024 a#b #x_1 `#notatag` https://e.x/#frag",
+        "entities": [
+          {
+            "type": "code",
+            "offset": 32,
+            "length": 10
+          },
+          {
+            "type": "url",
+            "offset": 43,
+            "length": 17
+          }
+        ]
+      },
+      {
+        "text": "Café #Été #codes",
+        "entities": []
+      },
+      {
+        "text": "no tags here"
+      }
+    ]
+  ],
+  "expect": {
+    "tags": [
+      [
+        "reminders"
+      ],
+      [
+        "codes",
+        "x_1"
+      ],
+      [
+        "Été",
+        "codes"
+      ],
+      []
+    ],
+    "chips": [
+      {
+        "tag": "codes",
+        "count": 2
+      },
+      {
+        "tag": "reminders",
+        "count": 1
+      },
+      {
+        "tag": "x_1",
+        "count": 1
+      },
+      {
+        "tag": "Été",
+        "count": 1
+      }
+    ]
+  }
+}

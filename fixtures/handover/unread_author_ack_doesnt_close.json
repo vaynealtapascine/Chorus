@@ -1,0 +1,84 @@
+{
+  "description": "an ack by one of its authors doesn't close a handover; anyone else's closes it for the system",
+  "fn": "handover_view",
+  "args": [
+    {
+      "intervals": [
+        {
+          "subject_id": "amy",
+          "layer": "front",
+          "start_at": 0,
+          "end_at": 1000
+        },
+        {
+          "subject_id": "fox",
+          "layer": "front",
+          "start_at": 1000,
+          "end_at": null
+        }
+      ],
+      "handovers": [
+        {
+          "id": "h1",
+          "sent_at": 100,
+          "deliver": "now",
+          "authors": [
+            "amy"
+          ]
+        },
+        {
+          "id": "h2",
+          "sent_at": 200,
+          "deliver": "now",
+          "authors": [
+            "amy"
+          ]
+        }
+      ],
+      "acks": [
+        {
+          "message_id": "h1",
+          "member_id": "amy",
+          "acked_at": 150
+        },
+        {
+          "message_id": "h2",
+          "member_id": "fox",
+          "acked_at": 1100
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "handovers": [
+      {
+        "id": "h1",
+        "delivered_at": 100,
+        "acks": [
+          {
+            "member_id": "amy",
+            "acked_at": 150
+          }
+        ],
+        "acked": false,
+        "checklist": []
+      },
+      {
+        "id": "h2",
+        "delivered_at": 200,
+        "acks": [
+          {
+            "member_id": "fox",
+            "acked_at": 1100
+          }
+        ],
+        "acked": true,
+        "checklist": []
+      }
+    ],
+    "unread": [
+      "h1"
+    ],
+    "last_fronted": null
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "description": "next switch: delivered at the first change of who fronts after it was sent; one sent after the last switch waits",
+  "fn": "handover_view",
+  "args": [
+    {
+      "intervals": [
+        {
+          "subject_id": "amy",
+          "layer": "front",
+          "start_at": 0,
+          "end_at": 1000
+        },
+        {
+          "subject_id": "fox",
+          "layer": "front",
+          "start_at": 1000,
+          "end_at": null
+        }
+      ],
+      "handovers": [
+        {
+          "id": "h1",
+          "sent_at": 500,
+          "deliver": "next_switch",
+          "authors": [
+            "amy"
+          ]
+        },
+        {
+          "id": "h2",
+          "sent_at": 1500,
+          "deliver": "next_switch",
+          "authors": [
+            "amy"
+          ]
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "handovers": [
+      {
+        "id": "h1",
+        "delivered_at": 1000,
+        "acks": [],
+        "acked": false,
+        "checklist": []
+      },
+      {
+        "id": "h2",
+        "delivered_at": null,
+        "acks": [],
+        "acked": false,
+        "checklist": []
+      }
+    ],
+    "unread": [
+      "h1"
+    ],
+    "last_fronted": null
+  }
+}
