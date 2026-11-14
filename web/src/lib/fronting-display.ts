@@ -1,9 +1,11 @@
 // How Fronting shows each front (Figma F3.1, F3.4, F3.9, F3.11; D-122; Android FrontingDisplay.kt).
 // One account pref, `fronting.display`, shared by the system's devices like `chat_folders`.
 // Display only: layer meaning, order and names stay in `front.layer` / `front.define` (D-080).
-// Also `member_status:<id>` = {tags, note, at, clear_on_leave, text}: a member's states while here
-// (F3.10, docs/FRONTS.md); an older `{text, at}` reads as a note.
+// Also `member_status:<id>` = {tags, note, at, clear_on_leave, audience, text}: a member's states while
+// here (F3.10, D-138, D-159); an older `{text, at}` reads as a private note. Friends in the audience see
+// tags and note on the member's entry of their follower view (`sharedStateLine`), at reveal time.
 import type { FrontPresence } from './core/fronts';
+import { PRIVATE, type Audience } from './profile-audience';
 import { sync } from './sync/client';
 
 export const PREF = 'fronting.display';
@@ -100,20 +102,41 @@ export function displayPrefs(prefs: PrefRows | undefined, accountId: string): Se
 }
 
 /** A member's states while here (F3.10; Android MemberStatus): built-in keys, `state:<custom state id>`
- * or their own words, and a note. `extra` keeps fields this client doesn't know, so a write keeps them. */
-export interface MemberStatus { tags: string[]; note: string | null; at: number; clearOnLeave: boolean; extra?: Record<string, unknown> }
+ * or their own words, a note, and who sees it (D-138; default only us). `extra` keeps fields this client
+ * doesn't know, so a write keeps them. */
+export interface MemberStatus { tags: string[]; note: string | null; at: number; clearOnLeave: boolean; audience: Audience; extra?: Record<string, unknown> }
 export interface CustomState { id: string; name: string }
 export const MAX_STATUS_TAG = 40;
 export const MAX_STATUS_NOTE = 200;
+export const MAX_STATUS_TAGS = 8;
 export const BUILT_IN_STATUSES: [string, string][] = [['tired', 'Tired'], ['nonverbal', 'Nonverbal'], ['busy', 'Busy'],
   ['low_spoons', 'Low spoons'], ['needs_quiet', 'Needs quiet'], ['out_and_about', 'Out and about']];
-const KNOWN_STATUS = new Set(['tags', 'note', 'at', 'clear_on_leave', 'text']);
+const KNOWN_STATUS = new Set(['tags', 'note', 'at', 'clear_on_leave', 'audience', 'text']);
+const AUDIENCE_MODES = ['friends', 'followers', 'following', 'server'];
+
+/** A state's audience as the server reads it (core `member_state::audience`): anything malformed is private. */
+export function statusAudience(v: unknown): Audience {
+  const o = v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+  if (typeof o.mode === 'string' && AUDIENCE_MODES.includes(o.mode)) return { mode: o.mode } as Audience;
+  if (o.mode === 'buckets' && Array.isArray(o.bucket_ids) && o.bucket_ids.every((x) => typeof x === 'string')) {
+    return { mode: 'buckets', bucket_ids: o.bucket_ids as string[] };
+  }
+  return PRIVATE;
+}
 
 export function statusLabel(tag: string, states: CustomState[]): string {
   const built = BUILT_IN_STATUSES.find(([k]) => k === tag);
   if (built) return built[1];
   if (tag.startsWith('state:')) return states.find((s) => s.id === tag.slice(6))?.name ?? 'State';
   return tag;
+}
+/** A friend's member state as their follower view shows it (D-138): built-in keys, their own words or a
+ * custom state's name, then the note. Null when there's nothing to say. */
+export function sharedStateLine(state: { tags?: unknown; note?: unknown } | null | undefined): string | null {
+  if (!state) return null;
+  const tags = Array.isArray(state.tags) ? state.tags.filter((t): t is string => typeof t === 'string' && !!t) : [];
+  const note = typeof state.note === 'string' && state.note.trim() ? state.note.trim() : null;
+  return [...tags.map((t) => statusLabel(t, [])), ...(note ? [note] : [])].join(' · ') || null;
 }
 /** "Tired · Nonverbal · Typing only today, please" */
 export const statusLine = (s: MemberStatus, states: CustomState[] = []): string =>
@@ -129,18 +152,21 @@ export const statusShowing = (s: MemberStatus, since: number | null | undefined)
 export function status(value: unknown): MemberStatus | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const o = value as Record<string, unknown>;
-  const tags = [...new Set(strings(o.tags).map((t) => t.slice(0, MAX_STATUS_TAG)))].slice(0, 8);
+  const raw = Array.isArray(o.tags) ? o.tags.filter((t): t is string => typeof t === 'string' && !!t.trim()) : [];
+  const tags = [...new Set(raw.map((t) => t.slice(0, MAX_STATUS_TAG)))].slice(0, MAX_STATUS_TAGS);
   const note = str('tags' in o ? o.note : o.text)?.trim().slice(0, MAX_STATUS_NOTE) || null;
   if (!tags.length && !note) return null;
   const extra = Object.fromEntries(Object.entries(o).filter(([k]) => !KNOWN_STATUS.has(k)));
-  return { tags, note, at: Number(o.at) || 0, clearOnLeave: o.clear_on_leave === true, ...(Object.keys(extra).length ? { extra } : {}) };
+  return { tags, note, at: Number.isInteger(o.at) ? (o.at as number) : 0, clearOnLeave: o.clear_on_leave === true, audience: statusAudience(o.audience),
+    ...(Object.keys(extra).length ? { extra } : {}) };
 }
 /** The pref value for a status (null clears it); `states` name the system's own states in `text`, for older readers. */
 export function statusValue(s: MemberStatus | null, states: CustomState[] = []): Record<string, unknown> | null {
   const note = s?.note?.trim().slice(0, MAX_STATUS_NOTE) || null;
   if (!s || (!s.tags.length && !note)) return null;
   const tidy = { ...s, note };
-  return { ...s.extra, tags: s.tags, ...(note ? { note } : {}), at: s.at, clear_on_leave: s.clearOnLeave, text: statusLine(tidy, states) };
+  return { ...s.extra, tags: s.tags, ...(note ? { note } : {}), at: s.at, clear_on_leave: s.clearOnLeave, audience: s.audience ?? PRIVATE,
+    text: statusLine(tidy, states) };
 }
 /** The system's custom states (ENTITIES §2), for state labels. */
 export function customStates(rows: Record<string, { exists?: boolean; fields: Record<string, unknown> } | undefined> | undefined): CustomState[] {

@@ -1,10 +1,13 @@
 // The Friends screens' rules and words (UI20, Figma F7, D-128): who is "around right now", how a
 // friend's shared time reads, follow prefs (NOTIFICATIONS §4) edited one control at a time, and the
 // ceiling an accepted request starts with. Pure; Android's data/Friends.kt follows the same rules.
+import { sharedStateLine } from './fronting-display';
 
 export interface Person { id: string; handle: string | null; display_name: string | null; kind: string; avatar_blob?: string | null }
 export interface FollowRow { id: string; account: Person; status: string; created_at: number; prefs?: Record<string, unknown> }
-export interface ViewEntry { t?: string; name: string; level: string; color?: string | null; glyph?: string | null; avatar_blob?: string | null }
+/** `state`: the member's state when it reaches us (D-138): tags and note, revealed with the front. */
+export interface ViewEntry { t?: string; name: string; level: string; color?: string | null; glyph?: string | null; avatar_blob?: string | null;
+  state?: { tags?: string[]; note?: string | null } | null }
 export interface FollowerView {
   entries: ViewEntry[];
   since: number | null;
@@ -57,12 +60,15 @@ export function levelWord(level: string): string {
   return ({ front: 'fronting', cocon: 'co-conscious', present: 'present' } as Record<string, string>)[level] ?? 'here';
 }
 
-/** "Kit fronting · Juniper co-conscious", front first, at most `max` names. */
+/** "Kit fronting (Tired) · Juniper co-conscious", front first, at most `max` names. */
 export function nowLine(entries: ViewEntry[], max = 3): string {
   const order = ['front', 'cocon', 'present'];
   const rank = (l: string) => (order.indexOf(l) < 0 ? order.length : order.indexOf(l));
   const sorted = [...entries].sort((a, b) => rank(a.level) - rank(b.level));
-  const shown = sorted.slice(0, max).map((e) => `${e.name} ${levelWord(e.level)}`).join(' · ');
+  const shown = sorted.slice(0, max).map((e) => {
+    const state = sharedStateLine(e.state);
+    return `${e.name} ${levelWord(e.level)}${state ? ` (${state})` : ''}`;
+  }).join(' · ');
   return sorted.length > max ? `${shown} · ${sorted.length - max} more` : shown;
 }
 

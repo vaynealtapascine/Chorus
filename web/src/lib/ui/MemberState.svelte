@@ -1,7 +1,11 @@
 <script lang="ts">
   // A member's state (Figma F3.10; Android MemberStatePage): any of the common states, the system's own and
-  // their own words, a note, and whether it clears when they stop fronting (`member_status:<id>`).
+  // their own words, a note, whether it clears when they stop fronting, and who sees it (`member_status:<id>`;
+  // D-138: default only us; friends in the audience see it next to the name while that member is shown in front).
+  import AudienceChip from './AudienceChip.svelte';
   import Chip from './kit/Chip.svelte';
+  import { buckets } from '../data';
+  import { PRIVATE, type Audience } from '../profile-audience';
   import { untrack } from 'svelte';
   import * as fd from '../fronting-display';
   import type { Who } from '../fronting-subjects';
@@ -21,6 +25,8 @@
   let offered = $state<string[]>(fd.statusChoices(own, current));
   let note = $state(current?.note ?? '');
   let clear = $state(current?.clearOnLeave ?? true);
+  let audience = $state<Audience>(current?.audience ?? PRIVATE);
+  const sharing = $derived(buckets(projection));
   let typing = $state(false);
   let words = $state('');
   const ready = $derived(picked.length > 0 || !!note.trim());
@@ -32,7 +38,7 @@
   }
   function set(clearIt = false) {
     if (!clearIt && !ready) return;
-    fd.setStatus(who.id, clearIt ? null : { ...current, tags: picked, note: note.trim() || null, at: Date.now(), clearOnLeave: clear }, states);
+    fd.setStatus(who.id, clearIt ? null : { ...current, tags: picked, note: note.trim() || null, at: Date.now(), clearOnLeave: clear, audience }, states);
     onclose();
   }
 </script>
@@ -52,7 +58,8 @@
   {#if typing}<input class="own" bind:value={words} maxlength={fd.MAX_STATUS_TAG} placeholder="Custom" aria-label="Custom" autofocus
     onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addWords(); } }} onblur={addWords} />{/if}
   <textarea class="own" bind:value={note} maxlength={fd.MAX_STATUS_NOTE} rows="2" placeholder="Note (optional)" aria-label="Note (optional)"></textarea>
-  <FormCard><Switch label="Clear when {who.name} stops fronting" bind:checked={clear} /></FormCard>
+  <FormCard><Switch label="Clear when {who.name} stops fronting" bind:checked={clear} />
+    <div class="sees"><span>Who sees this</span><AudienceChip label="State" value={audience} own buckets={sharing} up onchange={(a) => (audience = a ?? PRIVATE)} /></div></FormCard>
   {#snippet footer()}
     <button class="fr-wide neutral" disabled={!current} onclick={() => set(true)}>Clear</button>
     <button class="fr-wide" disabled={!ready} onclick={() => set()}>Set state</button>
@@ -66,5 +73,6 @@
   .picked { display: flex; flex-wrap: wrap; gap: var(--s-1); margin-top: var(--s-1); }
   .picked span { padding: 3px 10px; border-radius: var(--r-full); background: var(--accent-soft); color: var(--accent); font-size: var(--fs-xs); font-weight: 500; }
   .pad { padding: 0; }
+  .sees { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); min-height: 46px; padding: 6px 14px; font-size: var(--fs-md); }
   .own { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-sm); padding: var(--s-3) 14px; resize: vertical; }
 </style>

@@ -21,6 +21,7 @@
   } from '../friends-screens';
   import type { FriendPost } from '../friends-feed';
   import { bodyAuthors } from '../front-view';
+  import { sharedStateLine } from '../fronting-display';
   import { canWriteAs } from '../posts';
   import { listSpaces, openDm, type SpaceInfo } from '../spaces';
   import { sync, type Projection } from '../sync/client';
@@ -165,7 +166,8 @@
             <div class="faces">
               {#each v.entries as e, i (`${e.name}:${i}`)}
                 <span class="face"><FriendFace name={e.name} color={e.color ?? '#A09184'} glyph={e.glyph} blob={e.avatar_blob} size={64} {dark} ring={e.level === 'front' ? 'solid' : 'dashed'} />
-                  <span>{e.name}</span>{#if e.level !== 'front'}<small>{levelWord(e.level)}</small>{/if}</span>
+                  <span>{e.name}</span>{#if e.level !== 'front'}<small>{levelWord(e.level)}</small>{/if}
+                  {#if sharedStateLine(e.state)}<small class="state" title={sharedStateLine(e.state)}>{sharedStateLine(e.state)}</small>{/if}</span>
               {/each}
             </div>
           {/if}
@@ -266,6 +268,7 @@
   .faces { display: flex; gap: 14px; overflow-x: auto; }
   .face { display: grid; justify-items: center; gap: 6px; width: 72px; text-align: center; font-size: var(--fs-sm); }
   .face small { color: var(--ink-3); font-size: 11px; margin-top: -4px; }
+  .face small.state { max-width: 72px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--ink-2); }
   .fr-card p { margin: 0; display: flex; align-items: center; gap: 6px; }
   .stats { padding: var(--s-2) var(--s-4) 0; }
   .history { margin: var(--s-2) var(--s-4) 0; color: var(--accent); font-size: var(--fs-sm); }

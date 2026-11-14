@@ -30,6 +30,7 @@ it('is around when a system shows someone or a person posted today', () => {
 
 it('words who is here and since when, never more precisely than shared', () => {
   expect(nowLine([{ name: 'Juniper', level: 'cocon' }, { name: 'Kit', level: 'front' }])).toBe('Kit fronting · Juniper co-conscious');
+  expect(nowLine([{ name: 'Kit', level: 'front', state: { tags: ['tired'], note: 'Typing only' } }])).toBe('Kit fronting (Tired · Typing only)');
   const now = at(15);
   const v = (mode: string, since: number) => ({ entries: [], since, time: { mode } });
   expect(sinceLine(v('round', at(10, 15)), now, hhmm)).toBe('since about 10:15');

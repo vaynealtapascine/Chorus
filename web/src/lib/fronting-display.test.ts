@@ -1,6 +1,7 @@
+import { readFileSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { withPrimary, customStates, displayPrefs, duration, icon, memberStatuses, ordered, parse, scene, shortAbout, status, statusChoices, statusLine, statusShowing, statusValue,
-  story, toJson, type Settings } from './fronting-display';
+import { withPrimary, customStates, displayPrefs, duration, icon, memberStatuses, ordered, parse, scene, sharedStateLine, shortAbout, status, statusChoices, statusLine,
+  statusShowing, statusValue, story, toJson, type Settings } from './fronting-display';
 import type { FrontPresence } from './core/fronts';
 
 const p = (id: string, layer_id: string, is_primary = false): FrontPresence => ({ subject_type: 'member', subject_id: id, layer_id, is_primary });
@@ -51,13 +52,19 @@ describe('fronting display (D-122, F3)', () => {
     expect(statusLine(s, states)).toBe('Tired · Blurry · humming · Typing only today, please');
     expect(statusLine(s, [])).toBe('Tired · State · humming · Typing only today, please');
     // a write keeps every tag and the fields this client doesn't know
-    expect(statusValue({ ...s, note: '  ' }, states)).toEqual({ tags: ['tired', 'state:s1', 'humming'], at: 10, clear_on_leave: true, text: 'Tired · Blurry · humming', later: 1 });
+    expect(statusValue({ ...s, note: '  ' }, states)).toEqual({ tags: ['tired', 'state:s1', 'humming'], at: 10, clear_on_leave: true, audience: { mode: 'private' },
+      text: 'Tired · Blurry · humming', later: 1 });
     expect(status(statusValue(s, states))).toEqual(s);
     // the old web shape reads as a note; tags with no note keep `text` out of the note
-    expect(status({ text: 'Busy', at: 5 })).toEqual({ tags: [], note: 'Busy', at: 5, clearOnLeave: false });
-    expect(status({ tags: ['busy'], text: 'Busy', at: 5 })).toEqual({ tags: ['busy'], note: null, at: 5, clearOnLeave: false });
+    const priv = { mode: 'private' };
+    expect(status({ text: 'Busy', at: 5 })).toEqual({ tags: [], note: 'Busy', at: 5, clearOnLeave: false, audience: priv });
+    expect(status({ tags: ['busy'], text: 'Busy', at: 5 })).toEqual({ tags: ['busy'], note: null, at: 5, clearOnLeave: false, audience: priv });
     expect(status({ tags: [], note: ' ' })).toBeNull();
-    expect(statusValue({ tags: [], note: ' ', at: 1, clearOnLeave: false })).toBeNull();
+    expect(statusValue({ tags: [], note: ' ', at: 1, clearOnLeave: false, audience: priv as never })).toBeNull();
+    // who sees it (D-138): written and read back; a write without one is only us
+    const shared = { ...s, audience: { mode: 'buckets' as const, bucket_ids: ['b1'] } };
+    expect(statusValue(shared, states)).toMatchObject({ audience: { mode: 'buckets', bucket_ids: ['b1'] } });
+    expect(status(statusValue(shared, states))!.audience).toEqual({ mode: 'buckets', bucket_ids: ['b1'] });
     expect(statusValue(null)).toBeNull();
     // choices: built-ins, the system's own, then the member's own words
     expect(statusChoices(states, s)).toEqual(['tired', 'nonverbal', 'busy', 'low_spoons', 'needs_quiet', 'out_and_about', 'state:s1', 'humming']);
@@ -67,6 +74,12 @@ describe('fronting display (D-122, F3)', () => {
     expect(statusShowing(s, 10 + 60_001)).toBe(false);
     expect(statusShowing(s, null)).toBe(true);
     expect(statusShowing({ ...s, clearOnLeave: false }, 10 ** 9)).toBe(true);
+  });
+
+  it("reads a friend's shared state (D-138)", () => {
+    expect(sharedStateLine({ tags: ['tired', 'Blurry', 'humming'], note: 'Typing only' })).toBe('Tired · Blurry · humming · Typing only');
+    expect(sharedStateLine({ tags: [] })).toBeNull();
+    expect(sharedStateLine(null)).toBeNull();
   });
 
   it('sorts entries into nested, separate, unlisted and away', () => {
@@ -111,4 +124,19 @@ describe('fronting display (D-122, F3)', () => {
     expect(moves.map((m) => m.primary)).toEqual([false, true, undefined]);
     expect(withPrimary<Move>([{ type: 'member', id: 'ama', layer: 'front' }], current, 'front')[0].primary).toBeUndefined();
   });
+});
+
+// The core's member state vectors (fixtures/member_state, D-138): this reader agrees with the server's.
+describe('member state fixtures', () => {
+  const dir = new URL('../../../fixtures/member_state/', import.meta.url);
+  const cases = readdirSync(dir).filter((f) => f.startsWith('parse_') && f.endsWith('.json')).sort();
+  it('has vectors', () => expect(cases.length).toBeGreaterThan(5));
+  for (const file of cases) {
+    const c = JSON.parse(readFileSync(new URL(file, dir), 'utf8')) as { args: unknown[]; expect: Record<string, unknown> | null };
+    it(file, () => {
+      const got = status(c.args[0]);
+      if (c.expect === null) return expect(got).toBeNull();
+      expect(got && { tags: got.tags, note: got.note, at: got.at, clear_on_leave: got.clearOnLeave, audience: got.audience }).toEqual(c.expect);
+    });
+  }
 });
