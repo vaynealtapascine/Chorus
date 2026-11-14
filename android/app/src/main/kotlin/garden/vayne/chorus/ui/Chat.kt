@@ -45,6 +45,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.platform.LocalConfiguration
 import garden.vayne.chorus.data.ChatPresentation
+import garden.vayne.chorus.data.Special
 import garden.vayne.chorus.designsystem.R
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.HorizontalDivider
@@ -219,11 +220,12 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             if (requestedSpace != null || requestedChannel != null) onOpenConsumed()
         }
     }
-    val space = model.spaces.find { it.id == selectedSpace } ?: model.spaces.firstOrNull()
+    // with nothing chosen, not a person's Notes space if there is any other (D-132)
+    val space = model.spaces.find { it.id == selectedSpace } ?: model.spaces.firstOrNull { it.id !in model.personHomes } ?: model.spaces.firstOrNull()
     val channels = model.channels.filter { it.spaceId == space?.id }
-    // a space opened without a channel: its open one first (a DM's, not a private chat in it, D-098)
-    val channel = channels.find { it.id == selectedChannel } ?: channels.firstOrNull { it.kind != "thread" && it.memberIds.isEmpty() }
-        ?: channels.firstOrNull { it.kind != "thread" }
+    // a space opened without a channel: its open one first (a DM's, not a private chat in it, D-098); Handover and Notes only when asked for
+    val channel = channels.find { it.id == selectedChannel } ?: channels.firstOrNull { it.kind != "thread" && it.memberIds.isEmpty() && it.special == null }
+        ?: channels.firstOrNull { it.kind != "thread" && it.special == null } ?: channels.firstOrNull { it.kind != "thread" }
     val drafts = rememberDurableChatDrafts(chorus) ?: return
     val composer = drafts.getOrPut(channel?.id ?: selectedChannel) { ChatDraft() }
     var viewingAs by rememberSaveable { mutableStateOf<String?>(null) }
@@ -642,7 +644,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             "remove" -> removing = row
             // muted is "none"; unmuting goes back to the default for its kind of chat
             "mute" -> actions.launch {
-                val value = if (row.muted) model.accountPrefs.defaultNotify(row.space.kind) else "none"
+                // Notes is quiet by default, so unmuting it is "mentions"
+                val value = if (row.muted) model.accountPrefs.defaultNotify(row.space.kind, row.channel.special).takeIf { it != "none" } ?: "mentions" else "none"
                 try { chorus.create("pref.set", null, AccountPrefs.payload("notify_channel:${row.channel.id}", value)) }
                 catch (e: Exception) { error = e.message ?: "Could not save notifications for this chat." }
             }
@@ -919,7 +922,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     val defaultAuthorId = ChatManage.keptSpeaker(paneSides?.mine, channel?.id?.let { ChatSpeaker.pick(model, it) }, here)
     val replySpeakerId = ChatManage.keptSpeaker(paneSides?.mine, selectedAuthor.takeIf { id -> model.active.any { it.id == id } } ?: defaultAuthorId, here)
     val paneEditable = channel != null && channel.kind != "thread" && !paneLocked && when (space?.kind) {
-        "internal" -> !model.isPerson
+        "internal" -> !model.isPerson || channel.special != null
         "dm" -> channel.kind == "member_dm" && paneSides?.mine?.isNotEmpty() == true
         else -> ChatManage.canEditSpace(space?.kind, ChatManage.roleIn(model.spaceRoles, space?.id.orEmpty(), space?.id?.let { directory[it] }, chorus.device?.accountId.orEmpty()))
     }
@@ -951,6 +954,9 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             else "Private chat · ${dmPartner?.shownName ?: "Direct message"}"
         else -> null
     }
+    // "notes between fronts · 4 members": what Handover and Notes are, where a space's name would go (F5.15, F5.19)
+    val specialLine = channel?.special?.let { s -> listOfNotNull(Special.subtitle(s, model.isPerson),
+        "${model.active.size} ${if (model.active.size == 1) "member" else "members"}".takeIf { s == Special.HANDOVER }).joinToString(" · ") }
     val friendViews by garden.vayne.chorus.data.FriendFronts.views.collectAsState()
     LaunchedEffect(dmPartner?.id, chorus.device?.accountId) {
         val other = dmPartner ?: return@LaunchedEffect
@@ -999,7 +1005,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         if (expanded) VerticalDivider(Modifier.fillMaxHeight(), color = p.line)
         if (pane == "info" && !expanded && channel != null && space != null && !paneLocked) {
             ChatInfoPane(chorus, channel, space, model, messages, library, directory[space.id], { infoOpen = false; searchHere = true },
-                { infoOpen = false }, model.accountPrefs.channelNotify(channel.id, space.kind), ::setNotify,
+                { infoOpen = false }, model.accountPrefs.channelNotify(channel.id, space.kind, channel.special), ::setNotify,
                 onShowMessage = { infoOpen = false; jumpTo = it }, modifier = Modifier.weight(1f), title = infoTitle(channel, space),
                 subtitle = infoSubtitle(channel, space), connections = connections, foreign = shownAuthors + privateCards,
                 speakerId = replySpeakerId, onSpaceChanged = { refresh++ }, onOpenChannel = { id -> selectedChannel = id; infoOpen = false; conversationOpen = true },
@@ -1022,26 +1028,26 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             // tapping the title opens the chat's info (F5.2)
             Column(Modifier.weight(1f).then(if (channel != null && !expanded && !paneLocked) Modifier.clickable(onClickLabel = "Chat info") { infoOpen = true }
                 else Modifier).padding(horizontal = 8.dp, vertical = 10.dp)) {
-                Text(if (inThread) "Thread" else dmName ?: channel?.let { c -> if (c.isMemberDm || space?.kind == "dm") c.name else "# ${c.name}" } ?: "Chat", color = p.ink, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 22.sp,
+                Text(if (inThread) "Thread" else dmName ?: channel?.let { c -> if (c.isMemberDm || space?.kind == "dm" || c.special != null) c.name else "# ${c.name}" } ?: "Chat", color = p.ink, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 22.sp,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(typingLabel ?: if (paneLocked) "Opens while its member is here"
                     else if (paneSides != null && !inThread) (if (paneSides.mine.isNotEmpty()) "Private · ${paneSides.mine.joinToString(" & ", transform = ::nameOf)}"
                         else "Private chat · ${dmPartner?.shownName ?: "Direct message"}")
                     else if (inThread && syncStatus == Status.Live) "in ${threadParentChannel?.name ?: "a channel"} · ${ChatThreads.repliesLabel(messages.size)}"
                     else ChatPresentation.subtitle(syncStatus != Status.Live, readerName, unreadCount,
-                    partnerFront ?: space?.let { spaceLabel(it, directory[it.id], chorus.device?.accountId.orEmpty()) }.orEmpty()),
+                    partnerFront ?: specialLine ?: space?.let { spaceLabel(it, directory[it.id], chorus.device?.accountId.orEmpty()) }.orEmpty()),
                     color = if (typingLabel != null || syncStatus != Status.Live) p.accent else p.ink3, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 2)
             }
             ChatIconButton(R.drawable.ic_search, "Search this chat", { searchHere = true })
             ChatIconButton(R.drawable.ic_more, "Conversation options") { headerMenu = true }
             MenuDrawer(headerMenu, { headerMenu = false }, channel?.name ?: "Chats",
-                space?.let { spaceLabel(it, directory[it.id], chorus.device?.accountId.orEmpty()) }) {
+                specialLine ?: space?.let { spaceLabel(it, directory[it.id], chorus.device?.accountId.orEmpty()) }) {
                 if (channel != null && !expanded) MenuRow("Chat info", R.drawable.ic_chat) { headerMenu = false; infoOpen = true }
                 if (paneEditable) MenuRow(if (channel?.kind == "member_dm") "Edit chat" else "Edit channel", R.drawable.ic_edit) {
                     headerMenu = false; editChannel = true; channelEditor = true
                 }
                 if (channel != null) MenuRow("Notifications", R.drawable.ic_bell,
-                    subtitle = notifyLabel(model.accountPrefs.channelNotify(channel.id, space?.kind.orEmpty()))) { headerMenu = false; notifyOpen = true }
+                    subtitle = notifyLabel(model.accountPrefs.channelNotify(channel.id, space?.kind.orEmpty(), channel.special))) { headerMenu = false; notifyOpen = true }
                 if (channel != null) MenuRow("Stage…", R.drawable.ic_camera) {
                     headerMenu = false; stageSelection = emptyList(); staging = true
                 }
@@ -1107,7 +1113,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         val frontRevision by chorus.frontHistoryRevision.collectAsState()
         val timelineFront = ChatSpeaker.frontOf(model, channel.id)
         val timelineHistory by androidx.compose.runtime.key(chorus.device?.accountId, channel.id, timelineFront, space.kind, viewingAs) { produceState<garden.vayne.chorus.data.NamedHistory?>(null, frontRevision) {
-            if (space.kind == "internal" && timelineFront != null) {
+            if (space.kind == "internal" && timelineFront != null && !model.isPerson) {
                 try { value = chorus.frontHistory(timelineFront) }
                 catch (e: kotlinx.coroutines.CancellationException) { throw e }
                 catch (_: Exception) {}
@@ -1118,7 +1124,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 garden.vayne.chorus.data.FrontInterval(it.id, it.presence.subjectType, it.presence.subjectId,
                     it.presence.layerId, it.presence.isPrimary, it.startAt, it.endAt)
             } }
-        val frontLines = remember(model, timelineIntervals, messages.firstOrNull()?.occurredAt, space.kind) { if (space.kind != "internal" || messages.isEmpty()) emptyList() else
+        val frontLines = remember(model, timelineIntervals, messages.firstOrNull()?.occurredAt, space.kind) { if (space.kind != "internal" || model.isPerson || messages.isEmpty()) emptyList() else
             ChatPresentation.frontEvents(timelineIntervals, messages.first().occurredAt, System.currentTimeMillis(),
                 { type, id -> model.subject(type, id)?.name },
                 { level -> ChatPresentation.layer(model, Entry("member", "", level, false)) }) }
@@ -1479,7 +1485,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     ChorusField(cw, { cw = it }, label = { Text("Content warning") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                     if (cw.isNotBlank()) TextButton(onClick = { cw = "" }) { Text("Remove the warning") }
                 })
-                if (!asideBar) add(AttachOption("audience", "Who sees", R.drawable.ic_lock, audience != "all", AttachTints.AUDIENCE) {
+                if (!asideBar && space.id !in model.personHomes) add(AttachOption("audience", "Who sees", R.drawable.ic_lock, audience != "all", AttachTints.AUDIENCE) {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         item { ChatChip("Everyone here", audience == "all") { audience = "all" } }
                         if (space.kind == "internal") item {
@@ -1642,7 +1648,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         if (expanded && channel != null && space != null && !paneLocked) {
             VerticalDivider(Modifier.fillMaxHeight(), color = p.line)
             ChatInfoPane(chorus, channel, space, model, messages, library, directory[space.id], { searchHere = true },
-                notifyLevel = model.accountPrefs.channelNotify(channel.id, space.kind), onNotify = ::setNotify,
+                notifyLevel = model.accountPrefs.channelNotify(channel.id, space.kind, channel.special), onNotify = ::setNotify,
                 onShowMessage = { jumpTo = it }, modifier = Modifier.width(260.dp), title = infoTitle(channel, space),
                 subtitle = infoSubtitle(channel, space), connections = connections, foreign = shownAuthors + privateCards,
                 speakerId = replySpeakerId, onSpaceChanged = { refresh++ }, onOpenChannel = { id -> selectedChannel = id },
@@ -1755,7 +1761,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             { deleting = null; delete(message) }, { deleting = null }, danger = true)
     }
     if (notifyOpen && channel != null && space != null) {
-        val level = model.accountPrefs.channelNotify(channel.id, space.kind)
+        val level = model.accountPrefs.channelNotify(channel.id, space.kind, channel.special)
         ChoiceDrawer(true, "Notifications", listOf("all", "mentions", "none"), level, ::notifyLabel,
             { setNotify(it); notifyOpen = false }, { notifyOpen = false }, subtitle = channel.name)
     }
@@ -1780,10 +1786,11 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         // our own channels and members' DMs are deleted for the system; a DM with another account or a
         // shared channel is only cleared for us (they keep it; it comes back when someone writes)
         val own = row.space.kind == "internal"
-        val name = if (row.channel.isMemberDm) "this chat" else if (row.space.kind == "dm") "your chat with ${row.title}" else "#${row.title}"
-        ConfirmDrawer(if (own) "Delete $name?" else "Clear $name?",
+        val name = if (row.channel.special != null) row.title else if (row.channel.isMemberDm) "this chat" else if (row.space.kind == "dm") "your chat with ${row.title}" else "#${row.title}"
+        // Handover and Notes are tombstoned like any channel and come back from Trash (D-162)
+        ConfirmDrawer(if (row.channel.special != null) "Move $name to Trash?" else if (own) "Delete $name?" else "Clear $name?",
             if (own) null else "It comes back if someone writes.",
-            if (own) "Delete" else "Clear", danger = true, onDismiss = { removing = null }, onConfirm = {
+            if (row.channel.special != null) "Move to Trash" else if (own) "Delete" else "Clear", danger = true, onDismiss = { removing = null }, onConfirm = {
                 removing = null; error = null
                 actions.launch {
                     try {

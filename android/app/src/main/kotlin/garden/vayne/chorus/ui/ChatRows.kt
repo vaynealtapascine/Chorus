@@ -7,6 +7,7 @@ import garden.vayne.chorus.data.ForeignAuthor
 import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.ReadMark
 import garden.vayne.chorus.data.ReadTracking
+import garden.vayne.chorus.data.Special
 import garden.vayne.chorus.data.SpaceInfo
 import garden.vayne.chorus.data.Ticks
 import garden.vayne.chorus.data.accountVisible
@@ -59,7 +60,9 @@ internal fun chatListRows(model: Model, viewingAs: String?, accountId: String, d
             else Ticks.of(listOf(m), accountId, members, friends)[m.id]
         }
         ChatListRow(candidate, home, title, latest, unread, sender, tick = tick,
-            muted = model.accountPrefs.channelNotify(candidate.id, home.kind) == "none", pinned = candidate.id in prefs.chatPins,
+            // Notes is quiet by default: no muted bell until someone sets a level (D-162)
+            muted = model.accountPrefs.channelNotify(candidate.id, home.kind, candidate.special) == "none" &&
+                !(candidate.special == Special.NOTES && candidate.id !in prefs.notifyChannels), pinned = candidate.id in prefs.chatPins,
             private = sides != null || (home.kind == "internal" && candidate.kind == "text" && candidate.memberIds.isNotEmpty()),
             whose = sides?.mine?.mapNotNull { model.member(it)?.shownName }?.joinToString(" & ")?.ifEmpty { null },
             archived = ChatOrganize.archived(prefs.archivedChats[candidate.id], latest?.occurredAt),

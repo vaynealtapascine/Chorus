@@ -74,11 +74,14 @@ data class FrontReview(val id: String, val switchA: String, val switchB: String)
 /** One subject that can front: a member or a subsystem acting as one. */
 data class Subject(val type: String, val id: String, val name: String, val color: String, val glyph: String, val avatarBlob: String? = null)
 
-data class ChatSpace(val id: String, val kind: String, val name: String, val description: String? = null)
+/** [own]: made by this account (or not yet stamped, so ours): another system's internal space, seen as a guest, is not. */
+data class ChatSpace(val id: String, val kind: String, val name: String, val description: String? = null, val own: Boolean = true)
 data class ChatChannel(val id: String, val spaceId: String, val kind: String, val name: String,
     val parentMessageId: String?, val memberIds: List<String> = emptyList(), val topic: String? = null,
     val avatarBlob: String? = null, val icon: String? = null, val color: String? = null,
-    val invalidMembership: Boolean = false) {
+    val invalidMembership: Boolean = false,
+    /** The system's own Handover or Notes channel (D-132, D-162); never matched by name. */
+    val special: String? = null) {
     val isMemberDm: Boolean get() = kind == "member_dm" || kind == "dm"
 }
 data class ChatAttachment(
@@ -99,6 +102,10 @@ data class ChatMessage(
     val quote: List<ForwardItem> = emptyList(),
     val authorCards: Map<String,ForeignAuthor> = emptyMap(),
     val poll: Poll? = null, val pollTally: PollTally? = null,
+    /** A handover's definition, fixed at sending (D-132); null on an ordinary message. */
+    val handover: HandoverDef? = null,
+    /** `message.forward`'s origin: set on a forward ("#from chats" in Notes). */
+    val forwardOf: String? = null,
 )
 data class ChannelWindow(val messages: List<ChatMessage>, val hasOlder: Boolean)
 
@@ -220,6 +227,8 @@ class Model(
     val active: List<Member> get() = members.filter { !it.archived }
     /** The server creates one self member for a person account. */
     val isPerson: Boolean get() = members.any { it.isSelf }
+    /** A person's own internal space holds only Notes and is never shown as a space (D-093, D-162); empty for a system. */
+    val personHomes: Set<String> by lazy { if (isPerson) spaces.filter { it.kind == "internal" && it.own }.mapTo(HashSet()) { it.id } else emptySet() }
     /** Live buckets by id (D-115), for showing a bucket's look wherever an audience is chosen. */
     val bucketLooks: Map<String, PrivacyBucket> by lazy { privacyBuckets.associateBy { it.id } }
 
@@ -298,7 +307,8 @@ class Model(
                     ChatSegment(row.getInt("offset"), row.getInt("length"), strings(row.optJSONArray("authors")))
                 } } ?: emptyList(),
                 forward = ChatForward.parse(f.optJSONArray("forward_snapshot")), pinned = f.present("pinned_at"),
-                quote = ChatForward.quoted(f.optJSONObject("quote")))
+                quote = ChatForward.quoted(f.optJSONObject("quote")),
+                handover = HandoverDef.parse(f.optJSONObject("handover")), forwardOf = f.str("forward_of_id"))
         }
 
         fun messageCards(p: JSONObject, ids: Set<String>): Map<String, ChatMessage> {
@@ -430,12 +440,14 @@ class Model(
                 }
             } ?: emptyList()
             val spaces = rows(p, "space").filter { (_, f) -> !f.present("deleted_at") }
-                .map { (id, f) -> ChatSpace(id, f.str("kind") ?: "shared", f.str("name") ?: "Space", f.str("description")) }
+                .map { (id, f) -> ChatSpace(id, f.str("kind") ?: "shared", f.str("name") ?: "Space", f.str("description"),
+                    own = f.str("created_by_account_id").let { it == null || it == accountId }) }
                 .sortedWith(compareBy<ChatSpace> { if (it.kind == "internal") 0 else if (it.kind == "shared") 1 else 2 }.thenBy { it.name })
             val channels = rows(p, "channel").filter { (_, f) -> !f.present("deleted_at") && !f.present("archived_at") }
                 .map { (id, f) -> ChatChannel(id, f.str("space_id") ?: "", f.str("kind") ?: "text",
                     f.str("name") ?: "Channel", f.str("parent_message_id"), SearchVisibility.strings(f.optJSONArray("member_ids")), f.str("topic"), f.str("avatar_blob"), f.str("icon"), f.str("color"),
-                    f.present("member_ids") && (f.optJSONArray("member_ids")?.let { a -> (0 until a.length()).any { a.opt(it) !is String } } ?: true)) }
+                    f.present("member_ids") && (f.optJSONArray("member_ids")?.let { a -> (0 until a.length()).any { a.opt(it) !is String } } ?: true),
+                    special = f.str("special")?.takeIf { it == Special.HANDOVER || it == Special.NOTES }) }
                 .filter { channel -> spaces.any { it.id == channel.spaceId } }
                 .sortedBy { it.name }
             val channelIds = channels.map { it.id }.toSet()

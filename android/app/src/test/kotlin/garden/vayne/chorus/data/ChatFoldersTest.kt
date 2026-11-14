@@ -77,7 +77,8 @@ class ChatFoldersTest {
         val (unread, handover, unmuted) = ChatFolders.SUGGESTIONS
         assertTrue(ChatFolders.fromSuggestion("n", unread, emptyList()).unreadOnly)
         assertTrue(ChatFolders.fromSuggestion("n", unmuted, emptyList()).hideMuted)
-        val ours = listOf("a" to "Handover", "b" to "general", "c" to "Front notes")
+        // by role, never by name (D-132): an ordinary chat called Handover stays out
+        val ours = listOf("a" to "handover", "b" to null, "c" to "notes")
         assertEquals(listOf("a", "c"), ChatFolders.fromSuggestion("n", handover, ours).chats)
     }
 }

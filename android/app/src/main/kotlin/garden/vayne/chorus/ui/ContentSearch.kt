@@ -26,6 +26,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import garden.vayne.chorus.data.SearchFilters
+import garden.vayne.chorus.data.Special
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -264,10 +265,11 @@ internal fun ContentSearch(chorus: Chorus, model: Model, online: Boolean, onClos
                             Text(row.title, color = p.ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             val line = when (row.space.kind) {
                                 "dm" -> "Direct"
-                                "internal" -> model.systemName?.takeIf { it.isNotBlank() } ?: row.space.name
+                                "internal" -> if (row.channel.special != null) Special.subtitle(row.channel.special, model.isPerson).orEmpty()
+                                    else model.systemName?.takeIf { it.isNotBlank() } ?: row.space.name
                                 else -> place(row.channel.id).takeIf { it != row.title } ?: row.space.name
                             }
-                            Text(line, color = p.ink3, fontSize = 12.sp, maxLines = 1)
+                            if (line.isNotEmpty()) Text(line, color = p.ink3, fontSize = 12.sp, maxLines = 1)
                         }
                     }
                 }

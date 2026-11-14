@@ -75,10 +75,15 @@ internal fun ChannelDisc(channel: ChatChannel, member: Member? = null, size: Dp 
         channel.color ?: "#42A397", size, avatarBlob = channel.avatarBlob, ring = false)
     else if (member != null) ChatAvatar(member, size)
     else Box(Modifier.size(size).background(p.accentSoft, CircleShape), contentAlignment = Alignment.Center) {
-        if (channel.isMemberDm) ChatIcon(R.drawable.ic_members, tint = p.accent)
+        // Handover and Notes wear their icon, not a letter (Figma F5.15, F5.19)
+        if (channel.special != null) Icon(painterResource(specialIcon(channel.special)), null, Modifier.size((size.value * .5f).dp), tint = p.accent)
+        else if (channel.isMemberDm) ChatIcon(R.drawable.ic_members, tint = p.accent)
         else Text(ChannelCompose.glyph(channel), color = p.accent, fontWeight = FontWeight.SemiBold, fontSize = (size.value * .45f).sp)
     }
 }
+
+/** The icon a special chat wears in its disc and row (D-132): a document for Handover, a bookmark for Notes. */
+internal fun specialIcon(special: String?): Int = if (special == Special.HANDOVER) R.drawable.ic_handover else R.drawable.ic_bookmark
 
 /** A chat's disc in a list: a DM shows whoever is at the other end ([ChatListRow.icon], or [peer]
  * for a DM between our members), unless the chat has a picture of its own; anything else, its own. */
@@ -132,7 +137,7 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
     val folders = model.accountPrefs.chatFolders
     // which folder is open stays on this device; a hidden or deleted one falls back to the first shown
     var chosenFolder by rememberSaveable { mutableStateOf("all") }
-    val folder = chosenFolder.takeIf { it in folders.visible } ?: folders.visible.firstOrNull()
+    val folder = chosenFolder.takeIf { it in folders.visibleFor(model.isPerson) } ?: folders.visibleFor(model.isPerson).firstOrNull()
     // the chat whose folders are being chosen from its long-press menu
     var foldersFor by remember { mutableStateOf<ChatListRow?>(null) }
     var menu by remember { mutableStateOf(false) }
@@ -153,7 +158,9 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
     // opening one of its channels from elsewhere shows the space's channels around it
     LaunchedEffect(opened) { rows.firstOrNull { it.channel.id == opened }?.takeIf { it.grouped }?.let { openSpace = it.space.id } }
     val pinnedCount = listed.count { it.pinned }
-    val system = model.spaces.firstOrNull { it.kind == "internal" }?.name?.takeUnless { it == "Home" }
+    // a person's internal space is only Notes: it names nothing here (D-093)
+    val system = model.spaces.firstOrNull { it.kind == "internal" && it.id !in model.personHomes }?.name?.takeUnless { it == "Home" }
+    val visibleFolders = folders.visibleFor(model.isPerson)
     Column(modifier.fillMaxHeight().background(p.bg)) {
         Row(Modifier.fillMaxWidth().background(p.surface).padding(start = if (archiveView) 4.dp else 16.dp), verticalAlignment = Alignment.CenterVertically) {
             if (archiveView) ChatIconButton(R.drawable.ic_back, "Back to chats") { showArchived = false }
@@ -211,10 +218,10 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
         }
         // the folders shown, in their order (D-113); all hidden: no tabs. They are arranged from the ⋮
         if (!archiveView && inside == null && folder != null) {
-            val selectedIndex = folders.visible.indexOf(folder)
+            val selectedIndex = visibleFolders.indexOf(folder)
             ScrollableTabRow(selectedIndex, containerColor = p.surface, contentColor = p.accent, edgePadding = 8.dp,
                 indicator = { positions -> TabRowDefaults.SecondaryIndicator(Modifier.tabIndicatorOffset(positions[selectedIndex]), color = p.accent) }) {
-                for (candidate in folders.visible) {
+                for (candidate in visibleFolders) {
                     val inFolder = listed.filter { inFolder(folders, candidate, it) }
                     Tab(selected = folder == candidate, onClick = { chosenFolder = candidate }, text = {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -266,7 +273,7 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                             rowMenu = null; onRowAction(row, "mute")
                         }
                         MenuRow(if (row.archived) "Unarchive" else "Archive", R.drawable.ic_archive) { rowMenu = null; onRowAction(row, "archive") }
-                        MenuRow(if (row.space.kind == "internal") "Delete chat" else "Clear chat", R.drawable.ic_delete, danger = true) {
+                        MenuRow(if (row.channel.special != null) "Move to Trash" else if (row.space.kind == "internal") "Delete chat" else "Clear chat", R.drawable.ic_delete, danger = true) {
                             rowMenu = null; onRowAction(row, "remove")
                         }
                     }
@@ -330,6 +337,7 @@ internal fun RowScope.ChatRowBody(model: Model, row: ChatListRow, peer: Member?,
     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             if (row.latest?.id in model.polls.polls) ChatIcon(R.drawable.ic_poll)
+            else if (row.channel.special != null) ChatIcon(specialIcon(row.channel.special))
             else if (row.private) ChatIcon(R.drawable.ic_lock, "Private")
             else if (row.space.kind != "internal") ChatIcon(R.drawable.ic_globe)
             else if (row.channel.parentMessageId != null) ChatIcon(R.drawable.ic_reply)
@@ -340,7 +348,9 @@ internal fun RowScope.ChatRowBody(model: Model, row: ChatListRow, peer: Member?,
                 overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false)) }
         }
         val sender = row.sender
-        val preview = ChatPresentation.preview(row.latest, model.polls.polls[row.latest?.id])
+        // Handover and Notes say what they are until something is written there
+        val preview = (if (row.latest == null) Special.subtitle(row.channel.special, model.isPerson) else null)
+            ?: ChatPresentation.preview(row.latest, model.polls.polls[row.latest?.id])
         Text(spoilerPreview(special ?: listOfNotNull(sender?.takeIf { it.isNotBlank() }, preview).joinToString(": ")),
             color = if (special != null) p.accent else p.ink3, fontSize = 14.sp, lineHeight = 20.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }

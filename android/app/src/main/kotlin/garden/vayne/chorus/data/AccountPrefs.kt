@@ -45,10 +45,12 @@ data class AccountPrefs(val notifyChat: JSONObject = JSONObject(), val followCei
     fun isSaved(postId: String): Boolean = postId in bookmarks
 
     /** A channel's chat notifications; DMs default to everything, other channels to mentions (as on web). */
-    fun channelNotify(channelId: String, spaceKind: String): String =
-        notifyChannels[channelId] ?: defaultNotify(spaceKind)
+    fun channelNotify(channelId: String, spaceKind: String, special: String? = null): String =
+        notifyChannels[channelId] ?: defaultNotify(spaceKind, special)
 
-    fun defaultNotify(spaceKind: String): String = if (spaceKind == "dm") "all" else "mentions"
+    /** Handover rings for everything and Notes stays quiet until a level is chosen (D-162). */
+    fun defaultNotify(spaceKind: String, special: String? = null): String =
+        Special.defaultLevel(special, if (spaceKind == "dm") "all" else "mentions")
 
     fun chatEnabled(key: String): Boolean = if (key == "own_switch" || key == "reply_as_mentioned")
         notifyChat.optBoolean(key, false) else notifyChat.optBoolean(key, true)

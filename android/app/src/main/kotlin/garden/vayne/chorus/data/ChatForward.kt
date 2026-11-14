@@ -100,15 +100,18 @@ object ChatForward {
         ((source.kind == "internal" && targetSpaceId != source.id) || message.visibilityMode != "all" || restrictedChannel)
 
     /**
-     * Where a forward or a reply can go (F5.20): chats whose [names] match [query], newest first,
-     * without [exclude] (the chat a reply is already in).
+     * Where a forward or a reply can go (F5.20): chats whose [names] match [query], newest first (those
+     * [first] names ahead of the rest: Save to notes), without [exclude] (the chat a reply is already in).
      */
     fun <T> destinations(items: List<T>, query: String, names: (T) -> List<String?>, latest: (T) -> Long,
-        exclude: (T) -> Boolean = { false }): List<T> {
+        exclude: (T) -> Boolean = { false }, first: (T) -> Boolean = { false }): List<T> {
         val q = query.trim()
         return items.filter { !exclude(it) && (q.isEmpty() || names(it).any { n -> n?.contains(q, ignoreCase = true) == true }) }
-            .sortedByDescending(latest)
+            .sortedWith(compareByDescending<T> { first(it) }.thenByDescending(latest))
     }
+
+    /** Save to notes (D-132): our Notes chat leads the destinations under that name; "notes" finds it too. */
+    const val SAVE_TO_NOTES = "Save to notes"
 
     /**
      * The red card when a forward leaves where it was written (F5.20): "This leaves The Lanterns" /

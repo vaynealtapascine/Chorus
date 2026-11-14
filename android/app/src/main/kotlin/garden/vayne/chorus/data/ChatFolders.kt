@@ -29,6 +29,10 @@ object ChatFolders {
         }
         /** The folders shown as tabs. */
         val visible: List<String> get() = ordered.filter { it !in hidden }
+        /** Folders for [person] accounts, whose internal space holds only Notes and is never a folder (D-093). */
+        fun visibleFor(person: Boolean): List<String> = visible.filter { !(person && it == "internal") }
+        /** Every folder in display order, less the Internal one a person never has. */
+        fun orderedFor(person: Boolean): List<String> = ordered.filter { !(person && it == "internal") }
         fun custom(id: String): Custom? = custom.find { it.id == id }
     }
 
@@ -90,12 +94,12 @@ object ChatFolders {
         Suggestion("unmuted", "Not muted", "Every chat but the muted ones"),
     )
 
-    /** A new folder from a suggestion; "Handover and notes" starts with our own chats named that way. */
-    fun fromSuggestion(id: String, s: Suggestion, ours: List<Pair<String, String>>): Custom = when (s.preset) {
+    /** A new folder from a suggestion; "Handover and notes" starts with our chats that have a role ([ours]: id and
+     * `special`), never by name (D-132). */
+    fun fromSuggestion(id: String, s: Suggestion, ours: List<Pair<String, String?>>): Custom = when (s.preset) {
         "unread" -> Custom(id, s.title, kinds = KINDS.toSet(), unreadOnly = true, preset = s.preset)
         "unmuted" -> Custom(id, s.title, kinds = KINDS.toSet(), hideMuted = true, preset = s.preset)
-        else -> Custom(id, s.title, chats = ours.filter { (_, name) -> Regex("handover|notes?\\b", RegexOption.IGNORE_CASE).containsMatchIn(name) }
-            .map { it.first }, preset = s.preset)
+        else -> Custom(id, s.title, chats = ours.filter { (_, special) -> special != null }.map { it.first }, preset = s.preset)
     }
 
     fun parse(value: Any?): Settings {

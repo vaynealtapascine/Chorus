@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.ChatForward
 import garden.vayne.chorus.data.Member
 import garden.vayne.chorus.data.Model
+import garden.vayne.chorus.data.Special
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import garden.vayne.chorus.designsystem.R
 
@@ -48,8 +49,7 @@ internal fun ForwardSheet(rows: List<ChatListRow>, model: Model, speaker: Member
     var comment by rememberSaveable { mutableStateOf("") }
     var showAuthors by rememberSaveable { mutableStateOf(true) }
     val shown = remember(rows, query, exclude) {
-        ChatForward.destinations(rows, query, { listOf(it.title, it.space.name, it.channel.name) }, { it.latest?.occurredAt ?: 0L },
-            exclude = { it.channel.id == exclude })
+        forwardDestinations(rows, query, exclude)
     }
     val chosen = rows.find { it.channel.id == chosenId }
     Drawer(onDismiss, dismissible = !busy, footer = if (onPick != null) null else ({
@@ -98,6 +98,17 @@ internal fun ForwardSheet(rows: List<ChatListRow>, model: Model, speaker: Member
     }
 }
 
+/** Our Notes chat in the grid is "Save to notes" (its disc already wears the bookmark). */
+private fun notes(row: ChatListRow): ChatListRow? = row.takeIf { it.channel.special == Special.NOTES }
+
+/** Where a forward can go: chats matching [query], Save to notes first (D-132), then the newest chats. */
+internal fun forwardDestinations(rows: List<ChatListRow>, query: String, exclude: String? = null): List<ChatListRow> =
+    ChatForward.destinations(rows, query, { notes(it)?.let { _ -> listOf(ChatForward.SAVE_TO_NOTES, "notes", it.channel.name) } ?: listOf(it.title, it.space.name, it.channel.name) },
+        { it.latest?.occurredAt ?: 0L }, exclude = { it.channel.id == exclude }, first = { notes(it) != null })
+
+/** What a destination is called in the grid. */
+internal fun forwardTitle(row: ChatListRow): String = if (notes(row) != null) ChatForward.SAVE_TO_NOTES else row.title
+
 /** A chat in the forward grid: its face, ringed with a check when chosen, and its name under it. */
 @Composable
 private fun ForwardFace(row: ChatListRow, model: Model, chosen: Boolean, modifier: Modifier, enabled: Boolean, onClick: () -> Unit) {
@@ -114,7 +125,7 @@ private fun ForwardFace(row: ChatListRow, model: Model, chosen: Boolean, modifie
                 Glyph(R.drawable.ic_check, p.onAccent, 14.dp)
             }
         }
-        Text(row.title, color = if (chosen) p.accent else p.ink2, fontSize = 12.sp, lineHeight = 15.sp, maxLines = 2,
+        Text(forwardTitle(row), color = if (chosen) p.accent else p.ink2, fontSize = 12.sp, lineHeight = 15.sp, maxLines = 2,
             overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Normal)
     }
 }

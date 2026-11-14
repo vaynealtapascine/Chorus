@@ -52,7 +52,7 @@ internal fun ChatFoldersScreen(model: Model, rows: List<ChatListRow>, onSave: (C
         // opened straight onto a folder (a chat's "New folder…"): done goes back to the chats
         fun done() { if (open == startWith) onClose() else editing = null }
         ChatFolderEditor(existing ?: ChatFolders.Custom(freshId, "", chats = listOfNotNull(first)),
-            existing == null, rows, onSave = { folder ->
+            existing == null, rows, model.isPerson, onSave = { folder ->
                 val saved = ChatFolders.withCustom(model.accountPrefs.chatFolders, folder)
                 onSave(saved); done()
             }, onDelete = { onSave(ChatFolders.without(model.accountPrefs.chatFolders, open)); done() },
@@ -63,7 +63,7 @@ internal fun ChatFoldersScreen(model: Model, rows: List<ChatListRow>, onSave: (C
     var dragging by remember { mutableStateOf<String?>(null) }
     var dragY by remember { mutableFloatStateOf(0f) }
     // the order while dragging, saved when the finger lifts
-    var draft by remember(settings) { mutableStateOf(settings.ordered) }
+    var draft by remember(settings) { mutableStateOf(settings.orderedFor(model.isPerson)) }
     val rowHeight = 62.dp
     val rowPx = with(LocalDensity.current) { rowHeight.toPx() }
     fun move(id: String, by: Int) {
@@ -111,7 +111,7 @@ internal fun ChatFoldersScreen(model: Model, rows: List<ChatListRow>, onSave: (C
                             }.pointerInput(id) {
                                 detectDragGestures(onDragStart = { dragging = id; dragY = 0f },
                                     onDragEnd = { dragging = null; dragY = 0f; onSave(settings.copy(order = draft)) },
-                                    onDragCancel = { dragging = null; dragY = 0f; draft = settings.ordered }) { change, amount ->
+                                    onDragCancel = { dragging = null; dragY = 0f; draft = settings.orderedFor(model.isPerson) }) { change, amount ->
                                     change.consume()
                                     dragY += amount.y
                                     while (dragY > rowPx / 2 && draft.indexOf(id) < draft.lastIndex) { move(id, 1); dragY -= rowPx }
@@ -145,7 +145,7 @@ internal fun ChatFoldersScreen(model: Model, rows: List<ChatListRow>, onSave: (C
                             Text(s.subtitle, color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
                         }
                         TextButton(onClick = {
-                            val ours = rows.filter { it.space.kind == "internal" }.map { it.channel.id to it.title }
+                            val ours = rows.filter { it.space.kind == "internal" }.map { it.channel.id to it.channel.special }
                             onSave(ChatFolders.withCustom(settings, ChatFolders.fromSuggestion(newId(), s, ours)))
                         }) { Text("Add") }
                     }
@@ -165,7 +165,7 @@ internal fun ChatFoldersScreen(model: Model, rows: List<ChatListRow>, onSave: (C
 
 /** One of our own folders: its name, which kinds of chat it takes whole, its filters and its chats. */
 @Composable
-private fun ChatFolderEditor(initial: ChatFolders.Custom, isNew: Boolean, rows: List<ChatListRow>, onSave: (ChatFolders.Custom) -> Unit,
+private fun ChatFolderEditor(initial: ChatFolders.Custom, isNew: Boolean, rows: List<ChatListRow>, person: Boolean, onSave: (ChatFolders.Custom) -> Unit,
     onDelete: () -> Unit, onCancel: () -> Unit, modifier: Modifier) {
     val p = LocalChorusPalette.current
     var folder by remember(initial.id) { mutableStateOf(initial) }
@@ -186,7 +186,9 @@ private fun ChatFolderEditor(initial: ChatFolders.Custom, isNew: Boolean, rows: 
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp))
             }
             item { FolderSection("Every chat of a kind") }
-            for ((kind, title) in listOf("internal" to "Internal chats", "shared" to "Shared spaces", "direct" to "Direct messages")) item(key = "kind:$kind") {
+            // a person's internal space is only Notes: no Internal kind to take whole (D-093)
+            for ((kind, title) in listOf("internal" to "Internal chats", "shared" to "Shared spaces", "direct" to "Direct messages")
+                .filter { !(person && it.first == "internal") }) item(key = "kind:$kind") {
                 DisplaySwitch(title, kind in folder.kinds) { on -> folder = ChatFolders.setKind(folder, kind, on) { kindOf[it] } }
             }
             item { FolderSection("Only show") }
@@ -210,7 +212,7 @@ private fun ChatFolderEditor(initial: ChatFolders.Custom, isNew: Boolean, rows: 
                     ChatRowDisc(row, 36.dp)
                     Column(Modifier.weight(1f)) {
                         Text(row.title, color = p.ink, fontSize = 15.sp, lineHeight = 20.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(ChatFolders.label(ChatFolders.Settings(), kind) + if (inside && kind in folder.kinds) " · with every ${ChatFolders.label(ChatFolders.Settings(), kind).lowercase()} chat" else "",
+                        if (!(person && kind == "internal")) Text(ChatFolders.label(ChatFolders.Settings(), kind) + if (inside && kind in folder.kinds) " · with every ${ChatFolders.label(ChatFolders.Settings(), kind).lowercase()} chat" else "",
                             color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 1)
                     }
                     Checkbox(inside, null)

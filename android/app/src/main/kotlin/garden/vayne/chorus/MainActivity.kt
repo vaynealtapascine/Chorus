@@ -621,7 +621,10 @@ private fun ShareChooser(draft: SharedDraft, model: Model, accountId: String?, o
                 garden.vayne.chorus.ui.FormCard {
                     model.channels.forEachIndexed { i, channel ->
                         if (i > 0) garden.vayne.chorus.ui.FormDivider()
-                        Target("#${channel.name}", model.spaces.find { it.id == channel.spaceId }?.name ?: "Chat", garden.vayne.chorus.designsystem.R.drawable.ic_hash) { onChannel(channel) }
+                        // Handover and Notes are listed as themselves; a person's Notes space is no place to name (D-132)
+                        if (channel.special != null) Target(channel.name, garden.vayne.chorus.data.Special.subtitle(channel.special, model.isPerson),
+                            garden.vayne.chorus.ui.specialIcon(channel.special)) { onChannel(channel) }
+                        else Target("#${channel.name}", model.spaces.find { it.id == channel.spaceId }?.name ?: "Chat", garden.vayne.chorus.designsystem.R.drawable.ic_hash) { onChannel(channel) }
                     }
                 }
             }

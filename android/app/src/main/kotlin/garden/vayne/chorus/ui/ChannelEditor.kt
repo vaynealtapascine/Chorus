@@ -60,8 +60,9 @@ internal fun ChannelEditor(chorus: Chorus, model: Model, initialSpace: String?, 
         } catch (e: kotlinx.coroutines.CancellationException) { throw e }
         catch (_: Exception) { /* Previously confirmed capabilities remain usable offline. */ }
     }
-    var spaceId by rememberSaveable { mutableStateOf(channel?.spaceId ?: group?.id ?: initialSpace
-        ?: model.spaces.firstOrNull { it.kind == "internal" }?.id.orEmpty()) }
+    // a person's own internal space holds only Notes: never a place to make a channel (D-093, D-162)
+    var spaceId by rememberSaveable { mutableStateOf(channel?.spaceId ?: group?.id ?: initialSpace?.takeIf { it !in model.personHomes }
+        ?: model.spaces.firstOrNull { it.kind == "internal" && it.id !in model.personHomes }?.id.orEmpty()) }
     // a group edits its own name and description; its face is its one chat's
     var name by rememberSaveable { mutableStateOf(group?.name ?: channel?.name.orEmpty()) }
     var topic by rememberSaveable { mutableStateOf(group?.description ?: channel?.topic.orEmpty()) }
@@ -155,7 +156,7 @@ internal fun ChannelEditor(chorus: Chorus, model: Model, initialSpace: String?, 
             if (problem != null) Text(problem, fontSize = 13.sp, color = p.ink3)
             DrawerButton(if (channel == null) "Create channel" else "Save", ::save, busy = busy,
                 enabled = problem == null && name.isNotBlank() && name.trim().length <= 80 && spaceId.isNotBlank())
-            if (channel != null && canDelete && group == null) DrawerButton(if (memberChat) "Delete chat" else "Delete channel",
+            if (channel != null && canDelete && group == null) DrawerButton(if (channel.special != null) "Move to Trash" else if (memberChat) "Delete chat" else "Delete channel",
                 { confirmDelete = true }, ButtonKind.Quiet, enabled = !busy)
         }) {
         if (group == null || channel != null) FormCard {
@@ -172,7 +173,7 @@ internal fun ChannelEditor(chorus: Chorus, model: Model, initialSpace: String?, 
             }
         }
         if (channel == null && group == null) {
-            val spaces = model.spaces.filter { it.kind != "dm" }
+            val spaces = model.spaces.filter { it.kind != "dm" && it.id !in model.personHomes }
             ChoiceField("Space", model.spaces.find { it.id == spaceId }?.name ?: "Choose a space", enabled = !busy) { spacesOpen = true }
             ChoiceDrawer(spacesOpen, "Which space", spaces, spaces.find { it.id == spaceId }, { it.name },
                 { spaceId = it.id; spacesOpen = false }, { spacesOpen = false })
@@ -186,7 +187,8 @@ internal fun ChannelEditor(chorus: Chorus, model: Model, initialSpace: String?, 
                 enabled = !busy, modifier = Modifier.fillMaxWidth())
             ColourField(colour, { colour = it }, modifier = Modifier.fillMaxWidth(), label = "Colour", enabled = !busy)
         }
-        if (internal && !model.isPerson) {
+        // Handover and Notes are for the whole system: no "who it's for" (D-162)
+        if (internal && !model.isPerson && channel?.special == null) {
             if (!memberChat) {
                 SectionLabel("Who it's for")
                 Segmented(listOf("Everyone", "Only some members"), if (keptToSome) 1 else 0) { if (!busy) keptToSome = it == 1 }
@@ -214,8 +216,8 @@ internal fun ChannelEditor(chorus: Chorus, model: Model, initialSpace: String?, 
             }
         }
         if (error != null) FormNote(error.orEmpty(), warning = true)
-        if (confirmDelete && channel != null) ConfirmDrawer(if (memberChat) "Delete this chat?" else "Delete ${channel.name}?",
-            null, "Delete", danger = true,
+        if (confirmDelete && channel != null) ConfirmDrawer(if (channel.special != null) "Move ${channel.name} to Trash?" else if (memberChat) "Delete this chat?" else "Delete ${channel.name}?",
+            null, if (channel.special != null) "Move to Trash" else "Delete", danger = true,
             onDismiss = { confirmDelete = false }, onConfirm = {
                 confirmDelete = false
                 actions.launch {

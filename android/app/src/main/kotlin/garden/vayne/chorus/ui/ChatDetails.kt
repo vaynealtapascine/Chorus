@@ -117,7 +117,7 @@ internal fun ChatInfoPane(chorus: Chorus, channel: ChatChannel, space: ChatSpace
     val ownPrivate = ChatManage.sides(channel, space, model.members.mapTo(HashSet()) { it.id })?.mine?.isNotEmpty() == true
     // who may edit this chat: our own space's chats, a group's for its managers, our private chat in a DM
     val channelEditable = channel.kind != "thread" && when (space.kind) {
-        "internal" -> !model.isPerson
+        "internal" -> !model.isPerson || channel.special != null
         "dm" -> channel.kind == "member_dm" && ownPrivate
         else -> groupEditable
     }
@@ -126,7 +126,9 @@ internal fun ChatInfoPane(chorus: Chorus, channel: ChatChannel, space: ChatSpace
         canDelete = space.kind == "internal" || groupEditable || ownPrivate)
     if (editGroup) ChannelEditor(chorus, model, space.id, spaceChats.singleOrNull(), { editGroup = false }, { _, _ -> editGroup = false },
         group = space)
-    var tab by rememberSaveable(channel.id) { mutableStateOf("members") }
+    // a person's Notes has no members to list (D-093)
+    val personNotes = model.isPerson && space.id in model.personHomes
+    var tab by rememberSaveable(channel.id) { mutableStateOf(if (personNotes) "media" else "members") }
     var shown by remember(channel.id, tab) { mutableStateOf(60) }
     var viewing by remember(channel.id) { mutableStateOf<ChatFileItem?>(null) }
     val media = remember(library) { ChatLibrary.media(library) }
@@ -151,7 +153,9 @@ internal fun ChatInfoPane(chorus: Chorus, channel: ChatChannel, space: ChatSpace
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             ChannelDisc(channel.copy(name = title), size = 72.dp)
             Text(title, color = p.ink, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 12.dp))
-            val kind = subtitle ?: when { space.kind == "dm" || channel.isMemberDm -> "Direct"; space.kind == "internal" -> "Internal"
+            // Handover and Notes say what they are; a person's Notes has no space to name (D-093)
+            val kind = subtitle ?: if (channel.special != null) Special.subtitle(channel.special, model.isPerson)
+                else when { space.kind == "dm" || channel.isMemberDm -> "Direct"; space.kind == "internal" -> "Internal"
                 spaceChats.size <= 1 -> "Group"; else -> "Shared · ${space.name}" }
             val count = when {
                 space.kind == "internal" && !model.isPerson -> "${members.size} ${if (members.size == 1) "member" else "members"}"
@@ -159,11 +163,13 @@ internal fun ChatInfoPane(chorus: Chorus, channel: ChatChannel, space: ChatSpace
                 else -> null
             }
             // who it stays with: "only The Lanterns" for our own chats
-            val only = model.systemName?.takeIf { it.isNotBlank() && space.kind == "internal" && !model.isPerson && channel.memberIds.isEmpty() }?.let { "only $it" }
-            Text(listOfNotNull(kind, count, only).joinToString(" · "), color = p.ink3, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+            val only = model.systemName?.takeIf { it.isNotBlank() && space.kind == "internal" && !model.isPerson && channel.memberIds.isEmpty() && channel.special == null }?.let { "only $it" }
+            listOfNotNull(kind, count, only).joinToString(" · ").takeIf { it.isNotEmpty() }?.let {
+                Text(it, color = p.ink3, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+            }
             Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 val tile = Modifier.weight(1f)
-                if (notifyLevel == "none") InfoAction(R.drawable.ic_bell, "Unmute", tile) { onNotify(model.accountPrefs.defaultNotify(space.kind)) }
+                if (notifyLevel == "none") InfoAction(R.drawable.ic_bell, "Unmute", tile) { onNotify(model.accountPrefs.defaultNotify(space.kind, channel.special).takeIf { it != "none" } ?: "mentions") }
                 else InfoAction(R.drawable.ic_bell_off, "Mute", tile) { onNotify("none") }
                 InfoAction(R.drawable.ic_search, "Search", tile, onSearch)
                 InfoAction(R.drawable.ic_pin, "Pinned", tile) { pinsOpen = true }
@@ -179,7 +185,8 @@ internal fun ChatInfoPane(chorus: Chorus, channel: ChatChannel, space: ChatSpace
         }
         stickyHeader(key = "tabs") {
             Column(Modifier.fillMaxWidth().background(p.surface)) {
-                InfoTabs(listOf("members" to "Members", "media" to "Media", "files" to "Files", "links" to "Links", "polls" to "Polls"), tab) { tab = it }
+                InfoTabs(listOf("members" to "Members", "media" to "Media", "files" to "Files", "links" to "Links", "polls" to "Polls")
+                    .filter { !personNotes || it.first != "members" }, tab) { tab = it }
                 HorizontalDivider(color = p.line)
             }
         }
@@ -245,7 +252,7 @@ internal fun ChatInfoPane(chorus: Chorus, channel: ChatChannel, space: ChatSpace
                         onOpenChannel = onOpenChannel, onLeft = onLeft)
                 }
                 // Advanced (DESIGN §6): who may do what here, and slow mode; only for those who manage it
-                if (space.kind != "dm" && channel.kind != "thread" &&
+                if (space.kind != "dm" && channel.kind != "thread" && channel.special == null &&
                     ChannelPermissions.canManage(model.channelPermissionState, channel, me, directory?.ownerAccountId)) {
                     var advanced by rememberSaveable(channel.id) { mutableStateOf(false) }
                     TextButton(onClick = { advanced = !advanced }, modifier = Modifier.padding(top = 8.dp)) {
