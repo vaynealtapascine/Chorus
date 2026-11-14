@@ -198,6 +198,13 @@ A system's own channels and messages, plus what it can read in shared channels (
 `shared`, external authors as display names). Spaces, roles and permissions between accounts
 are server state and out of scope.
 
+Chorus's Handover and Notes to ourselves (Chorus D-132, D-162) export as **ordinary channels and
+messages**: the channel's role and a handover's delivery and checklist are Chorus behaviour, not
+interchange data (a handover's checklist items may be kept in the message text by an exporter
+that wants them readable). Who acknowledged a handover and the ticks on its checklist are left
+out: they are read state, like read marks. An importer making them again would set the role from
+Chorus's own export, not from PluralSpec.
+
 ## D14 · Licence — settled: schema CC BY 4.0, text CC BY-NC-SA 4.0
 
 > "CC BY-SA-NC." … "I think the schema should be CC-BY, but the text should be NC."
