@@ -7,9 +7,11 @@ import org.json.JSONObject
 data class CustomState(val id: String, val name: String, val description: String?, val color: String?, val icon: String?)
 
 /** What a member is up to while here (F3.10): built-in states, the system's own (`state:<id>`) or
- * their own words, and a note. One account pref per member, `member_status:<id>`, cleared with
- * null; an older `{text, at}` reads as a note, and `text` is still written for older readers. */
-data class MemberStatus(val tags: List<String> = emptyList(), val note: String? = null, val at: Long = 0, val clearOnLeave: Boolean = false) {
+ * their own words, a note, and who sees it (D-138; default only us). One account pref per member,
+ * `member_status:<id>`, cleared with null; an older `{text, at}` reads as a private note, and `text`
+ * is still written for older readers. [extra] keeps fields this app doesn't know, so a write keeps them. */
+data class MemberStatus(val tags: List<String> = emptyList(), val note: String? = null, val at: Long = 0, val clearOnLeave: Boolean = false,
+    val audience: Audience = Audience.PRIVATE, val extra: Map<String, Any?> = emptyMap()) {
     /** "Tired · Nonverbal · Typing only today, please" */
     fun line(states: List<CustomState> = emptyList()): String =
         (tags.map { FrontingDisplay.statusLabel(it, states) } + listOfNotNull(note)).joinToString(" · ")
@@ -111,6 +113,7 @@ object FrontingDisplay {
 
     const val MAX_STATUS_TAG = 40
     const val MAX_STATUS_NOTE = 200
+    const val MAX_STATUS_TAGS = 8
     private val BUILT_IN_STATUSES = listOf("tired" to "Tired", "nonverbal" to "Nonverbal", "busy" to "Busy", "low_spoons" to "Low spoons",
         "needs_quiet" to "Needs quiet", "out_and_about" to "Out and about")
 
@@ -127,14 +130,39 @@ object FrontingDisplay {
     fun statusPayload(memberId: String, status: MemberStatus?, states: List<CustomState> = emptyList()): JSONObject =
         AccountPrefs.payload(STATUS + memberId, status?.copy(note = status.note?.trim()?.ifEmpty { null })
             ?.takeIf { it.tags.isNotEmpty() || it.note != null }?.let { s ->
-                JSONObject().put("tags", JSONArray(s.tags)).put("at", s.at).put("clear_on_leave", s.clearOnLeave).put("text", s.line(states))
-                    .also { o -> s.note?.let { o.put("note", it) } }
+                JSONObject().also { o -> s.extra.forEach { (k, v) -> o.put(k, v) } }
+                    .put("tags", JSONArray(s.tags)).put("at", s.at).put("clear_on_leave", s.clearOnLeave).put("audience", s.audience.toJson())
+                    .put("text", s.line(states)).also { o -> s.note?.let { o.put("note", it) } }
             } ?: JSONObject.NULL)
 
+    private val KNOWN_STATUS = setOf("tags", "note", "at", "clear_on_leave", "audience", "text")
+
+    /** A state's audience as the server reads it (core `member_state::audience`): anything malformed is private. */
+    fun statusAudience(v: Any?): Audience {
+        val o = v as? JSONObject ?: return Audience.PRIVATE
+        return when (val mode = o.opt("mode")) {
+            "friends", "followers", "following", "server" -> Audience(mode as String)
+            "buckets" -> o.optJSONArray("bucket_ids")?.let { a -> (0 until a.length()).map { a.opt(it) } }
+                ?.takeIf { ids -> ids.all { it is String } }?.let { ids -> Audience("buckets", ids.map { it as String }) } ?: Audience.PRIVATE
+            else -> Audience.PRIVATE
+        }
+    }
+
     fun status(value: Any?): MemberStatus? = (value as? JSONObject)?.let { o ->
-        val tags = strings(o.optJSONArray("tags")).take(8).map { it.take(MAX_STATUS_TAG) }
-        val note = (if (o.has("tags")) str(o, "note") else str(o, "text"))?.take(MAX_STATUS_NOTE)
-        if (tags.isEmpty() && note == null) null else MemberStatus(tags, note, o.optLong("at"), o.optBoolean("clear_on_leave"))
+        val raw = o.optJSONArray("tags")
+        val tags = (0 until (raw?.length() ?: 0)).mapNotNull { raw!!.opt(it) as? String }.filter { it.isNotBlank() }
+            .map { it.take(MAX_STATUS_TAG) }.distinct().take(MAX_STATUS_TAGS)
+        val note = (if (o.has("tags")) str(o, "note") else str(o, "text"))?.trim()?.take(MAX_STATUS_NOTE)
+        val at = (o.opt("at") as? Number)?.takeIf { it is Int || it is Long }?.toLong() ?: 0L
+        val extra = o.keys().asSequence().filter { it !in KNOWN_STATUS }.associateWith { o.opt(it) }
+        if (tags.isEmpty() && note == null) null
+        else MemberStatus(tags, note, at, o.opt("clear_on_leave") == true, statusAudience(o.opt("audience")), extra)
+    }
+
+    /** A friend's member state as their follower view shows it (D-138): built-in keys, their own words or a
+     *  custom state's name, then the note; null when there's nothing to say. */
+    fun sharedLine(state: SharedState?): String? = state?.let { s ->
+        (s.tags.map { statusLabel(it, emptyList()) } + listOfNotNull(s.note)).joinToString(" · ").ifEmpty { null }
     }
 
     /** Whether a state still shows for someone here since [since]: one meant to clear stays gone once

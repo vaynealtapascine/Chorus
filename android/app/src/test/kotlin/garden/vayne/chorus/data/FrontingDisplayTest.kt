@@ -65,6 +65,39 @@ class FrontingDisplayTest {
         assertEquals(MemberStatus(emptyList(), "Resting", 3, false), legacy)
     }
 
+    @Test fun whoSeesAStateIsKeptAndDefaultsToOnlyUs() {
+        // D-138: written and read back; unknown fields survive a rewrite; anything malformed is only us
+        val shared = MemberStatus(listOf("busy"), null, 7, false, Audience("buckets", listOf("b1")))
+        val written = FrontingDisplay.statusPayload("fox", shared).getJSONObject("value")
+        assertEquals("buckets", written.getJSONObject("audience").getString("mode"))
+        assertEquals(shared, FrontingDisplay.status(written))
+        val later = FrontingDisplay.status(JSONObject(written.toString()).put("later", 1))!!
+        assertEquals(1, FrontingDisplay.statusPayload("fox", later).getJSONObject("value").getInt("later"))
+        assertEquals(Audience.PRIVATE, FrontingDisplay.status(JSONObject().put("tags", org.json.JSONArray(listOf("busy"))))!!.audience)
+        assertEquals(Audience.PRIVATE, FrontingDisplay.statusAudience(JSONObject().put("mode", "buckets").put("bucket_ids", "b1")))
+        assertEquals("Tired · Blurry · Typing only", FrontingDisplay.sharedLine(SharedState(listOf("tired", "Blurry"), "Typing only")))
+        assertNull(FrontingDisplay.sharedLine(null))
+    }
+
+    /** The core's member state vectors (fixtures/member_state, D-138): this reader agrees with the server's. */
+    @Test fun readsMemberStatesAsTheCoreDoes() {
+        val dir = java.io.File(System.getProperty("chorus.fixtures"), "member_state")
+        val cases = dir.listFiles { f -> f.name.startsWith("parse_") && f.name.endsWith(".json") }.orEmpty().sortedBy { it.name }
+        assertTrue(cases.size > 5)
+        for (file in cases) {
+            val case = JSONObject(file.readText())
+            val got = FrontingDisplay.status(case.getJSONArray("args").get(0))
+            val expect = case.opt("expect")
+            if (expect == JSONObject.NULL) { assertNull(file.name, got); continue }
+            val e = expect as JSONObject
+            assertEquals(file.name, (0 until e.getJSONArray("tags").length()).map { e.getJSONArray("tags").getString(it) }, got!!.tags)
+            assertEquals(file.name, if (e.isNull("note")) null else e.getString("note"), got.note)
+            assertEquals(file.name, e.getLong("at"), got.at)
+            assertEquals(file.name, e.getBoolean("clear_on_leave"), got.clearOnLeave)
+            assertEquals(file.name, ProfileAudience.of(e.getJSONObject("audience")), got.audience)
+        }
+    }
+
     @Test fun aStateMeantToClearStaysGoneOnceTheyLeftAndCameBack() {
         val clears = MemberStatus(listOf("tired"), null, 1_000_000, true)
         assertTrue(FrontingDisplay.statusShowing(clears, 900_000))

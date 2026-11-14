@@ -45,6 +45,8 @@ class FriendsTest {
         assertEquals("Kit fronting · Juniper co-conscious", line)
         val many = (1..5).map { SharedMember("M$it", null) }
         assertEquals("M1 fronting · M2 fronting · M3 fronting · 2 more", Friends.nowLine(many))
+        val tired = SharedMember("Kit", null, state = SharedState(listOf("tired"), "Typing only"))
+        assertEquals("Kit fronting (Tired · Typing only)", Friends.nowLine(listOf(tired)))
     }
 
     @Test fun sinceIsNeverMorePreciseThanTheirTimeRule() {
@@ -145,5 +147,13 @@ class FriendsTest {
         assertEquals(2000L, v.revealedAt)
         assertEquals("The Junipers round times to 15 minutes.", Friends.timeNote("The Junipers", v.time))
         assertFalse(PeopleApi.followerView(JSONObject("""{"shared":false}""")).shared)
+    }
+
+    @Test fun aSharedStateRidesOnItsMembersEntry() {
+        // D-138: tags and note on the entry; an empty one is no state
+        val v = PeopleApi.followerView(JSONObject("""{"entries":[{"t":"subject","level":"front","name":"Kit",
+            "state":{"tags":["tired"],"note":"Typing only"}},{"t":"subject","level":"front","name":"Ash","state":{"tags":[]}}]}"""))
+        assertEquals(SharedState(listOf("tired"), "Typing only"), v.entries[0].state)
+        assertNull(v.entries[1].state)
     }
 }

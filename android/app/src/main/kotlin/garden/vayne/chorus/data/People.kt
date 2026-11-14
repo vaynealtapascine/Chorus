@@ -50,7 +50,19 @@ data class SharedStats(val days: Int, val members: List<Pair<String, Int>>)
 /** Someone a followed account shows as here, with their colour, sigil and picture when shared, and
  *  the layer they were revealed in (`front`, `cocon`, `present`, or a granted custom layer). */
 data class SharedMember(val name: String, val color: String?, val glyph: String? = null, val avatarBlob: String? = null,
-    val level: String = "front")
+    val level: String = "front", val state: SharedState? = null)
+/** A member's state as it reaches us on their entry (D-138): tags and note only, revealed with the front. */
+data class SharedState(val tags: List<String>, val note: String?) {
+    companion object {
+        fun of(o: JSONObject?): SharedState? {
+            if (o == null) return null
+            val a = o.optJSONArray("tags")
+            val tags = (0 until (a?.length() ?: 0)).mapNotNull { (a!!.opt(it) as? String)?.takeIf(String::isNotBlank) }
+            val note = (o.opt("note") as? String)?.trim()?.ifEmpty { null }
+            return if (tags.isEmpty() && note == null) null else SharedState(tags, note)
+        }
+    }
+}
 /** [fronts]: additional fronts the followed account granted (D-084), as (name, revealed names).
  *  [entries]: everyone shown, every layer; [front]: only the front layer. [since] is already
  *  fuzzed by the server under [time] (the ceiling's time rule); [shared] false when they don't
@@ -146,7 +158,8 @@ object PeopleApi {
             entries.optJSONObject(i)?.let { e ->
                 e.optString("name").takeIf { it.isNotBlank() && it != "null" }?.let { name ->
                     fun shared(key: String) = e.optString(key).takeIf { e.has(key) && !e.isNull(key) && it.isNotBlank() }
-                    SharedMember(name, shared("color"), shared("glyph"), shared("avatar_blob"), shared("level") ?: "front")
+                    SharedMember(name, shared("color"), shared("glyph"), shared("avatar_blob"), shared("level") ?: "front",
+                        SharedState.of(e.optJSONObject("state")))
                 }
             }
         } } ?: emptyList()

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -33,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import garden.vayne.chorus.data.Audience
 import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.FrontingDisplay
 import garden.vayne.chorus.data.MemberStatus
@@ -42,7 +44,8 @@ import garden.vayne.chorus.designsystem.LocalChorusPalette
 import garden.vayne.chorus.designsystem.R
 import kotlinx.coroutines.launch
 
-/** A member's state (F3.10): any of the common ones, the system's own states or their own words, and a note. */
+/** A member's state (F3.10): any of the common ones, the system's own states or their own words, a note, and
+ *  who sees it (D-138: default only us; friends in it see the state next to the name while that member is shown in front). */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun MemberStatePage(chorus: Chorus, model: Model, s: Subject, onClose: () -> Unit) {
@@ -53,6 +56,7 @@ fun MemberStatePage(chorus: Chorus, model: Model, s: Subject, onClose: () -> Uni
     var offered by remember { mutableStateOf(FrontingDisplay.statusChoices(model.states, current)) }
     var note by remember { mutableStateOf(current?.note.orEmpty()) }
     var clear by remember { mutableStateOf(current?.clearOnLeave ?: true) }
+    var audience by remember { mutableStateOf(current?.audience ?: Audience.PRIVATE) }
     var typing by remember { mutableStateOf(false) }
     var words by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
@@ -66,7 +70,9 @@ fun MemberStatePage(chorus: Chorus, model: Model, s: Subject, onClose: () -> Uni
             catch (e: Exception) { error = e.message ?: "Couldn’t save. Try again." } finally { busy = false }
         }
     }
-    fun set() { if (ready) write(MemberStatus(picked, note.trim().ifEmpty { null }, System.currentTimeMillis(), clear)) }
+    fun set() {
+        if (ready) write(MemberStatus(picked, note.trim().ifEmpty { null }, System.currentTimeMillis(), clear, audience, current?.extra.orEmpty()))
+    }
     fun addWords() {
         val tag = words.trim().take(FrontingDisplay.MAX_STATUS_TAG)
         if (tag.isNotEmpty()) { if (tag !in offered) offered = offered + tag; if (tag !in picked) picked = picked + tag }
@@ -107,7 +113,15 @@ fun MemberStatePage(chorus: Chorus, model: Model, s: Subject, onClose: () -> Uni
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done), keyboardActions = KeyboardActions(onDone = { addWords() }))
                 ChorusField(note, { note = it.take(FrontingDisplay.MAX_STATUS_NOTE) }, Modifier.fillMaxWidth(), label = { Text("Note (optional)") }, minLines = 1, maxLines = 3)
                 SectionLabel("Options")
-                FormCard { ToggleRow("Clear when ${s.name} stops fronting", clear) { clear = it } }
+                FormCard {
+                    ToggleRow("Clear when ${s.name} stops fronting", clear) { clear = it }
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Text("Who sees this", color = p.ink, fontSize = 15.sp, lineHeight = 20.sp, modifier = Modifier.weight(1f))
+                        AudienceChip("State", audience, own = true, buckets = model.sharingBuckets, onChange = { audience = it ?: Audience.PRIVATE },
+                            looks = model.bucketLooks)
+                    }
+                }
                 error?.let { Text(it, color = p.danger, fontSize = 14.sp) }
             }
             Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {

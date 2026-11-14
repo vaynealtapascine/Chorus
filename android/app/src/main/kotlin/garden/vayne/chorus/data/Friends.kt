@@ -54,11 +54,13 @@ object Friends {
         "front" -> "fronting"; "cocon" -> "co-conscious"; "present" -> "present"; else -> "here"
     }
 
-    /** "Kit fronting · Juniper co-conscious", front first, at most [max] names. */
+    /** "Kit fronting (Tired) · Juniper co-conscious", front first, at most [max] names. */
     fun nowLine(entries: List<SharedMember>, max: Int = 3): String {
         val order = listOf("front", "cocon", "present")
         val sorted = entries.sortedBy { order.indexOf(it.level).let { i -> if (i < 0) order.size else i } }
-        val shown = sorted.take(max).joinToString(" · ") { "${it.name} ${levelWord(it.level)}" }
+        val shown = sorted.take(max).joinToString(" · ") { m ->
+            "${m.name} ${levelWord(m.level)}" + (FrontingDisplay.sharedLine(m.state)?.let { " ($it)" } ?: "")
+        }
         return if (sorted.size > max) "$shown · ${sorted.size - max} more" else shown
     }
 

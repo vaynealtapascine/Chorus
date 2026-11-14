@@ -29,6 +29,7 @@ import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.FollowPresets
 import garden.vayne.chorus.data.FollowerView
 import garden.vayne.chorus.data.Friends
+import garden.vayne.chorus.data.FrontingDisplay
 import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.PeopleApi
 import garden.vayne.chorus.data.SharedMember
@@ -267,6 +268,9 @@ private fun LayerFace(m: SharedMember) {
         }
         Text(m.name, color = p.ink, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
         if (m.level != "front") Text(Friends.levelWord(m.level), color = p.ink3, fontSize = 11.sp, lineHeight = 13.sp)
+        FrontingDisplay.sharedLine(m.state)?.let {
+            Text(it, color = p.ink2, fontSize = 11.sp, lineHeight = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+        }
     }
 }
 
