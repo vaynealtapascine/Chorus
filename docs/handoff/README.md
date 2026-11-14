@@ -12,3 +12,4 @@ a9c3c2e docs/handoff/` lists them).
 | `ui5-android-2026-10-28.md` | Figma gap list cited by `docs/UI_REDESIGN.md` |
 | `opus-remote-2.md` | export bundle design (D-068, `export_job.rs`) in its appendix |
 | `opus-remote-5.md` | paused PluralSpec implementation plan R30–R34 (D-077) |
+| `revisit-plan.md` | draft plan from `docs/DECISIONS_REVISIT.md`: groundwork, encryption, identity model, federation; needs the owner's approval per phase |

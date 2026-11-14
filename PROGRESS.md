@@ -38,7 +38,7 @@ Also from Gemini's review: rate limiter bypass, Chorus Home DNS rebinding, webho
 and link-local targets, per-request auth writes, restore window reopening, post alert faces,
 named-front avatars, search channel scoping, helper consolidation, three Android a11y fixes.
 
-Deployed 2026-11-06; the live-DB audit found nothing. Left: Q23 (poll votes of deleted members); the
+Deployed 2026-11-06; the live-DB audit found nothing. Left: the
 *Open* rows of the triage file (device checks: nav-bar inset, predictive back).
 
 ### State (checked 2026-11-06)
@@ -61,7 +61,7 @@ Deployed 2026-11-06; the live-DB audit found nothing. Left: Q23 (poll votes of d
 - Ship in slices: commit → full gate (`verify.py --android`) → `pwsh scripts/deploy-linux.ps1
   [-Android] [-NoBuild]` → log line with the Android version. Phones update on next app start.
 - No release (`v*` tag) until the owner says so. Spec changes that alter user-visible behaviour
-  go through `docs/OPEN_QUESTIONS.md` (open now: Q21, Q22, Q23, Q24).
+  go through `docs/OPEN_QUESTIONS.md` (none open; Q21–Q23 are D-161).
 - Production checks use the test account `claudetest` (its device is the owner's Chrome
   profile), never the owner's account. Mutations go to the emulator or an isolated demo server
   (`docs/OPS.md` §8 "Demo data"; `F:/DunBuild/ui8-demo` is a seeded two-account demo on 5283).
@@ -85,6 +85,7 @@ Deployed 2026-11-06; the live-DB audit found nothing. Left: Q23 (poll votes of d
 ## Board
 
 - [x] DOC-REVISIT Owner decision worksheet: docs/DECISIONS_REVISIT.md (2026-11-12). Linked from OPEN_QUESTIONS; UI21 Now handoff preserved.
+- [ ] REVISIT Rearchitecture from the worksheet (owner, 2026-11-14): draft plan `docs/handoff/revisit-plan.md` with four tracks in the owner's order: G groundwork (R12), E encryption (R10), I identity model (R01–R06, R08, R09), F federation (R11); automation (R07) parked. **Not authorized to build:** the owner approves each phase's D-entries first (plan §9). Starts after UI21.
 
 Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why in log)
 
@@ -118,7 +119,7 @@ UI4, UI5, UI8, UI9, UI10, UI11a–c, UI12a–d, UI13.
 - [~] UI3 Polls (D-081/D-086, `docs/POLLS.md`). Complete; web live suite passes. Left: an Android device check.
 - [~] UI6 Android feature pass: slices 1/2/7/8/9/10 done; 3 (members containing members), 4 (real handles), 5 (per-member restrictions), 6 (channel sides), 11 (per-chat wallpaper) open. `docs/handoff/ui6-implementation.md`.
 - [~] UI7 Android polish (Telegram-level chat, Twitter-class Journal). Open slices in `docs/handoff/ui7-android-polish.md`.
-- Known gaps and small follow-ups: web chat timeline still reads legacy Body history and group subject naming differs web/Android (from UI8); "preview as a friend" on one's own profile and formatted friend bios on Android (UI10); Android member editor edits only Location/websites among custom fields (UI9); drag to reorder chat folders on web (UI12); no way to set or change a handle after joining (UI6 slice 4); `blobs.rs` follower avatar rule reads only Body's view (`fv.front_id = ''`), so a member revealed only through a granted named front (D-084) can't have their picture fetched.
+- Known gaps and small follow-ups: web chat timeline still reads legacy Body history and group subject naming differs web/Android (from UI8); "preview as a friend" on one's own profile and formatted friend bios on Android (UI10); Android member editor edits only Location/websites among custom fields (UI9); drag to reorder chat folders on web (UI12); no way to set or change a handle after joining (UI6 slice 4); the web thread composer has no "Also send to <channel>" (Android does; D-161); `blobs.rs` follower avatar rule reads only Body's view (`fv.front_id = ''`), so a member revealed only through a granted named front (D-084) can't have their picture fetched.
 
 ### M — v1 milestones still open
 
@@ -210,3 +211,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`. Entries befo
 - 2026-11-14 claude-fable-5.2 — UI21 wave 8, D-138 (b3cb210 core + server + docs, 49f4fb5 web, c5b8fab Android; D-159 records the build): a member state carries tags, a note, clear on leave and a "Who sees this" audience (default only us); friends in the audience see it on the member's entry in the follower front view, only at a reveal and never sooner than settle + delay after the change; `fixtures/member_state`, privacy_audit a26, the reveal-times property test extended. Built by an Opus 5.5 agent, server side reviewed. Not seen in a browser or on a device.
 - 2026-11-14 claude-fable-5.2 — UI21 wave 8, D-133 core and server (42b5cae, aa652a0, b3f7831, 0cf136a; D-160; migration 0024, projection v8): space-wide permission overrides (`space.set_permission`) with `attach`, `poll`, `aside`, `invite` and `history`, mirrored in `chorus_core::perms` (`fixtures/perms`, property-tested against the SQL); history before joining hidden inside the one visibility rule; `space.set_sharing` for each account's own member names (withheld from other accounts when off) and fronting status (`GET /spaces/{id}/fronts`, its own delayed reveal, NOTIFICATIONS §5 rule 11); privacy_audit a27–a30. Built by an Opus 5.5 agent, reviewed. Known: a REST page from before the join is slow (621 ms over 50k hidden messages) though empty; opaque member ids still reach other accounts when names are off (D-160). Client contract: docs/handoff/d133-clients.md; screens next.
 - 2026-11-14 claude-fable-5.2 — UI21 wave 8, D-133 screens: web 1724544 (Chat info › Permissions for admins or What we share for members, `SpacePermissions.svelte` loaded on demand, composer gating through core `spacePerms`, others' fronts in the member list, "History starts here", new shared spaces deny invite and history for everyone; seen in headless Chrome at 1280 and 390, dark only, fronts not seen with data) and Android a09dce0 (`SpacePermissionsDrawer.kt`, the same; the attach sheet stays and drops its file tiles without `attach`; person accounts get no sharing rows; not seen on a device). Built by Sonnet 5.5 agents from docs/handoff/d133-clients.md.
+- 2026-11-14 claude-fable-5.2 — REVISIT: went through docs/DECISIONS_REVISIT.md with the owner. R01–R06 were the owner's written answers; R07–R13 and six conflicts in R01–R06 were settled in an interview and recorded in the worksheet (statuses Ready for review or Deferred, none Approved). Drafted docs/handoff/revisit-plan.md: groundwork, then encryption (operator cannot read content; recovery key plus friends; old history sealed in place), then one identity resolver in core for remap, relations, blends, subsystems, layers and views, then federation including shared spaces. Q21–Q23 confirmed as their defaults (D-161; OPEN_QUESTIONS is empty). docs/SCALING.md (the 2026-11-11 proposal the worksheet cites) is now committed. No code changed; nothing is authorized to build yet.
