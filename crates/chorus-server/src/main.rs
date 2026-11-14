@@ -202,6 +202,10 @@ fn main() -> anyhow::Result<()> {
             if told > 0 {
                 tracing::info!(accounts = told, "wrote account handles into the op log (D-126)");
             }
+            let made = chorus_server::handover::backfill(&conn, chorus_server::now_ms())?;
+            if made > 0 {
+                tracing::info!(channels = made, "made Handover and Notes channels (D-132)");
+            }
             let state = chorus_server::app::Shared::new(conn, cfg.clone())?;
             // a fresh runtime each time: dropping it ends the last run's background tasks
             tokio::runtime::Runtime::new()?.block_on(chorus_server::app::serve(state))?;

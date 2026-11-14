@@ -931,7 +931,13 @@ pins, Trash, exports and purge all work as in any channel, and deleting one is a
 Trash restores.
 
 - **Creation.** The server makes them as ordinary ops (`channel.create {special}` by the account,
-  device `server`), so every device converges. See D-162 for when, where, and for persons.
+  device `server`), so every device converges (`chorus-server/src/handover.rs`): at enrolment
+  (`auth::redeem`) and once for older accounts at start-up (`handover::backfill`). A system gets
+  `handover` ("Handover") and `notes` ("Notes to ourselves") in its own internal space; a person
+  gets `notes` ("Notes to self") in an internal space made for it ("Notes", holding nothing else;
+  clients show it only as the Notes row, D-093). A role the space has ever had, a deleted channel
+  included, is never made again, and ordinary channels (whatever their name) are left alone. See
+  D-162.
 - **Rules at ingest** (`perms::special_denied`, for every author, the owner included): `special`
   only on a new text channel (never a thread) in an `internal` space, by the space's owner; at most
   one **live** (not deleted) channel of each role per space (a second `channel.create`, or a

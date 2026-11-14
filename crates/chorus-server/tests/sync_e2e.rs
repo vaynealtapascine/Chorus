@@ -173,10 +173,10 @@ async fn devices_sync_through_the_real_server() {
     phone.drain(Q).await;
     desk.connect(&s).await;
     desk.drain(Q).await;
-    // both see the server-created internal space and #general
+    // both see the server-created internal space, #general, Handover and Notes (D-132)
     let space = phone.scope("space:");
-    assert_eq!(phone.store.confirmed().filter(|o| o.scope == space).count(), 3);
-    assert_eq!(desk.store.confirmed().filter(|o| o.scope == space).count(), 3);
+    assert_eq!(phone.store.confirmed().filter(|o| o.scope == space).count(), 5);
+    assert_eq!(desk.store.confirmed().filter(|o| o.scope == space).count(), 5);
 
     // phone creates a member; desk receives it live
     let acct_scope = format!("account:{acct}");

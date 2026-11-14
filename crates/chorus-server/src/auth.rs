@@ -265,6 +265,8 @@ pub fn redeem(
             let name = a.display_name.clone().filter(|n| !n.trim().is_empty()).unwrap_or_else(|| handle.clone());
             ensure_self_member(&tx, &id, &name, now)?;
         }
+        // Handover and Notes (D-132): a system's in its own space, a person's Notes in one of its own
+        crate::handover::ensure(&tx, &id, now)?;
         id
     };
 
@@ -540,7 +542,19 @@ pub(crate) mod tests {
             .query_row("SELECT count(*) FROM member WHERE account_id = ?1 AND is_self", [&e.account_id], |r| r.get(0))
             .unwrap();
         assert_eq!(selves, 1);
-        assert!(!ingest::scopes_of(&c, &e.account_id).unwrap().iter().any(|s| s.starts_with("space:")));
+        // no Home: the one space a person has holds only its Notes channel (D-132, D-162)
+        let chans: Vec<(String, Option<String>)> = c
+            .prepare(
+                "SELECT ch.name, ch.special FROM channel ch JOIN space s ON s.id = ch.space_id
+                 WHERE s.owner_account_id = ?1",
+            )
+            .unwrap()
+            .query_map([&e.account_id], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(chans, vec![("Notes to self".to_string(), Some("notes".to_string()))]);
+        assert_eq!(ingest::scopes_of(&c, &e.account_id).unwrap().iter().filter(|s| s.starts_with("space:")).count(), 1);
         // and the other way; no answer keeps the invite's kind
         assert_eq!(joined(&mut c, InviteKind::Person, Some("system"), "stars").unwrap().kind, "system");
         assert_eq!(joined(&mut c, InviteKind::Person, None, "alex").unwrap().kind, "person");
@@ -573,7 +587,11 @@ pub(crate) mod tests {
             .map(Result::unwrap)
             .collect();
         // the handle first, so the account's devices know it offline (D-126)
-        assert_eq!(kinds, ["account.set", "space.create", "space.join", "channel.create"]);
+        // then Handover and Notes (D-132)
+        assert_eq!(
+            kinds,
+            ["account.set", "space.create", "space.join", "channel.create", "channel.create", "channel.create"]
+        );
         assert_eq!(ingest::scopes_of(&c, &e.account_id).unwrap().len(), 3);
         // session works, then expires
         assert_eq!(authenticate(&c, &e.session, now + 10, 1000).unwrap().device_id, e.device_id);

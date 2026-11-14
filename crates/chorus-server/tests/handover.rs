@@ -7,7 +7,7 @@ use chorus_core::hlc::Hlc;
 use chorus_core::id::new_id;
 use chorus_core::op::Op;
 use chorus_core::time::{ClockSample, TimeSource};
-use chorus_server::{db, ingest, perms, project};
+use chorus_server::{auth, db, handover, ingest, perms, project};
 use rusqlite::{Connection, params};
 use serde_json::{Value, json};
 use std::cell::Cell;
@@ -302,4 +302,101 @@ fn special_channels_are_never_shared_out() {
     assert!(!perms::can(&w.c, &w.bob, &h.notes, "view").unwrap(), "Bob views Notes");
     assert!(perms::can(&w.c, &w.bob, &general, "view").unwrap(), "setup: the rest of the space");
     assert!(perms::can(&w.c, &w.alice, &h.handover, "send").unwrap());
+}
+
+fn enrol(c: &mut Connection, kind: auth::InviteKind, seed: u8, handle: &str) -> String {
+    use base64::Engine as _;
+    use p256::pkcs8::EncodePublicKey;
+    let code = auth::create_invite(c, kind, None, "t", auth::INVITE_TTL_MS, 1, NOW).unwrap();
+    let sk = p256::ecdsa::SigningKey::from_slice(&[seed; 32]).unwrap();
+    let pk =
+        base64::engine::general_purpose::STANDARD.encode(sk.verifying_key().to_public_key_der().unwrap().as_bytes());
+    let device = auth::DeviceIn { name: "p".into(), platform: "android".into(), public_key: pk };
+    let account = auth::AccountIn { display_name: None, handle: Some(handle.into()), kind: None };
+    auth::redeem(c, &code, &device, Some(&account), NOW, 1000).unwrap().account_id
+}
+
+/// (space kind, channel name, role) of every channel in spaces the account owns, deleted included.
+fn specials(c: &Connection, account: &str) -> Vec<(String, String, Option<String>)> {
+    c.prepare(
+        "SELECT s.kind, ch.name, ch.special FROM channel ch JOIN space s ON s.id = ch.space_id
+         WHERE s.owner_account_id = ?1 ORDER BY ch.special, ch.name",
+    )
+    .unwrap()
+    .query_map([account], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+    .unwrap()
+    .collect::<Result<_, _>>()
+    .unwrap()
+}
+
+#[test]
+fn enrolment_makes_a_systems_pair_and_a_persons_notes_in_a_space_of_its_own() {
+    let mut c = db::open_memory().unwrap();
+    db::migrate(&mut c).unwrap();
+    let sys = enrol(&mut c, auth::InviteKind::System, 5, "stars");
+    let s = |k: &str, n: &str, r: Option<&str>| (k.to_string(), n.to_string(), r.map(str::to_string));
+    assert_eq!(
+        specials(&c, &sys),
+        vec![
+            s("internal", "general", None),
+            s("internal", "Handover", Some("handover")),
+            s("internal", "Notes to ourselves", Some("notes"))
+        ]
+    );
+    let person = enrol(&mut c, auth::InviteKind::Person, 6, "kit");
+    assert_eq!(specials(&c, &person), vec![s("internal", "Notes to self", Some("notes"))]);
+    // the person is a present member of that space, and nobody else is
+    let members: Vec<String> = c
+        .prepare("SELECT sm.account_id FROM space_member sm JOIN space s ON s.id = sm.space_id WHERE s.owner_account_id = ?1 AND sm.is_present")
+        .unwrap()
+        .query_map([&person], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(members, vec![person.clone()]);
+    // and doing it again changes nothing
+    assert_eq!(handover::backfill(&c, NOW + 1).unwrap(), 0);
+}
+
+#[test]
+fn the_start_up_backfill_is_idempotent_and_leaves_named_channels_and_deleted_ones_alone() {
+    let w = World::new();
+    // an older system: its own space, an ordinary channel a person named "Handover", no specials
+    let space = w.id();
+    let scope = format!("space:{space}");
+    ingest::grant(&w.c, &w.alice, &scope).unwrap();
+    w.server(&w.alice, &scope, "space.create", &space, json!({"kind": "internal", "name": "Home"}));
+    w.server(&w.alice, &scope, "space.join", &space, json!({"account_id": w.alice}));
+    let named = w.id();
+    w.server(
+        &w.alice,
+        &scope,
+        "channel.create",
+        &named,
+        json!({"space_id": space, "kind": "text", "name": "Handover"}),
+    );
+    // an older person with no space at all, and a system that has none (Bob) gets none
+    let kit = new_id(1, [9; 10]);
+    w.c.execute("INSERT INTO account(id, kind, handle, created_at) VALUES (?1, 'person', 'kit', 0)", [&kit]).unwrap();
+    ingest::grant(&w.c, &kit, &format!("account:{kit}")).unwrap();
+    assert_eq!(handover::backfill(&w.c, NOW).unwrap(), 3);
+    assert_eq!(handover::backfill(&w.c, NOW).unwrap(), 0, "a second start made more");
+    let mine = specials(&w.c, &w.alice);
+    assert_eq!(mine.iter().filter(|r| r.2.is_some()).count(), 2);
+    let old: (String, Option<String>) =
+        w.c.query_row("SELECT name, special FROM channel WHERE id = ?1", [&named], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap();
+    assert_eq!(old, ("Handover".into(), None), "the ordinary channel was converted or renamed");
+    assert_eq!(specials(&w.c, &kit).len(), 1);
+    assert!(specials(&w.c, &w.bob).is_empty());
+    // a deleted special is restored from Trash, never made again; a rebuild changes nothing
+    let notes: String =
+        w.c.query_row("SELECT id FROM channel WHERE space_id = ?1 AND special = 'notes'", [&space], |r| r.get(0))
+            .unwrap();
+    assert_eq!(w.push(&w.alice, &scope, "channel.delete", &notes, json!({})), None);
+    let mut c = w.c;
+    project::rebuild(&mut c).unwrap();
+    assert_eq!(handover::backfill(&c, NOW).unwrap(), 0);
+    let n: i64 = c.query_row("SELECT count(*) FROM channel WHERE special IS NOT NULL", [], |r| r.get(0)).unwrap();
+    assert_eq!(n, 3);
 }

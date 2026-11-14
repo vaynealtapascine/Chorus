@@ -79,15 +79,24 @@ impl Demo<'_> {
     }
 
     fn channel(&mut self, serial: u64, space: &str, name: &str, at: i64) -> anyhow::Result<String> {
+        self.channel_as(serial, space, name, None, at)
+    }
+
+    /// A channel, with a role (D-132) when `special` is set.
+    fn channel_as(
+        &mut self,
+        serial: u64,
+        space: &str,
+        name: &str,
+        special: Option<&str>,
+        at: i64,
+    ) -> anyhow::Result<String> {
         let channel = id(serial);
-        self.push(
-            0,
-            "channel.create",
-            &format!("space:{space}"),
-            &channel,
-            json!({"space_id":space,"kind":"text","name":name,"sort_key":format!("{serial:04}")}),
-            at,
-        )?;
+        let mut p = json!({"space_id":space,"kind":"text","name":name,"sort_key":format!("{serial:04}")});
+        if let Some(s) = special {
+            p["special"] = json!(s);
+        }
+        self.push(0, "channel.create", &format!("space:{space}"), &channel, p, at)?;
         Ok(channel)
     }
 
@@ -225,9 +234,10 @@ pub fn run(cfg: &Config) -> anyhow::Result<Seeded> {
 
     let internal = d.space(101, "internal", "The Lanterns", &[], created)?;
     let general = d.channel(201, &internal, "General", created)?;
-    let handover = d.channel(202, &internal, "Handover", created)?;
+    // the system's special channels (D-132), so the server's start-up makes no second pair
+    let handover = d.channel_as(202, &internal, "Handover", Some("handover"), created)?;
     let quiet = d.channel(203, &internal, "Quiet room", created)?;
-    let notes = d.channel(204, &internal, "Notes to ourselves", created)?;
+    let notes = d.channel_as(204, &internal, "Notes to ourselves", Some("notes"), created)?;
     let board = d.channel(205, &internal, "System board", created)?;
     d.pref(&format!("notify_channel:{quiet}"), json!("none"), created)?;
     d.pref("chat.read_per_member", json!(true), created)?;

@@ -273,8 +273,9 @@ fn enrolment_ops_are_readable_through_the_log() {
     .unwrap();
     let scopes = ingest::scopes_of(&c, &e.account_id).unwrap();
     let space = scopes.iter().find(|s| s.starts_with("space:")).unwrap();
-    assert_eq!(oplog::scope_after(&c, space, 0, 100).unwrap().len(), 3);
-    assert_eq!(oplog::digest(&c, space).unwrap().count, 3);
+    // space, join, general, and Handover and Notes (D-132)
+    assert_eq!(oplog::scope_after(&c, space, 0, 100).unwrap().len(), 5);
+    assert_eq!(oplog::digest(&c, space).unwrap().count, 5);
 }
 
 /// An op in one space can't reach into another space the author is also in: not a message into
