@@ -6,12 +6,12 @@ import { AROUND_MS, type FollowerView, type FriendRow } from './friends-screens'
 const stored = (...s: [string, boolean][]) => s.map(([id, on]) => ({ id, on }));
 
 describe('home sections', () => {
-  it('default to the Figma order, with Handover waiting for D-132', () => {
+  it('default to the Figma order, Handover included (D-132)', () => {
     const system = H.parse(null, false);
     expect(system.map((s) => s.id)).toEqual(H.SYSTEM);
     expect(system.every((s) => s.on)).toBe(true);
-    expect(H.shown(system)).not.toContain('handover');
-    expect(H.editable(system).some((s) => s.id === 'handover')).toBe(false);
+    expect(H.shown(system)).toContain('handover');
+    expect(H.editable(system).some((s) => s.id === 'handover')).toBe(true);
     expect(H.shown(H.parse(null, true))).toEqual(['write', 'friends', 'waiting', 'new_from_friends']);
   });
 
@@ -20,7 +20,7 @@ describe('home sections', () => {
     const sections = H.parse(raw, false);
     expect(sections.map((s) => s.id)).toEqual(['today', 'new_from_friends', 'waiting', 'friends', 'fronting', 'quick_switch', 'handover']);
     expect(sections.find((s) => s.id === 'waiting')!.on).toBe(false);
-    expect(H.shown(sections)).toEqual(['today', 'new_from_friends', 'friends', 'fronting', 'quick_switch']);
+    expect(H.shown(sections)).toEqual(['today', 'new_from_friends', 'friends', 'fronting', 'quick_switch', 'handover']);
     // a person's list never takes a system's sections
     expect(H.parse(raw, true).map((s) => s.id)).toEqual(H.PERSON);
   });

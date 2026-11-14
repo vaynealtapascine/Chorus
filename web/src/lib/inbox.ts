@@ -93,6 +93,9 @@ export function fromNotifications(items: unknown[] | null | undefined): InboxIte
           accountId: text(account, 'id') });
         break;
       }
+      // a handover reaching whoever fronts next (D-132): opens the Handover chat at it
+      case 'handover': out.push({ id, kind, category: 'system', shows: null, at, actor: who, title, detail: body, ...look,
+        channelId: text(n, 'channel_id'), messageId: text(n, 'message_id') }); break;
       case 'own_switch': out.push({ id, kind, category: 'system', shows: 'own_switches', at, actor: null, title, detail: body }); break;
       case 'alert_request': case 'alert_accepted':
         out.push({ id, kind, category: 'friends', shows: null, at, actor: null, title, detail: body,

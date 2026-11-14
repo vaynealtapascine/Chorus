@@ -15,8 +15,8 @@ export const PREF = 'home.sections';
 export const READER = 'home.sections:';
 export const SYSTEM = ['fronting', 'quick_switch', 'handover', 'waiting', 'friends', 'today', 'new_from_friends'];
 export const PERSON = ['write', 'friends', 'waiting', 'new_from_friends'];
-/** Sections waiting on a feature: Handover is D-132. They keep their place but never show. */
-export const UNBUILT = new Set(['handover']);
+/** Sections waiting on a feature. They keep their place but never show. (Handover, D-132, is built.) */
+export const UNBUILT = new Set<string>();
 
 export const SECTION_TEXT: Record<string, string> = {
   fronting: 'Fronting now', quick_switch: 'Quick switch', handover: 'Handovers and reviews', waiting: 'Waiting for you',

@@ -97,6 +97,7 @@
     <Switch label="Direct messages" checked={kinds.dm !== false} onchange={(on) => chatKind('dm', on)} />
     <Switch label="Replies" checked={kinds.reply !== false} onchange={(on) => chatKind('reply', on)} />
     <Switch label="Poll nudges" checked={kinds.poll_nudge !== false} onchange={(on) => chatKind('poll_nudge', on)} />
+    {#if isSystem}<Switch label="Handovers when the front changes" checked={kinds.handover !== false} onchange={(on) => chatKind('handover', on)} />{/if}
     {#if isSystem}<Switch label="Our own switches" checked={kinds.own_switch === true} onchange={(on) => chatKind('own_switch', on)} />{/if}
   </FormCard>
   {#if active.length}

@@ -203,3 +203,50 @@ composer focused and **At next switch** on. On the lock-screen front notificatio
   and core `validate_op`.
 - Clients don't hide a person's Notes space yet, don't render any of the above, and still use the
   name regex for the folder suggestion.
+
+## 8. Web (done 2026-11-15, claude-sonnet-5.5)
+
+What `web/` now does, and what Android should copy. Files: `lib/special.ts` (roles, person home, subtitles,
+notification defaults, Notes chip rule), `lib/handover.ts` (builds `handoverView`'s input, Home card, ack and tick
+payloads), `ui/HandoverBar.svelte`, `ui/HandoverList.svelte`, `ui/NoteChips.svelte`; tests `special.test.ts`,
+`handover.test.ts` (models built from ops through `project`, helper `lib/testing/d132-ops.ts`) and
+`e2e/handover.spec.ts`.
+
+- **Person (D-093).** The internal space is found as an internal space whose `created_by_account_id` is ours (a
+  guest's view of another system's internal space is not ours) and the account has a live `is_self` member. Hidden
+  everywhere: no Internal folder (rail, tabs, folder editor), no space panel, no Members tab, no "Internal · only…"
+  line, no "Viewing as", no visibility picker, no Stage "Viewing as". What remains is the Notes row (title = the
+  channel's `name`, bookmark icon, no "saved for every member" line, since a person has one member). Notes sits
+  under All chats (its folder kind is still `internal`).
+- **Rows.** `special` gives the icon (`handover` document, `bookmark`); an empty special chat says its subtitle
+  ("notes between fronts", "saved for every member") where the preview would say "No messages yet". Header:
+  "Handover · notes between fronts · N members", "Notes to ourselves · saved for every member". Default levels
+  `all` / `none` when no `notify_channel:<id>` pref exists (the Notes row shows no muted bell for its default).
+  Delete reads "Move to Trash" (a tombstone); a deleted one is restored from Trash (`channel.restore`), never remade.
+  Their edit sheet has no "who it's for"; Share, permissions and slow mode are hidden for them. **Renaming is
+  allowed** (the contract and the server allow it).
+- **Folder suggestion** goes by `special`, not by name. The first chat opened with no channel in the address is not a
+  special one.
+- **Handover chat.** Intervals for `handoverView` are `sync.frontHistory(account).effective.intervals` when
+  the account has named fronts (`front_systems`), else `projection.fronts[account].intervals`; `layer` = `layer_id ?? level`.
+  `member` is the speaker. The "Since X last fronted" divider is inserted at `last_fronted + 1` (before the first
+  message strictly after it) and never at the end; ack lines ("Foxglove acknowledged the handover · 10:30") come from
+  `acks` whose member is not an author, at `acked_at`, between messages (not messages). Every send from the Handover
+  composer carries `handover` (`deliver: now` unless At next switch is on; `checklist` ids `c1`, `c2`…); a
+  checklist-only send has empty text. **Acknowledge** writes `handover.ack` as the speaker for `unread.at(-1)`,
+  disabled when `unread` is empty. A tick writes `checklist.set {done: !done}` as the speaker. "Waiting for next switch"
+  while `delivered_at` is null.
+- **Home.** The `handover` section is no longer hidden (`UNBUILT` is empty): the newest unread with its authors'
+  names, first line or "Checklist · N items", "N more waiting" when several, **Read** = `handover.ack` as the reader
+  (primary fronter, else first own member). Android's `HomeDashboardTest` still lists it as unbuilt: flip that
+  case too. `home.handover_read` was never written by web.
+- **Notes.** Tag chips (All · #tags · "#from chats") over core `noteTags` for every live message in the channel;
+  the chip row shows only when there is a tag or a forward; "#from chats" = `forward_of_id` set.
+  **Save to notes** is the first forward destination ("Save to notes", bookmark), an ordinary `message.forward`;
+  `handover` is never copied (the snapshot has no such field).
+- **Notifications.** The Notifications page lists a `handover` row (system chip) that opens the Handover chat at its
+  message; a Web Push for kind `handover` opens `#/chat/<channel>/<message>`; Settings › Notifications has
+  "Handovers when the front changes" (`notify_chat.handover`, systems only).
+- **Not built on web:** the widget/lock-screen Handover actions (Android only).
+- **Size.** The opening script was 295.0 KB gz before this work; the feature needed room, so NewChat, ChannelEditor and
+  ChatFolders moved to `lazy-screens.ts`.

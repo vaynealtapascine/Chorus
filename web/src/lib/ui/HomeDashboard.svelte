@@ -34,6 +34,8 @@
   import { cap, parseWords } from '../words';
   import { core } from '../core';
   import { openComposer } from '../journal-compose.svelte';
+  import { specialChannels } from '../special';
+  import { ackPayload, bodyIntervals, handoverMessages, handoverView, homeCard } from '../handover';
 
   let { projection, dark, onswitch }: { projection: Projection; dark: boolean; onswitch: (front?: string, addTo?: string) => void } = $props();
   const accountId = $derived(sync.accountId);
@@ -131,6 +133,20 @@
     return out;
   });
   const waiting = $derived(H.waiting(chats, (c) => c.unread, (c) => c.muted, (c) => c.archived, (c) => c.at));
+
+  // ---- a handover waiting for whoever is here (F0.1): the newest unread, with Read
+  const hoChannel = $derived(person || !shown.includes('handover') ? undefined : specialChannels(projection, accountId).handover);
+  const hoCard = $derived.by(() => {
+    void projection.front_systems;
+    if (!hoChannel) return null;
+    const list = handoverMessages(projection, hoChannel.id);
+    if (!list.length) return null;
+    const view = handoverView(projection, accountId, hoChannel.id, bodyIntervals(projection, accountId), reader ?? null);
+    return homeCard(view, list, (id) => who.get(whoKey('member', id))?.name ?? '');
+  });
+  function readHandover(id: string) {
+    if (hoChannel && reader) sync.create('handover.ack', `space:${hoChannel.space_id}`, id, ackPayload(id, reader));
+  }
 
   // ---- friends right now and new from friends
   $effect(() => {
@@ -251,6 +267,16 @@
         {/each}
         <button class="qf muted" aria-label="Switch…" onclick={() => onswitch(accountId)}><span class="all"><Icon name="users" size={20} /></span><span>Everyone</span></button>
       </div>
+    {:else if id === 'handover'}
+      {#if hoCard}
+        <div class="card handover" role="group" aria-label="Handover">
+          <a class="ho-open" href="#/chat/{hoCard.channelId}/{hoCard.id}">
+            <span class="ho-icon"><Icon name="handover" size={22} /></span>
+            <span class="t"><strong>{hoCard.title}</strong><span class="pv">{hoCard.line}</span>{#if hoCard.more}<small>{hoCard.more} more waiting</small>{/if}</span>
+          </a>
+          <Button variant="primary" class="primary" onclick={() => readHandover(hoCard.id)} disabled={!reader}>Read</Button>
+        </div>
+      {/if}
     {:else if id === 'waiting'}
       <SectionLabel label="Waiting for you" link={waiting.length ? 'Chat' : undefined} href="#/chat" />
       {#if !waiting.length}
@@ -370,6 +396,9 @@
   .qf.muted { color: var(--ink-3); }
   .qf:hover { background: var(--surface); }
   .all { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: var(--surface-2); color: var(--ink-2); }
+  .handover { align-items: center; gap: var(--s-3); padding: var(--s-3) 14px; margin: 2px 0; background: var(--accent-soft); }
+  .ho-open { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--s-3); color: inherit; text-decoration: none; }
+  .ho-icon { display: grid; place-items: center; flex: none; width: 40px; height: 40px; border-radius: var(--r-md); background: var(--surface-2); color: var(--ink-2); }
   .quiet { display: flex; align-items: center; gap: 10px; margin: 2px 0; padding: var(--s-3) 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); color: var(--ink-3); font-size: 14px; }
   .list { list-style: none; margin: 0; padding: 0; }
   .list li + li { border-top: 1px solid var(--line); }

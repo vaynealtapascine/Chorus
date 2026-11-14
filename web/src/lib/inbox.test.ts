@@ -32,6 +32,14 @@ describe('inbox', () => {
     expect(chips(true).some(([id]) => id === 'system')).toBe(false);
   });
 
+  it('lists a handover that reached whoever fronts, and opens the chat at it (D-132)', () => {
+    const rows = fromNotifications([{ id: 'h1', kind: 'handover', title: 'Handover from Amarynthe', text: 'Checklist · 2 items', delivered_at: 500,
+      channel_id: 'ch', message_id: 'hm', scope: 'space:s', sender: { name: 'Amarynthe' } }]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ title: 'Handover from Amarynthe', detail: 'Checklist · 2 items', category: 'system', channelId: 'ch', messageId: 'hm' });
+    expect(visible(rows, 'all', null)).toHaveLength(1);
+  });
+
   it('groups hearts and puts what needs us first, never read', () => {
     const target = { id: 'p', kind: 'note', title: 'A quiet afternoon', text: '', cw: null };
     const liked = fromActivity({ items: [
