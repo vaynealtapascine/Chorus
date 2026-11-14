@@ -1367,6 +1367,10 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 else ChatPresentation.presence(model, channel.id).filter { it.subjectType == "member" }
                     .associate { it.subjectId to ChatPresentation.layer(model, it) }
             }
+            // :name suggestions: the server's custom emoji that match (F5.12); one tap completes the token
+            val emojiQuery = garden.vayne.chorus.data.CustomEmojis.typing(draft)
+            val emojiMatches = remember(model.customEmoji, emojiQuery) { emojiQuery?.let { garden.vayne.chorus.data.CustomEmojis.matches(model.customEmoji, it) }.orEmpty() }
+            if (emojiMatches.isNotEmpty() && mentionMatches.isEmpty()) EmojiSuggestions(emojiMatches) { draft = garden.vayne.chorus.data.CustomEmojis.complete(draft, it) }
             // F5.13: a list over the composer, four at most: a face, "@Name", and where they are now
             if (mentionMatches.isNotEmpty()) Column(Modifier.fillMaxWidth()) {
                 for (choice in mentionMatches.take(4)) androidx.compose.runtime.key(choice.type, choice.id) {
@@ -1657,14 +1661,10 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 var authorsOpen by remember { mutableStateOf(false) }
                 var emojiOpen by remember { mutableStateOf(false) }
-                // the composer's emoji: the reaction set, tapped into the draft (Android has no custom emoji yet)
-                if (emojiOpen) ChorusSheet(onDismissRequest = { emojiOpen = false }, containerColor = p.surface) {
-                    FlowRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 24.dp)) {
-                        for (emoji in ChatReactions.QUICK + ChatReactions.MORE) Box(Modifier.size(48.dp).clip(CircleShape)
-                            .clickable(onClickLabel = "Add $emoji") { draft += emoji },
-                            contentAlignment = Alignment.Center) { Text(emoji, fontSize = 26.sp, lineHeight = 30.sp) }
-                    }
-                }
+                // the composer's emoji: the reaction set and the server's custom emoji, tapped into the draft (F5.12)
+                if (emojiOpen) EmojiTray(model.customEmoji, ChatReactions.QUICK + ChatReactions.MORE,
+                    onUnicode = { draft += it }, onCustom = { draft = garden.vayne.chorus.data.CustomEmojis.append(draft, it) },
+                    onDismiss = { emojiOpen = false })
                 Box {
                     Box(Modifier.size(48.dp).clickable(enabled = ownSenders.isNotEmpty() && !model.isPerson) { authorsOpen = true }
                         .semantics { contentDescription = "Send message as ${author?.shownName ?: "choose a sender"}" }, contentAlignment = Alignment.Center) {

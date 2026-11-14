@@ -27,7 +27,7 @@ object ChatMentions {
             JSONObject().put("target_type", "member").put("target_id", id))
         for (c in all) if (counts[c.token.lowercase()] == 1) mentions.put(c.token.lowercase(),
             JSONObject().put("target_type", c.type).put("target_id", c.id ?: JSONObject.NULL))
-        return JSONObject().put("mentions", mentions).put("emoji", JSONObject())
+        return JSONObject().put("mentions", mentions).put("emoji", CustomEmojis.names(model.customEmoji))
     }
 
     /** The `@word` being typed at the end of [draft], or null. */

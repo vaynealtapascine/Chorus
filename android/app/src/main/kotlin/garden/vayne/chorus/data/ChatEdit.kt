@@ -61,6 +61,9 @@ object ChatEdit {
         for (member in model.members.filter { !it.archived }.sortedByDescending { it.id }) {
             mentions.put(member.name.lowercase(), JSONObject().put("target_type", "member").put("target_id", member.id))
         }
+        // the live set names newly typed tokens; it wins over a retired emoji's legacy label
+        val live = CustomEmojis.names(model.customEmoji)
+        for (name in live.keys()) emoji.put(name, live.getString(name))
         return JSONObject().put("mentions", mentions).put("emoji", emoji).toString()
     }
 
