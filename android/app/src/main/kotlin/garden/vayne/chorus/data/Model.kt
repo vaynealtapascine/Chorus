@@ -211,7 +211,11 @@ class Model(
     val handoverMessages: List<ChatMessage> = emptyList(),
     val handoverAcks: List<HandoverAck> = emptyList(),
     val checklistChecks: List<ChecklistCheck> = emptyList(),
+    /** The server's custom emoji (D-054), retired ones too: an old message still names them. */
+    val customEmoji: List<CustomEmoji> = emptyList(),
 ) {
+    val emojiById: Map<String, CustomEmoji> by lazy { customEmoji.associateBy { it.id } }
+
     /** The handle a member of ours is shown with (D-126). */
     fun handle(id: String): String? = memberHandles[id]?.shown
     val knownMemberIds: Set<String> = members.mapTo(HashSet()) { it.id }.apply { addAll(deletedMemberIds) }
@@ -564,7 +568,8 @@ class Model(
                     .sortedWith(compareBy<ChatMessage> { it.occurredAt }.thenBy { it.id }),
                 handoverAcks = rows(p, "handover_ack").map { (_, f) -> HandoverAck(f.optString("message_id"), f.optString("member_id"), f.optLong("acked_at")) },
                 checklistChecks = rows(p, "checklist_item_state").map { (_, f) ->
-                    ChecklistCheck(f.optString("message_id"), f.optString("item_id"), f.optBoolean("done"), f.optString("member_id")) })
+                    ChecklistCheck(f.optString("message_id"), f.optString("item_id"), f.optBoolean("done"), f.optString("member_id")) },
+                customEmoji = CustomEmojis.parse(p))
         }
     }
 }

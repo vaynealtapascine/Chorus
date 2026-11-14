@@ -152,7 +152,7 @@ class MainActivity : ComponentActivity() {
         garden.vayne.chorus.data.Push.ensure(this)
         garden.vayne.chorus.data.Updater.schedule(this)
         setContent { androidx.compose.runtime.CompositionLocalProvider(garden.vayne.chorus.ui.LocalChorusLinks provides ::openOwnLink) {
-            InspectionOverrides(intent) { ChorusTheme { App(chorus, inviteLink.value, sharedDraft.value,
+            InspectionOverrides(intent) { ChorusTheme { garden.vayne.chorus.ui.ProvideCustomEmoji(chorus) { App(chorus, inviteLink.value, sharedDraft.value,
             onShareDismissed = { sharedDraft.value = null }, newEntryRequest = newEntryRequest.value,
             onNewEntryConsumed = { newEntryRequest.value = null },
             openChatRequest = openChatRequest.value,
@@ -160,7 +160,7 @@ class MainActivity : ComponentActivity() {
             openPostRequest = openPostRequest.value,
             onOpenPostConsumed = { openPostRequest.value = null },
             switchRequest = switchRequest.value, onSwitchConsumed = { switchRequest.value = null },
-            handoverRequest = handoverRequest.value, onHandoverConsumed = { handoverRequest.value = null }) } } } }
+            handoverRequest = handoverRequest.value, onHandoverConsumed = { handoverRequest.value = null }) } } } } }
     }
 
     override fun onNewIntent(intent: Intent) {

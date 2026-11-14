@@ -1,6 +1,9 @@
 package garden.vayne.chorus.ui
 
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
@@ -66,11 +69,32 @@ internal fun RichBody(text: String, entities: String, modifier: Modifier = Modif
     // our own posts and messages open in the app (D-109)
     val openOwn = LocalChorusLinks.current
     var revealed by rememberSaveable(text, entities) { mutableStateOf(listOf<Int>()) }
-    val annotated = remember(text, entities, revealed, p) {
-        val prepared = garden.vayne.chorus.data.RichTextPresentation.prepare(text, entities, revealed)
+    val prepared = remember(text, entities, revealed) { garden.vayne.chorus.data.RichTextPresentation.prepare(text, entities, revealed) }
+    // a custom emoji (D-054) draws inline in place of its `:name:`; one the projection doesn't know stays text
+    val emojiById = LocalCustomEmoji.current
+    val emojiRuns = remember(prepared, emojiById) {
+        var end = 0
+        prepared.spans.filter { it.type == "custom_emoji" && it.emojiId != null && emojiById.containsKey(it.emojiId) }
+            .sortedBy { it.start }.filter { r -> (r.start >= end).also { if (it) end = r.end } }
+    }
+    val emojiSize = (if (style.fontSize.isSp) style.fontSize.value else 16f) * 1.3f
+    val inlineEmoji = remember(emojiRuns, emojiById, emojiSize) {
+        emojiRuns.mapNotNull { it.emojiId }.distinct().associateWith { id ->
+            InlineTextContent(Placeholder(emojiSize.sp, emojiSize.sp, PlaceholderVerticalAlign.TextCenter)) {
+                EmojiImage(emojiById.getValue(id), Modifier.fillMaxSize())
+            }
+        }
+    }
+    val annotated = remember(prepared, emojiRuns, p) {
         val ranges = prepared.spans
         buildAnnotatedString {
-            append(prepared.text)
+            var at = 0
+            for (run in emojiRuns) {
+                append(prepared.text.substring(at, run.start))
+                appendInlineContent(run.emojiId!!, prepared.text.substring(run.start, run.end))
+                at = run.end
+            }
+            append(prepared.text.substring(at))
             for (r in ranges) {
                 val covered = r.start in prepared.hidden
                 if (r.type == "spoiler") {
@@ -137,6 +161,6 @@ internal fun RichBody(text: String, entities: String, modifier: Modifier = Modif
     }.pointerInput(annotated, onLongClick != null, onDoubleClick != null) {
         detectTapGestures(onDoubleTap = if (onDoubleClick != null) ({ doubleClick?.invoke() }) else null, onLongPress = if (onLongClick != null) ({ longClick?.invoke() }) else null,
             onTap = { position -> layout?.let { activate(it.getOffsetForPosition(position)) } })
-    }, style = style.copy(color = p.ink), maxLines = maxLines, overflow = TextOverflow.Ellipsis,
+    }, style = style.copy(color = p.ink), maxLines = maxLines, overflow = TextOverflow.Ellipsis, inlineContent = inlineEmoji,
         onTextLayout = { layout = it; onOverflow(it.hasVisualOverflow) })
 }
