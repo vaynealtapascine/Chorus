@@ -27,6 +27,7 @@ import garden.vayne.chorus.data.LockFront
 import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.PeopleApi
 import garden.vayne.chorus.data.Push
+import garden.vayne.chorus.data.CustomEmojis
 import garden.vayne.chorus.data.QuietHours
 import garden.vayne.chorus.data.QuietWindow
 import garden.vayne.chorus.data.Rings
@@ -409,6 +410,13 @@ private fun SystemPage(chorus: Chorus, model: Model) {
             else -> "Offline"
         })
     }
+    // custom emoji are the server admin's (D-054, F5.12)
+    val admin by produceState(chorus.device?.isAdmin, chorus.device?.deviceId) { value = chorus.isAdmin() ?: value }
+    var emojiOpen by remember { mutableStateOf(false) }
+    if (admin == true) FormCard(Modifier.padding(top = 16.dp)) {
+        NavRow("Custom emoji", R.drawable.ic_emoji, value = CustomEmojis.active(model.customEmoji).size.takeIf { it > 0 }?.toString()) { emojiOpen = true }
+    }
+    if (emojiOpen) EmojiManagerDrawer(chorus, model) { emojiOpen = false }
     error?.let { Text(it, color = p.danger, fontSize = 14.sp) }
     if (editing == "words") WordsDrawer(chorus, model, { editing = null }) { error = it }
     editing?.takeIf { it != "words" }?.let { which ->

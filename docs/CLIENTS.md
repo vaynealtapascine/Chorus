@@ -156,6 +156,23 @@ android/
   saturation, brightness, contrast-aware preview and optional hex precision. Applying a colour
   changes the parent editor draft; saving that editor writes the existing field. Cancel does
   not change the draft. Recent colours stay on this device.
+- **Custom emoji (F5.12, D-054).** The server-wide set is projected into `Model.customEmoji`
+  (retired rows kept, so an old message still resolves its `emoji_id`). `RichBody` draws a
+  `custom_emoji` entity inline in place of its `:name:` (a placeholder over the same text, so
+  every other span keeps its offsets) wherever it is used: chat bubbles, posts, bios, quotes in
+  posts; a place that shows plain text (chat-list previews, chat reply quotes) keeps `:name:`.
+  The composer's emoji drawer gains a Custom tab (grouped by category; the tab shows only when
+  the server has any), and typing `:na` offers the matching names and aliases. The text carries
+  `:name:` and `ChatMentions.names` hands the core the same name → id map web does, so a message
+  round-trips between the clients. Emoji images are blobs in their own cache kind like avatars
+  and are kept for offline. The manager (More → Settings → System settings → Custom emoji, a
+  Drawer) is shown to the server's admin only, as on web: add (PNG, WebP or GIF; a still image is
+  cropped square to 128 px and stored as PNG, at most 256 KB; a GIF must already be square, at most
+  128 px), name (2-32 of a-z, 0-9, `_`), aliases, category (default Custom); tap an emoji to see
+  it and Retire it. Differs from web: an animated emoji draws as its first frame; no custom
+  emoji as reactions (web has none either); post and bio composers have no `:name:` insertion yet
+  (their text is edited as before and existing emoji in it are kept). The device record keeps
+  `is_admin` (from enrolment and session renewal; a device saved before asks `GET /me` once).
 
 ### 2.3 Sync on Android
 

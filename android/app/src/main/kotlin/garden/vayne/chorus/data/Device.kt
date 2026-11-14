@@ -20,11 +20,14 @@ data class DeviceRecord(
     val expiresAt: Long,
     /** Chorus Home: the server certificate's pin from the invite (Pins.kt), else null. */
     val pin: String? = null,
+    /** Whether the account administers the server (custom emoji need it, D-054); null on a record saved before it was kept. */
+    val isAdmin: Boolean? = null,
 ) {
     fun toJson(): String = JSONObject()
         .put("base", base).put("device_id", deviceId).put("short_id", shortId)
         .put("account_id", accountId).put("session", session).put("expires_at", expiresAt)
         .apply { if (pin != null) put("pin", pin) }
+        .apply { if (isAdmin != null) put("is_admin", isAdmin) }
         .toString()
 
     /** HLC node id: the device's short id read as hex (same as the web client). */
@@ -36,6 +39,7 @@ data class DeviceRecord(
                 it.getString("base"), it.getString("device_id"), it.getString("short_id"),
                 it.getString("account_id"), it.getString("session"), it.getLong("expires_at"),
                 it.optString("pin").ifEmpty { null },
+                if (it.has("is_admin") && !it.isNull("is_admin")) it.optBoolean("is_admin") else null,
             )
         }
     }

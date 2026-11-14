@@ -109,6 +109,7 @@ object Api {
         return DeviceRecord(
             base, e.getString("device_id"), e.getString("short_id"), e.getString("account_id"),
             e.getString("session"), e.getLong("expires_at"), pin,
+            if (e.has("is_admin") && !e.isNull("is_admin")) e.optBoolean("is_admin") else null,
         )
     }
 
@@ -121,6 +122,7 @@ object Api {
             dev.base, "/auth/session",
             JSONObject().put("device_id", dev.deviceId).put("nonce", nonce).put("signature", DeviceKey.sign(msg)),
         )
-        return dev.copy(session = s.getString("session"), expiresAt = s.getLong("expires_at"))
+        return dev.copy(session = s.getString("session"), expiresAt = s.getLong("expires_at"),
+            isAdmin = if (s.has("is_admin") && !s.isNull("is_admin")) s.optBoolean("is_admin") else dev.isAdmin)
     }
 }

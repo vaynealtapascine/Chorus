@@ -650,6 +650,22 @@ class Chorus private constructor(private val ctx: Context) {
         if (signedOut) throw ApiException(SIGNED_OUT_MESSAGE, "signed_out")
     }
 
+    /**
+     * Whether this account administers the server: only an admin may add or retire custom emoji (D-054).
+     * A device saved before the server's answer was kept asks `GET /me` once and keeps the answer;
+     * null when it can't be asked (offline).
+     */
+    suspend fun isAdmin(): Boolean? {
+        device?.isAdmin?.let { return it }
+        val admin = try { authedCall("GET", "/me").optJSONObject("account")?.optBoolean("is_admin") } catch (e: Exception) { null } ?: return null
+        withContext(dispatcher) {
+            val dev = device ?: return@withContext
+            val next = dev.copy(isAdmin = admin)
+            try { store.put("device", next.toJson()); device = next } catch (e: Exception) { Log.w(TAG, "could not keep the admin flag", e) }
+        }
+        return admin
+    }
+
     /** This account's devices, this one first (F1.6). */
     suspend fun linkedDevices(): List<LinkedDevice> = DeviceLinks.devices(authedCall("GET", "/me"), device?.deviceId)
 
