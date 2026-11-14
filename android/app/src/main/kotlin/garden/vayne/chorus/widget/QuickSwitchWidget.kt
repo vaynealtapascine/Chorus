@@ -247,6 +247,7 @@ class QuickSwitchWidget : AppWidgetProvider() {
                     lastKey = key
                     refreshAll(app, m)
                     FrontWidget.refreshAll(app, m)
+                    garden.vayne.chorus.data.LockFront.refresh(app, m)
                 }
             }
         }

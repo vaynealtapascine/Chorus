@@ -304,6 +304,21 @@ A small RemoteViews widget (F3.8 "Chorus · 3 unread for Foxglove"): the Notific
 the default reader, the same number as the bottom bar's badge; tap opens Notifications. The app
 redraws it when the count or reader changes; a placed widget with no inbox read yet reads it once.
 
+### 3.6 Front on the lock screen (D-137)
+
+Settings › Notifications › This phone: "Show who's fronting on the lock screen", off by default and
+absent for person accounts. The choice is per device, kept in the app's local preferences
+(`chorus.lock_front`, wiped with the rest on sign-out) like what this phone rings for; it adds no
+op and makes no server call. It posts an ongoing, public-on-lock-screen notification on its own
+quiet channel `front_ongoing` (low importance, no sound, vibration or badge): one segment per
+layer that has someone in it, from `FrontScene.build` as the front widget uses, e.g. "STEERING
+Foxglove, Amarynthe · CO-CONSCIOUS Nairon · NEARBY Violet", or "No one fronting". **Switch** is an
+Activity intent to the switcher (Android asks to unlock first); tapping opens Home. It is redrawn
+from the widget's model hook (`QuickSwitchWidget.install`), so local, synced and background-sync
+changes reach it, and cancelled when the setting goes off or the account signs out. With the
+notification permission missing the setting asks for it. On Android 14+ it can be swiped away and
+returns at the next front change; there is no foreground service. Handover joins it with D-132.
+
 ## 4. Web PWA
 
 ### 4.1 Stack

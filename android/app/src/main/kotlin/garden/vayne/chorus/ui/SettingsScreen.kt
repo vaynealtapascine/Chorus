@@ -23,6 +23,7 @@ import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.FollowList
 import garden.vayne.chorus.data.FollowPresets
 import garden.vayne.chorus.data.Friends
+import garden.vayne.chorus.data.LockFront
 import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.PeopleApi
 import garden.vayne.chorus.data.Push
@@ -226,6 +227,21 @@ private fun NotificationsPage(chorus: Chorus, model: Model, saver: PrefSaver) {
                 Rings.set(ctx, k.key, on); rings = rings + (k.key to on)
                 // switched off for the whole account elsewhere: turning it on here means it
                 if (on && !allowed) saver.save("notify_chat", prefs.withChatKind(k.key, true))
+            }
+        }
+    }
+    if (!model.isPerson) {
+        var lockFront by remember { mutableStateOf(LockFront.isOn(ctx) && LockFront.hasPermission(ctx)) }
+        // turning it on without the notification permission asks first; a refusal leaves it off
+        val ask = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { granted ->
+            lockFront = granted
+            LockFront.setOn(ctx, granted, model)
+        }
+        SectionLabel("This phone")
+        FormCard {
+            ToggleRow("Show who’s fronting on the lock screen", lockFront) { on ->
+                if (on && !LockFront.hasPermission(ctx)) ask.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                else { lockFront = on; LockFront.setOn(ctx, on, model) }
             }
         }
     }
