@@ -740,3 +740,63 @@ fn a26_a_member_state_names_only_our_own_members_and_reaches_no_one_outside_a_re
         assert!(!shown.contains("Typing only") && !shown.contains("tired"), "a state leaked: {shown}");
     }
 }
+
+/// Alice's shared space with a general channel, Mallory in it as a member; Mallory follows Bob.
+fn shared_with_mallory(w: &World) -> (String, String, String) {
+    let space = w.space(&w.alice);
+    let scope = format!("space:{space}");
+    for who in [&w.alice, &w.mallory] {
+        assert_eq!(w.push_in(&w.alice, &scope, "space.join", &space, json!({"account_id": who})), None, "setup: join");
+    }
+    let ch = w.id();
+    let made =
+        w.push_in(&w.alice, &scope, "channel.create", &ch, json!({"space_id": space, "kind": "text", "name": "c"}));
+    assert_eq!(made, None, "setup: channel");
+    (space, scope, ch)
+}
+
+#[test]
+fn a27_a_member_without_invite_brings_no_one_in_and_permissions_gate_sends() {
+    // D-133: inviting is off unless the space allows it, through REST and through a forged op;
+    // files, polls and asides each need their own permission; only admins set them
+    let w = World::new();
+    let (space, scope, ch) = shared_with_mallory(&w);
+    w.follow(&w.bob, &w.mallory);
+    let added = chorus_server::spaces::add(&w.c, &w.mallory, &space, std::slice::from_ref(&w.bob), NOW);
+    assert!(added.is_err(), "Mallory added Bob without the invite permission");
+    let forged = w.push_in(&w.mallory, &scope, "space.join", &space, json!({"account_id": w.bob}));
+    assert!(w.refused(forged), "Mallory's forged join brought Bob in");
+    let grant = json!({"target_type": "role", "target_id": "everyone", "allow": ["invite"]});
+    assert!(w.refused(w.push_in(&w.mallory, &scope, "space.set_permission", &space, grant.clone())));
+    assert_eq!(w.push_in(&w.alice, &scope, "space.set_permission", &space, grant), None);
+    let stranger = new_id(1, [4; 10]);
+    w.c.execute("INSERT INTO account(id, kind, handle, created_at) VALUES (?1, 'system', 'eve', 0)", [&stranger])
+        .unwrap();
+    let forged = w.push_in(&w.mallory, &scope, "space.join", &space, json!({"account_id": stranger}));
+    assert!(w.refused(forged), "invite still only reaches people the inviter is connected to");
+    assert!(chorus_server::spaces::add(&w.c, &w.mallory, &space, std::slice::from_ref(&w.bob), NOW).is_ok());
+    assert!(ingest::can_access(&w.c, &w.bob, &scope).unwrap(), "an invited account gets the space");
+    // files, polls and asides refused one by one
+    let deny = json!({"target_type": "role", "target_id": "everyone", "deny": ["attach", "poll", "aside"]});
+    assert_eq!(w.push_in(&w.alice, &scope, "space.set_permission", &space, deny), None);
+    let rin = w.member(&w.mallory, "Rin", json!({"mode": "server"}));
+    let file = w.id();
+    let send = |extra: Value| {
+        let mut p = json!({"channel_id": ch, "authors": [rin], "text": "hi", "entities": []});
+        for (k, v) in extra.as_object().unwrap() {
+            p[k] = v.clone();
+        }
+        w.push_in(&w.mallory, &scope, "message.send", &w.id(), p)
+    };
+    assert!(w.refused(send(json!({"attachments": [file]}))), "a file went in");
+    let poll = json!({"options": [{"id": "a", "text": "A"}, {"id": "b", "text": "B"}]});
+    assert!(w.refused(send(json!({"poll": poll}))), "a poll went in");
+    assert!(w.refused(send(json!({"visibility": {"mode": "system_only"}}))), "an aside went in");
+    assert_eq!(send(json!({})), None, "plain messages still go");
+    // what Mallory shares is Mallory's own business, but only where Mallory is
+    assert_eq!(w.push_in(&w.mallory, &scope, "space.set_sharing", &space, json!({"member_names": false})), None);
+    let elsewhere = w.space(&w.alice);
+    let theirs = format!("space:{elsewhere}");
+    ingest::grant(&w.c, &w.mallory, &theirs).unwrap();
+    assert!(w.refused(w.push_in(&w.mallory, &theirs, "space.set_sharing", &elsewhere, json!({"fronts": true}))));
+}

@@ -1,10 +1,12 @@
-//! Channel permissions (M5.10, perms.rs) as a property: on random spaces, roles, overrides and
-//! op logs, the server's rule equals an independent model of SPEC §5.1, and nothing reaches an
+//! Channel and space permissions (M5.10, D-133, perms.rs) as a property: on random spaces, roles,
+//! channel and space overrides and op logs, the server's SQL rule equals the core's pure rule
+//! (`chorus_core::perms`, which the clients run), and nothing reaches an
 //! account the rule denies — not through sync (`op_visible_to`, the batched digest), not through
 //! the REST reads, not through search.
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use chorus_core::perms::{self as core_perms, Level, Levels, Place};
 use chorus_core::sync::Digest;
 use chorus_server::{api_data::Principal, db, messages, oplog, perms, search, visibility};
 use rusqlite::{Connection, params};
@@ -28,53 +30,47 @@ impl Rng {
 
 const ACCOUNTS: &[&str] = &["owner", "adm", "mem", "ro", "cus", "guest"];
 const CHANNELS: &[&str] = &["c0", "c1", "c2"];
-const PERMS: &[&str] = &["view", "send", "react", "thread", "pin", "manage"];
+/// The channel permissions (the space-wide `invite` and `history` are checked on their own).
+const PERMS: &[&str] = &["view", "send", "react", "thread", "pin", "manage", "attach", "poll", "aside"];
+const SPACE_PERMS: &[&str] = &["invite", "history"];
 
-/// (channel, target type, target) → (allow, deny)
+/// (place: a channel id or "space", target type, target) → (allow, deny)
 type Overrides = BTreeMap<(String, String, String), (BTreeSet<String>, BTreeSet<String>)>;
 
-/// The rule as SPEC §5.1 states it, over plain data.
+/// The rule's inputs as plain data; the rule itself is the core's (`chorus_core::perms`), which
+/// clients run too, so this checks the server's SQL against what the clients show (D-133).
 struct Model {
     kind: &'static str,
     roles: BTreeMap<&'static str, &'static str>,
-    custom: BTreeSet<&'static str>,
+    custom: Value,
     overrides: Overrides,
 }
 
 impl Model {
-    fn one(&self, account: &str, channel: &str, perm: &str) -> bool {
-        if account == "owner" {
-            return true;
-        }
-        let role = self.roles.get(account).copied();
-        if role.is_some() && self.kind == "dm" || role == Some("admin") {
-            return true;
-        }
-        let level = |t: &str, id: &str| -> Option<bool> {
-            let (allow, deny) = self.overrides.get(&(channel.to_string(), t.to_string(), id.to_string()))?;
-            if deny.contains(perm) {
-                Some(false)
-            } else if allow.contains(perm) {
-                Some(true)
-            } else {
-                None
-            }
+    fn level(&self, place: &str, t: &str, id: &str) -> Option<Level> {
+        let (allow, deny) = self.overrides.get(&(place.to_string(), t.to_string(), id.to_string()))?;
+        Some(Level { allow: allow.iter().cloned().collect(), deny: deny.iter().cloned().collect() })
+    }
+    fn levels(&self, account: &str, channel: Option<&str>) -> Levels {
+        let role = self.roles.get(account).map(|r| r.to_string());
+        let place = |at: &str| Place {
+            account: self.level(at, "account", account),
+            role: role.as_deref().and_then(|r| self.level(at, "role", r)),
+            everyone: self.level(at, "role", "everyone"),
         };
-        if let Some(v) = level("account", account) {
-            return v;
-        }
-        let Some(role) = role else { return false };
-        if let Some(v) = level("role", role).or_else(|| level("role", "everyone")) {
-            return v;
-        }
-        match role {
-            "member" => ["view", "send", "react", "thread", "pin"].contains(&perm),
-            "read_only" => ["view", "react"].contains(&perm),
-            r => self.custom.contains(perm) && r == "cus",
+        Levels {
+            manager: account == "owner" || role.as_deref() == Some("admin") || (role.is_some() && self.kind == "dm"),
+            role: role.clone(),
+            roles: self.custom.clone(),
+            channel: channel.map(place).unwrap_or_default(),
+            space: place("space"),
         }
     }
     fn can(&self, account: &str, channel: &str, perm: &str) -> bool {
-        self.one(account, channel, perm) && self.one(account, channel, "view")
+        core_perms::can(&self.levels(account, Some(channel)), perm)
+    }
+    fn can_space(&self, account: &str, perm: &str) -> bool {
+        core_perms::can(&self.levels(account, None), perm)
     }
 }
 
@@ -105,7 +101,7 @@ fn nothing_reaches_an_account_the_rule_denies() {
         let mut model = Model {
             kind,
             roles: BTreeMap::new(),
-            custom: ["view", "send", "pin"].into_iter().collect(),
+            custom: json!([{"id": "cus", "name": "Custom", "perms": ["view", "send", "pin"]}]),
             overrides: BTreeMap::new(),
         };
         for (account, role) in
@@ -124,8 +120,11 @@ fn nothing_reaches_an_account_the_rule_denies() {
         for a in ACCOUNTS {
             c.execute("INSERT INTO scope_access(account_id,scope) VALUES (?1,'space:s')", [a]).unwrap();
         }
-        for ch in CHANNELS {
-            c.execute("INSERT INTO channel(id,space_id,kind,created_at) VALUES (?1,'s','text',0)", [ch]).unwrap();
+        for ch in CHANNELS.iter().chain(&["space"]) {
+            let space_level = *ch == "space";
+            if !space_level {
+                c.execute("INSERT INTO channel(id,space_id,kind,created_at) VALUES (?1,'s','text',0)", [ch]).unwrap();
+            }
             for _ in 0..r.below(4) {
                 let (t, target) = match r.below(3) {
                     0 => ("account", *r.pick(ACCOUNTS)),
@@ -134,7 +133,7 @@ fn nothing_reaches_an_account_the_rule_denies() {
                 };
                 let mut allow = BTreeSet::new();
                 let mut deny = BTreeSet::new();
-                for p in PERMS {
+                for p in PERMS.iter().chain(if space_level { SPACE_PERMS } else { &[] }) {
                     match r.below(4) {
                         0 => {
                             allow.insert(p.to_string());
@@ -145,9 +144,12 @@ fn nothing_reaches_an_account_the_rule_denies() {
                         _ => {}
                     }
                 }
+                let (table, key) =
+                    if space_level { ("space_permission", "space_id") } else { ("channel_permission", "channel_id") };
+                let place = if space_level { "s" } else { ch };
                 c.execute(
-                    "INSERT OR REPLACE INTO channel_permission(channel_id,target_type,target_id,allow,deny,hlc) VALUES (?1,?2,?3,?4,?5,'1:0:1')",
-                    params![ch, t, target, json!(allow).to_string(), json!(deny).to_string()],
+                    &format!("INSERT OR REPLACE INTO {table}({key},target_type,target_id,allow,deny,hlc) VALUES (?1,?2,?3,?4,?5,'1:0:1')"),
+                    params![place, t, target, json!(allow).to_string(), json!(deny).to_string()],
                 )
                 .unwrap();
                 model.overrides.insert((ch.to_string(), t.into(), target.into()), (allow, deny));
@@ -159,6 +161,9 @@ fn nothing_reaches_an_account_the_rule_denies() {
                 for p in PERMS {
                     assert_eq!(perms::can(&c, a, ch, p).unwrap(), model.can(a, ch, p), "seed {seed}: {a} {p} in {ch}");
                 }
+            }
+            for p in SPACE_PERMS {
+                assert_eq!(perms::can_space(&c, a, "s", p).unwrap(), model.can_space(a, p), "seed {seed}: {a} {p}");
             }
         }
         // a log: messages (some private asides), threads, edits, reactions, reads, files

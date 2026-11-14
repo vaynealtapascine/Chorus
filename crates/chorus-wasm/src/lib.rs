@@ -145,6 +145,12 @@ pub fn ticks_for(msgs_json: &str, member_marks_json: &str, foreign_json: &str) -
     wrap(api::ticks_for(msgs_json, member_marks_json, foreign_json))
 }
 
+/// D-133: the permissions one account has from its levels (see `chorus_core::api::space_perms`).
+#[wasm_bindgen(js_name = spacePerms)]
+pub fn space_perms(levels_json: &str) -> Result<String, JsError> {
+    wrap(api::space_perms(levels_json))
+}
+
 #[wasm_bindgen(js_name = searchParse)]
 pub fn search_parse(query: &str) -> Result<String, JsError> {
     wrap(api::search_parse(query))

@@ -1,0 +1,27 @@
+{
+  "args": [
+    {
+      "channel": {
+        "everyone": {
+          "deny": [
+            "view"
+          ]
+        }
+      },
+      "role": "member",
+      "space": {
+        "everyone": {
+          "allow": [
+            "invite"
+          ]
+        }
+      }
+    }
+  ],
+  "description": "without view nothing in the channel, but space-wide permissions remain",
+  "expect": [
+    "invite",
+    "history"
+  ],
+  "fn": "space_perms"
+}

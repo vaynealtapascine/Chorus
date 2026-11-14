@@ -1,0 +1,33 @@
+{
+  "args": [
+    {
+      "channel": {
+        "account": {
+          "deny": [
+            "aside"
+          ]
+        }
+      },
+      "role": "member",
+      "space": {
+        "account": {
+          "allow": [
+            "aside"
+          ]
+        }
+      }
+    }
+  ],
+  "description": "the account's channel override comes first of all",
+  "expect": [
+    "view",
+    "send",
+    "react",
+    "thread",
+    "pin",
+    "attach",
+    "poll",
+    "history"
+  ],
+  "fn": "space_perms"
+}

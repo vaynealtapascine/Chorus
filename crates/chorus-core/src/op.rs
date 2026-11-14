@@ -301,6 +301,9 @@ pub static CATALOGUE: &[KindSpec] = &[
     k!("space.leave", "space_member", Space, SetRemove),
     k!("space.set_role", "space_member", Space, Special),
     k!("space.set_roles", "space", Space, Special),
+    // D-133: space-wide overrides (admins), and what each account shares in the space (its own)
+    k!("space.set_permission", "space_permission", Space, Special),
+    k!("space.set_sharing", "space_sharing", Space, Special),
     k!("channel.create", "channel", Space, Create, CHANNEL_FIELDS, &["space_id", "kind", "parent_message_id"]),
     k!("channel.set", "channel", Space, Set, CHANNEL_FIELDS, &["space_id", "kind", "parent_message_id"]),
     k!("channel.archive", "channel", Space, Archive),
@@ -657,18 +660,40 @@ fn payload_shape(op: &Op) -> Result<(), OpError> {
                 return bad("settings.slow_mode_s must be 0–21600 seconds");
             }
         }
-        "channel.set_permission" => {
+        "channel.set_permission" | "space.set_permission" => {
             if op.entity_id.is_none() {
                 return Err(OpError::MissingEntity);
             }
             one_of("target_type", &["role", "account"], true)?;
             nonempty("target_id")?;
+            // invite and history are whole-space permissions (D-133)
+            let space = op.kind == "space.set_permission";
             for key in ["allow", "deny"] {
-                match p.get(key) {
-                    None | Some(Value::Null) => {}
-                    Some(Value::Array(a)) if a.iter().all(|x| x.as_str().is_some_and(|x| PERMISSIONS.contains(&x))) => {
-                    }
-                    _ => return bad(&format!("{key} must be a list of {}", PERMISSIONS.join(", "))),
+                if let Some(why) = crate::perms::list_problem(p.get(key), space) {
+                    return bad(&format!("{key} {why}"));
+                }
+            }
+        }
+        // what an account shares in a space: about itself only, so no account id (D-133)
+        "space.set_sharing" => {
+            if op.entity_id.is_none() {
+                return Err(OpError::MissingEntity);
+            }
+            let Some(obj) = p.as_object() else { return Err(OpError::PayloadNotObject) };
+            if obj.is_empty() {
+                return bad("say what to share");
+            }
+            for (key, v) in obj {
+                let ok = match key.as_str() {
+                    "member_names" | "fronts" => v.is_boolean() || v.is_null(),
+                    "fronts_delay_min" => v.is_null() || v.as_u64().is_some_and(|n| n <= FRONTS_DELAY_MAX_MIN),
+                    _ => return bad(&format!("{key} is not a sharing setting")),
+                };
+                if !ok {
+                    return bad(&format!(
+                        "{key} must be {}",
+                        if key == "fronts_delay_min" { "0–1440 minutes" } else { "true or false" }
+                    ));
                 }
             }
         }
@@ -831,8 +856,14 @@ fn ranges(p: &Value) -> Result<(), OpError> {
     Ok(())
 }
 
-/// Channel permissions (SPEC §5.1, D-047).
-pub const PERMISSIONS: &[&str] = &["view", "send", "react", "thread", "pin", "manage"];
+/// Shared-space permissions (SPEC §5.1, D-047, D-133); the rule is [`crate::perms`].
+pub use crate::perms::PERMISSIONS;
+
+/// What a `space.set_sharing` payload may say (D-133), each LWW per (space, account, field).
+pub const SHARING_FIELDS: &[&str] = &["member_names", "fronts", "fronts_delay_min"];
+
+/// The longest delay a space's fronting status may have: a day, in minutes.
+pub const FRONTS_DELAY_MAX_MIN: u64 = 1440;
 
 #[cfg(test)]
 mod tests {
@@ -1012,6 +1043,40 @@ mod tests {
                 assert!(validate_new(&op(kind, &space, json!({"member_ids":ids}))).is_ok());
             }
         }
+    }
+
+    #[test]
+    fn space_permissions_and_sharing_have_their_shapes() {
+        let space = format!("space:{}", new_id(1, [7; 10]));
+        let perm = |kind: &str, allow: Value| {
+            validate_new(&op(kind, &space, json!({"target_type": "role", "target_id": "everyone", "allow": allow})))
+        };
+        assert!(perm("space.set_permission", json!(["history", "invite", "attach"])).is_ok());
+        assert!(perm("channel.set_permission", json!(["attach", "poll", "aside"])).is_ok());
+        assert!(perm("channel.set_permission", json!(["history"])).is_err(), "history is space-wide");
+        assert!(perm("space.set_permission", json!(["rename"])).is_err());
+        let share = |p: Value| validate_new(&op("space.set_sharing", &space, p));
+        assert!(share(json!({"member_names": false})).is_ok());
+        assert!(share(json!({"fronts": true, "fronts_delay_min": 1440})).is_ok());
+        for bad in [
+            json!({}),
+            json!({"fronts_delay_min": 1441}),
+            json!({"fronts_delay_min": -1}),
+            json!({"member_names": "no"}),
+            json!({"account_id": "x"}),
+        ] {
+            assert!(share(bad.clone()).is_err(), "{bad}");
+        }
+        // LWW per (space, account, field): one setting doesn't undo another
+        let mut a = op("space.set_sharing", &space, json!({"member_names": false}));
+        a.account_id = Some("acc".into());
+        let mut b = op("space.set_sharing", &space, json!({"fronts": true}));
+        b.id = new_id(1_790_000_000_001, [9; 10]);
+        b.hlc = Hlc::new(2, 0, 1);
+        b.account_id = Some("acc".into());
+        let p = crate::model::project([&b, &a]);
+        let row = &p.rows["space_sharing"][&format!("{}|acc", a.entity().unwrap())];
+        assert_eq!((row.fields["member_names"].clone(), row.fields["fronts"].clone()), (json!(false), json!(true)));
     }
 
     #[test]

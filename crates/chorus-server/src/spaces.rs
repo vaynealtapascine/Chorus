@@ -170,7 +170,8 @@ fn present(conn: &Connection, space: &str, account: &str) -> rusqlite::Result<bo
     )
 }
 
-/// Bring more connected accounts into a shared space (its owner only).
+/// Bring more connected accounts into a shared space: its owner, an admin, or a member the space
+/// allows to `invite` (D-133). The joins are written as the inviter.
 pub fn add(
     conn: &Connection,
     me: &str,
@@ -185,8 +186,8 @@ pub fn add(
     if kind != "shared" {
         return Err(SpaceError::Bad("people can only be added to shared spaces".into()));
     }
-    if owner != me {
-        return Err(SpaceError::Forbidden("only the space's owner can add people".into()));
+    if owner != me && !crate::perms::can_space(conn, me, space, "invite")? {
+        return Err(SpaceError::Forbidden("you don't have the invite permission in this space".into()));
     }
     check_invitees(conn, me, accounts)?;
     let mut ops = Vec::new();

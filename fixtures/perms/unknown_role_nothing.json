@@ -1,0 +1,11 @@
+{
+  "args": [
+    {
+      "role": "gone",
+      "roles": []
+    }
+  ],
+  "description": "a role that isn't defined has nothing",
+  "expect": [],
+  "fn": "space_perms"
+}

@@ -367,7 +367,9 @@ Implemented so far (`api_data.rs`, `api_reads.rs`; sessions or API tokens):
   - `POST /spaces {kind: "shared"|"dm", name?, accounts: [account ids]}` answers
     `201 {id}`, or `200 {id}` when that DM already exists. It works only with accounts connected
     to you by an active follow, in either direction.
-  - `POST /spaces/{id}/members {accounts}` is for a shared space's owner only.
+  - `POST /spaces/{id}/members {accounts}` is for a shared space's owner, its admins, and members
+    the space allows to `invite` (D-133, DATA_MODEL §4.4); otherwise `403`. Each account must be
+    connected to the inviter, and the `space.join` ops are written as the inviter.
   - `DELETE /spaces/{id}/members/me` leaves. The owner of a shared space can't leave it, and
     nobody can leave their home space.
   - `GET /spaces/{id}/authors` returns `{accounts, members}`. `members` holds author cards (name,

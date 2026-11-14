@@ -22,6 +22,7 @@ pub mod mentions;
 pub mod model;
 pub mod notify;
 pub mod op;
+pub mod perms;
 pub mod poll;
 pub mod projector;
 pub mod reading;

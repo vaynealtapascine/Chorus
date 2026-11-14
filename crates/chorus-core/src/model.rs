@@ -391,12 +391,24 @@ fn special(p: &mut Projection, o: &Op, payload: &Map<String, Value>, reads: &mut
             let v = payload.get("roles").cloned().unwrap_or(Value::Null);
             set_fields(p, "space", entity, o.hlc, &one("roles", v));
         }
-        "channel.set_permission" => {
+        // a channel's or (D-133) the whole space's overrides, keyed `<channel or space>|<type>|<target>`
+        "channel.set_permission" | "space.set_permission" => {
+            let table = if o.kind == "channel.set_permission" { "channel_permission" } else { "space_permission" };
             let id = format!("{entity}|{}|{}", str_field(o, "target_type"), str_field(o, "target_id"));
             let mut f = Map::new();
             f.insert("allow".into(), payload.get("allow").cloned().unwrap_or(json!([])));
             f.insert("deny".into(), payload.get("deny").cloned().unwrap_or(json!([])));
-            set_fields(p, "channel_permission", &id, o.hlc, &f).exists = true;
+            set_fields(p, table, &id, o.hlc, &f).exists = true;
+        }
+        // what the writing account shares in the space (D-133), keyed `<space>|<account>`, LWW per field
+        "space.set_sharing" => {
+            let id = format!("{entity}|{acct}");
+            let f: Map<String, Value> = payload
+                .iter()
+                .filter(|(k, _)| op::SHARING_FIELDS.contains(&k.as_str()))
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            set_fields(p, "space_sharing", &id, o.hlc, &f).exists = true;
         }
         "message.pin" | "message.unpin" => {
             let pin = o.kind == "message.pin";

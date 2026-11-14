@@ -22,25 +22,55 @@ use serde_json::Value;
 
 use chorus_core::op::Op;
 
-pub const PERMS: &[&str] = &["view", "send", "react", "thread", "pin", "manage"];
-const MEMBER: &str = "'view','send','react','thread','pin'";
-const READ_ONLY: &str = "'view','react'";
+/// Every permission (D-133: the core list, `chorus_core::perms::PERMISSIONS`).
+pub use chorus_core::perms::PERMISSIONS as PERMS;
+use chorus_core::perms::{IMPLIED, SPACE_ONLY};
 
 /// SQL: does an override at one level (`target_type`/`target_id` as SQL) allow or deny `perm`?
-/// (Aliases start with `perm_`: the rule is nested in queries with their own `c`, `m`, `s`…)
-fn override_sql(list: &str, target_type: &str, target_id: &str, perm: &str) -> String {
+/// `table`/`key`/`place` say where: a channel's (`channel_permission`, `perm_c.id`) or the whole
+/// space's (`space_permission`, the space's id). (Aliases start with `perm_`: the rule is nested in
+/// queries with their own `c`, `m`, `s`…)
+fn override_sql(
+    table: &str,
+    key: &str,
+    place: &str,
+    list: &str,
+    target_type: &str,
+    target_id: &str,
+    perm: &str,
+) -> String {
     format!(
-        "EXISTS (SELECT 1 FROM channel_permission perm_cp, json_each(perm_cp.{list}) perm_x
-                 WHERE perm_cp.channel_id = perm_c.id AND perm_cp.target_type = '{target_type}'
-                   AND perm_cp.target_id = {target_id} AND perm_x.value = '{perm}')"
+        "EXISTS (SELECT 1 FROM {table} perm_o, json_each(perm_o.{list}) perm_x
+                 WHERE perm_o.{key} = {place} AND perm_o.target_type = '{target_type}'
+                   AND perm_o.target_id = {target_id} AND perm_x.value = '{perm}')"
     )
 }
 
-/// One permission, without the `view` requirement.
+/// SQL boolean: the role's base set has `perm` (`chorus_core::perms::base`), for the role in the
+/// SQL expression `role` of the space whose `roles` column is `roles`.
+fn base_sql(role: &str, roles: &str, perm: &str) -> String {
+    let has = |r: &str| chorus_core::perms::base(r, &serde_json::Value::Null).contains(&perm);
+    let listed = if IMPLIED.contains(&perm) { "" } else { "AND perm_rp.value = '{perm}'" }.replace("{perm}", perm);
+    let perms = if IMPLIED.contains(&perm) { "" } else { ", json_each(perm_r.value, '$.perms') perm_rp" };
+    format!(
+        "CASE WHEN {role} = 'admin' THEN 1
+              WHEN {role} = 'member' THEN {member}
+              WHEN {role} = 'read_only' THEN {read_only}
+              ELSE EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid({roles}) THEN {roles} ELSE '[]' END) perm_r{perms}
+                           WHERE json_extract(perm_r.value, '$.id') = {role} {listed}) END",
+        member = u8::from(has("member")),
+        read_only = u8::from(has("read_only")),
+    )
+}
+
+/// One permission, without the `view` requirement (DATA_MODEL §4.4, `chorus_core::perms::resolve`).
 fn one_sql(account: &str, channel: &str, perm: &str) -> String {
-    assert!(PERMS.contains(&perm), "unknown permission {perm}");
-    let deny = |t: &str, id: &str| override_sql("deny", t, id, perm);
-    let allow = |t: &str, id: &str| override_sql("allow", t, id, perm);
+    assert!(PERMS.contains(&perm) && !SPACE_ONLY.contains(&perm), "not a channel permission: {perm}");
+    let ch = |list: &str, t: &str, id: &str| {
+        override_sql("channel_permission", "channel_id", "perm_c.id", list, t, id, perm)
+    };
+    let sp =
+        |list: &str, t: &str, id: &str| override_sql("space_permission", "space_id", "perm_s.id", list, t, id, perm);
     format!(
         "coalesce((SELECT CASE
             WHEN perm_s.owner_account_id = {account} THEN 1
@@ -49,15 +79,17 @@ fn one_sql(account: &str, channel: &str, perm: &str) -> String {
             WHEN {acct_deny} THEN 0
             WHEN {acct_allow} THEN 1
             WHEN perm_sm.role IS NULL THEN 0
+            WHEN {sp_acct_deny} THEN 0
+            WHEN {sp_acct_allow} THEN 1
             WHEN {role_deny} THEN 0
             WHEN {role_allow} THEN 1
+            WHEN {sp_role_deny} THEN 0
+            WHEN {sp_role_allow} THEN 1
             WHEN {all_deny} THEN 0
             WHEN {all_allow} THEN 1
-            WHEN perm_sm.role = 'member' THEN '{perm}' IN ({MEMBER})
-            WHEN perm_sm.role = 'read_only' THEN '{perm}' IN ({READ_ONLY})
-            ELSE EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(perm_s.roles) THEN perm_s.roles ELSE '[]' END) perm_r,
-                              json_each(perm_r.value, '$.perms') perm_rp
-                         WHERE json_extract(perm_r.value, '$.id') = perm_sm.role AND perm_rp.value = '{perm}')
+            WHEN {sp_all_deny} THEN 0
+            WHEN {sp_all_allow} THEN 1
+            ELSE {base}
           END
           FROM channel perm_c JOIN space perm_s ON perm_s.id = perm_c.space_id
           LEFT JOIN space_member perm_sm
@@ -65,17 +97,24 @@ fn one_sql(account: &str, channel: &str, perm: &str) -> String {
           WHERE perm_c.id = coalesce((SELECT perm_pm.channel_id FROM channel perm_t
                                       JOIN message perm_pm ON perm_pm.id = perm_t.parent_message_id
                                       WHERE perm_t.id = {channel} AND perm_t.kind = 'thread'), {channel})), 0)",
-        acct_deny = deny("account", account),
-        acct_allow = allow("account", account),
-        role_deny = deny("role", "perm_sm.role"),
-        role_allow = allow("role", "perm_sm.role"),
-        all_deny = deny("role", "'everyone'"),
-        all_allow = allow("role", "'everyone'"),
+        acct_deny = ch("deny", "account", account),
+        acct_allow = ch("allow", "account", account),
+        sp_acct_deny = sp("deny", "account", account),
+        sp_acct_allow = sp("allow", "account", account),
+        role_deny = ch("deny", "role", "perm_sm.role"),
+        role_allow = ch("allow", "role", "perm_sm.role"),
+        sp_role_deny = sp("deny", "role", "perm_sm.role"),
+        sp_role_allow = sp("allow", "role", "perm_sm.role"),
+        all_deny = ch("deny", "role", "'everyone'"),
+        all_allow = ch("allow", "role", "'everyone'"),
+        sp_all_deny = sp("deny", "role", "'everyone'"),
+        sp_all_allow = sp("allow", "role", "'everyone'"),
+        base = base_sql("perm_sm.role", "perm_s.roles", perm),
     )
 }
 
 /// SQL boolean: may the account (an SQL expression, e.g. `?2`) use `perm` in the channel (an SQL
-/// expression, e.g. `m.channel_id`)? `perm` is one of [`PERMS`].
+/// expression, e.g. `m.channel_id`)? `perm` is a channel permission (not in `SPACE_ONLY`).
 pub fn can_sql(account: &str, channel: &str, perm: &str) -> String {
     if perm == "view" {
         one_sql(account, channel, "view")
@@ -88,6 +127,46 @@ pub fn can_sql(account: &str, channel: &str, perm: &str) -> String {
 pub fn can(conn: &Connection, account: &str, channel: &str, perm: &str) -> rusqlite::Result<bool> {
     conn.prepare_cached(&format!("SELECT {}", can_sql("?1", "?2", perm)))?
         .query_row(params![account, channel], |r| r.get(0))
+}
+
+/// SQL boolean: may the account use the whole-space permission `perm` (`invite`, `history`) in the
+/// space (SQL expressions)? Only the space levels count; there is no `view` requirement. Aliases
+/// differ from [`can_sql`]'s so the two can nest.
+pub fn can_space_sql(account: &str, space: &str, perm: &str) -> String {
+    assert!(SPACE_ONLY.contains(&perm), "not a space permission: {perm}");
+    let sp =
+        |list: &str, t: &str, id: &str| override_sql("space_permission", "space_id", "perm_ss.id", list, t, id, perm);
+    format!(
+        "coalesce((SELECT CASE
+            WHEN perm_ss.owner_account_id = {account} THEN 1
+            WHEN perm_ssm.role IS NOT NULL AND perm_ss.kind = 'dm' THEN 1
+            WHEN perm_ssm.role = 'admin' THEN 1
+            WHEN perm_ssm.role IS NULL THEN 0
+            WHEN {acct_deny} THEN 0
+            WHEN {acct_allow} THEN 1
+            WHEN {role_deny} THEN 0
+            WHEN {role_allow} THEN 1
+            WHEN {all_deny} THEN 0
+            WHEN {all_allow} THEN 1
+            ELSE {base}
+          END
+          FROM space perm_ss LEFT JOIN space_member perm_ssm
+            ON perm_ssm.space_id = perm_ss.id AND perm_ssm.account_id = {account} AND perm_ssm.is_present
+          WHERE perm_ss.id = {space}), 0)",
+        acct_deny = sp("deny", "account", account),
+        acct_allow = sp("allow", "account", account),
+        role_deny = sp("deny", "role", "perm_ssm.role"),
+        role_allow = sp("allow", "role", "perm_ssm.role"),
+        all_deny = sp("deny", "role", "'everyone'"),
+        all_allow = sp("allow", "role", "'everyone'"),
+        base = base_sql("perm_ssm.role", "perm_ss.roles", perm),
+    )
+}
+
+/// [`can_space_sql`] for one account and space.
+pub fn can_space(conn: &Connection, account: &str, space: &str, perm: &str) -> rusqlite::Result<bool> {
+    conn.prepare_cached(&format!("SELECT {}", can_space_sql("?1", "?2", perm)))?
+        .query_row(params![account, space], |r| r.get(0))
 }
 
 /// Longest slow mode a channel can set: 6 hours.
@@ -180,10 +259,36 @@ pub fn write_denied(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<O
     {
         return Ok(Some(why));
     }
+    // what an account shares in a space is its own business, and only shared spaces have it (D-133)
+    if o.kind == "space.set_sharing" {
+        return Ok(if kind.as_deref() != Some("shared") {
+            Some("only shared spaces have sharing settings".into())
+        } else if owner != author && role(conn, author, space)?.is_none() {
+            Some("only the space's members can do that".into())
+        } else {
+            None
+        });
+    }
     if owner == author {
         return Ok(None);
     }
     let role = role(conn, author, space)?;
+    // D-133: bringing someone else in takes `invite` (admins have it), in a shared space, and
+    // only someone the inviter is connected to (as `POST /spaces/{id}/members` checks)
+    if o.kind == "space.join"
+        && let Some(invitee) = str_of(&o.payload, "account_id")
+        && invitee != author
+        && kind.as_deref() == Some("shared")
+        && role.as_deref() != Some("admin")
+    {
+        return Ok(if !can_space(conn, author, space, "invite")? {
+            Some("you don't have the invite permission in this space".into())
+        } else if !crate::spaces::connected(conn, author, invitee)? {
+            Some("you can only add people you follow or who follow you".into())
+        } else {
+            None
+        });
+    }
     let manager = role.as_deref() == Some("admin") || (kind.as_deref() == Some("dm") && role.is_some());
     let need = |channel: Option<&str>, perm: &str| -> anyhow::Result<Option<String>> {
         let Some(channel) = channel else { return Ok(Some("no such channel".into())) };
@@ -205,7 +310,28 @@ pub fn write_denied(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<O
             None => (!manager).then(|| "only the space's owner or an admin can add channels".into()),
         },
         _ if k.starts_with("channel.") => need(o.entity(), "manage")?,
-        "message.send" | "message.forward" => need(str_of(p, "channel_id"), "send")?,
+        // D-133: files, polls and asides each need their own permission on top of `send`
+        "message.send" | "message.forward" => {
+            let channel = str_of(p, "channel_id");
+            let mut wanted = vec!["send"];
+            if p.get("attachments").and_then(Value::as_array).is_some_and(|a| !a.is_empty()) {
+                wanted.push("attach");
+            }
+            if p.get("poll").is_some_and(|v| !v.is_null()) {
+                wanted.push("poll");
+            }
+            if !crate::visibility::is_public(p.get("visibility")) {
+                wanted.push("aside");
+            }
+            let mut refused = None;
+            for perm in wanted {
+                refused = need(channel, perm)?;
+                if refused.is_some() {
+                    break;
+                }
+            }
+            refused
+        }
         "message.pin" | "message.unpin" => {
             let channel = o.entity().map(|m| message_channel(conn, m)).transpose()?.flatten().map(|(c, _)| c);
             need(channel.as_deref(), "pin")?
@@ -511,9 +637,13 @@ mod tests {
         .unwrap();
     }
 
+    /// The channel permissions the account has there.
     fn perms_of(c: &Connection, account: &str, channel: &str) -> Vec<&'static str> {
-        PERMS.iter().copied().filter(|p| can(c, account, channel, p).unwrap()).collect()
+        CHANNEL.iter().copied().filter(|p| can(c, account, channel, p).unwrap()).collect()
     }
+
+    const CHANNEL: &[&str] = &["view", "send", "react", "thread", "pin", "manage", "attach", "poll", "aside"];
+    const MEMBER: &[&str] = &["view", "send", "react", "thread", "pin", "attach", "poll", "aside"];
 
     #[test]
     fn roles_give_their_base_permissions() {
@@ -521,11 +651,15 @@ mod tests {
             "shared",
             &[("mem", "member"), ("ro", "read_only"), ("adm", "admin"), ("m2", "mod"), ("odd", "nope")],
         );
-        assert_eq!(perms_of(&c, "owner", "ch"), PERMS);
-        assert_eq!(perms_of(&c, "adm", "ch"), PERMS);
-        assert_eq!(perms_of(&c, "mem", "ch"), ["view", "send", "react", "thread", "pin"]);
-        assert_eq!(perms_of(&c, "ro", "ch"), ["view", "react"]);
-        assert_eq!(perms_of(&c, "m2", "ch"), ["view", "send", "pin", "manage"], "a custom role has what it lists");
+        assert_eq!(perms_of(&c, "owner", "ch"), CHANNEL);
+        assert_eq!(perms_of(&c, "adm", "ch"), CHANNEL);
+        assert_eq!(perms_of(&c, "mem", "ch"), MEMBER);
+        assert_eq!(perms_of(&c, "ro", "ch"), ["view", "react", "attach", "poll", "aside"]);
+        assert_eq!(
+            perms_of(&c, "m2", "ch"),
+            ["view", "send", "pin", "manage", "attach", "poll", "aside"],
+            "a custom role has what it lists, and what every role had before D-133"
+        );
         assert!(perms_of(&c, "odd", "ch").is_empty(), "an unknown role has nothing");
         assert!(perms_of(&c, "stranger", "ch").is_empty());
         assert!(perms_of(&c, "mem", "missing").is_empty(), "an unknown channel grants nothing");
@@ -539,20 +673,49 @@ mod tests {
         set(&c, "role", "everyone", &[], &["view"]);
         assert!(perms_of(&c, "mem", "ch").is_empty(), "no view, nothing else either");
         assert!(perms_of(&c, "ro", "th").is_empty());
-        assert_eq!(perms_of(&c, "adm", "ch"), PERMS, "admins aren't bound by overrides");
+        assert_eq!(perms_of(&c, "adm", "ch"), CHANNEL, "admins aren't bound by overrides");
         // …but read_only members may look, and one member may talk
         set(&c, "role", "read_only", &["view"], &[]);
-        assert_eq!(perms_of(&c, "ro", "ch"), ["view", "react"]);
+        assert_eq!(perms_of(&c, "ro", "ch"), ["view", "react", "attach", "poll", "aside"]);
         set(&c, "account", "mem", &["view", "manage"], &[]);
-        assert_eq!(perms_of(&c, "mem", "ch"), PERMS, "the account level beats the everyone level");
+        assert_eq!(perms_of(&c, "mem", "ch"), CHANNEL, "the account level beats the everyone level");
         // at one level, deny beats allow
         set(&c, "account", "mem", &["view", "send"], &["send"]);
-        assert_eq!(perms_of(&c, "mem", "ch"), ["view", "react", "thread", "pin"]);
+        assert_eq!(perms_of(&c, "mem", "ch"), ["view", "react", "thread", "pin", "attach", "poll", "aside"]);
         // a role deny beats an everyone allow, and an account allow beats a role deny
         set(&c, "role", "everyone", &["manage"], &[]);
         set(&c, "role", "member", &[], &["manage", "pin"]);
         set(&c, "account", "mem", &["pin"], &[]);
-        assert_eq!(perms_of(&c, "mem", "ch"), ["view", "send", "react", "thread", "pin"]);
+        assert_eq!(perms_of(&c, "mem", "ch"), MEMBER);
+    }
+
+    fn set_space(c: &Connection, target_type: &str, target: &str, allow: &[&str], deny: &[&str]) {
+        c.execute(
+            "INSERT OR REPLACE INTO space_permission(space_id,target_type,target_id,allow,deny,hlc)
+             VALUES ('s',?1,?2,?3,?4,'1:0:1')",
+            params![target_type, target, serde_json::json!(allow).to_string(), serde_json::json!(deny).to_string()],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn space_levels_sit_under_the_channel_ones() {
+        let c = space("shared", &[("mem", "member"), ("ro", "read_only"), ("adm", "admin")]);
+        assert!(!can_space(&c, "mem", "s", "invite").unwrap(), "inviting starts off");
+        assert!(can_space(&c, "mem", "s", "history").unwrap(), "history starts on, as before");
+        assert!(can_space(&c, "adm", "s", "invite").unwrap() && can_space(&c, "owner", "s", "invite").unwrap());
+        assert!(!can_space(&c, "stranger", "s", "history").unwrap());
+        set_space(&c, "role", "everyone", &["invite"], &["history", "attach"]);
+        assert!(can_space(&c, "mem", "s", "invite").unwrap() && !can_space(&c, "ro", "s", "history").unwrap());
+        assert!(!can(&c, "mem", "ch", "attach").unwrap(), "a space-wide deny reaches every channel");
+        assert!(!can(&c, "mem", "th", "attach").unwrap(), "and its threads");
+        set(&c, "role", "everyone", &["attach"], &[]);
+        assert!(can(&c, "mem", "ch", "attach").unwrap(), "a channel's override beats the space's");
+        set_space(&c, "role", "member", &[], &["attach"]);
+        assert!(!can(&c, "mem", "ch", "attach").unwrap(), "a role beats everyone, wherever set");
+        set_space(&c, "account", "mem", &["attach"], &[]);
+        assert!(can(&c, "mem", "ch", "attach").unwrap(), "the account beats its role");
+        assert!(can(&c, "adm", "ch", "attach").unwrap() && can_space(&c, "adm", "s", "history").unwrap());
     }
 
     #[test]
@@ -562,6 +725,12 @@ mod tests {
         assert!(perms_of(&c, "guest", "ch").is_empty(), "role overrides never reach a guest");
         set(&c, "account", "guest", &["view", "react"], &[]);
         assert_eq!(perms_of(&c, "guest", "ch"), ["view", "react"]);
+        c.execute(
+            "INSERT INTO space_permission(space_id,target_type,target_id,allow,deny,hlc) VALUES ('s','account','guest','[\"send\"]','[]','1:0:1')",
+            [],
+        )
+        .unwrap();
+        assert_eq!(perms_of(&c, "guest", "ch"), ["view", "react"], "the space's overrides never reach a guest");
         assert!(!is_member(&c, "guest", "s").unwrap());
         refresh_guest(&c, "guest", "s").unwrap();
         let has = |c: &Connection| -> bool {
@@ -579,6 +748,7 @@ mod tests {
 
         let dm = space("dm", &[("a", "member"), ("b", "member")]);
         set(&dm, "account", "b", &[], &["send"]);
-        assert_eq!(perms_of(&dm, "b", "ch"), PERMS, "in a DM both sides can do everything");
+        assert_eq!(perms_of(&dm, "b", "ch"), CHANNEL, "in a DM both sides can do everything");
+        assert!(can_space(&dm, "b", "s", "history").unwrap() && can_space(&dm, "b", "s", "invite").unwrap());
     }
 }

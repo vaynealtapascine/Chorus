@@ -351,13 +351,30 @@ impl World {
             }
             60..=61 => {
                 let scope = self.rng.pick(&spaces).cloned().unwrap_or_default();
-                entity = Some(self.channel_in(&scope));
-                let (k, p) = match self.rng.below(6) {
+                let channel = self.channel_in(&scope);
+                let pick = self.rng.below(8);
+                // D-133's two space ops are keyed by the space, the rest by the channel
+                entity = if pick >= 6 { scope.strip_prefix("space:").map(str::to_string) } else { Some(channel) };
+                let (k, p) = match pick {
                     0 | 1 => ("channel.set", json!({"name": format!("r{}", self.rng.below(50)), "topic": "t"})),
                     2 => ("channel.archive", json!({})),
                     3 => ("channel.unarchive", json!({})),
                     4 => ("channel.delete", json!({})),
-                    _ => ("channel.restore", json!({})),
+                    5 => ("channel.restore", json!({})),
+                    // D-133: space-wide overrides and what an account shares, both keyed by the space
+                    6 => {
+                        let perm = ["history", "attach", "invite", "poll"][self.rng.below(4) as usize];
+                        let (allow, deny) =
+                            if self.rng.chance(50) { (json!([perm]), json!([])) } else { (json!([]), json!([perm])) };
+                        (
+                            "space.set_permission",
+                            json!({"target_type": "role", "target_id": "everyone", "allow": allow, "deny": deny}),
+                        )
+                    }
+                    _ => (
+                        "space.set_sharing",
+                        json!({"member_names": self.rng.chance(50), "fronts_delay_min": self.rng.below(30)}),
+                    ),
                 };
                 (k, scope, p)
             }

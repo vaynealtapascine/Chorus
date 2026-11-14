@@ -383,6 +383,15 @@ pub fn ticks_for(msgs_json: &str, member_marks_json: &str, foreign_json: &str) -
     Ok(js(&crate::ticks::ticks_for(&m, &own, &foreign)))
 }
 
+/// What one account may do in a space (D-133, `perms::allowed`): `levels` is
+/// `{manager, role, roles, channel: {account, role, everyone}, space: {account, role, everyone}}`
+/// with each level `{allow: [...], deny: [...]}` or absent (docs/handoff/d133-clients.md);
+/// returns the allowed permissions, in `PERMISSIONS` order (JSON array).
+pub fn space_perms(levels_json: &str) -> Result<String, String> {
+    let l: crate::perms::Levels = parse("levels", levels_json)?;
+    Ok(js(&crate::perms::allowed(&l)))
+}
+
 /// The latest of our messages (`[{at, id}]`) at or before a reader's mark `{at, id}`: `{at, id}`
 /// or `null` (D-131: all a receipt may say).
 pub fn ticks_upto(mark_json: &str, own_json: &str) -> Result<String, String> {

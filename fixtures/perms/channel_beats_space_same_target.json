@@ -1,0 +1,34 @@
+{
+  "args": [
+    {
+      "channel": {
+        "everyone": {
+          "allow": [
+            "attach"
+          ]
+        }
+      },
+      "role": "member",
+      "space": {
+        "everyone": {
+          "deny": [
+            "attach",
+            "poll"
+          ]
+        }
+      }
+    }
+  ],
+  "description": "for the same target, the channel's override beats the space's",
+  "expect": [
+    "view",
+    "send",
+    "react",
+    "thread",
+    "pin",
+    "attach",
+    "aside",
+    "history"
+  ],
+  "fn": "space_perms"
+}

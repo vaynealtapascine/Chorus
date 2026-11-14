@@ -1,0 +1,17 @@
+{
+  "args": [
+    {
+      "role": "read_only"
+    }
+  ],
+  "description": "read-only: view and react; attach, poll and aside wait on send; history as before",
+  "expect": [
+    "view",
+    "react",
+    "attach",
+    "poll",
+    "aside",
+    "history"
+  ],
+  "fn": "space_perms"
+}

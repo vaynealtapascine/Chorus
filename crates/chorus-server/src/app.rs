@@ -2521,7 +2521,12 @@ pub(crate) fn fan_out(
         .filter(|o| {
             matches!(
                 o.kind.as_str(),
-                "channel.set_permission" | "space.set_role" | "space.set_roles" | "space.join" | "space.leave"
+                "channel.set_permission"
+                    | "space.set_permission"
+                    | "space.set_role"
+                    | "space.set_roles"
+                    | "space.join"
+                    | "space.leave"
             )
         })
         .map(|o| o.scope.as_str())

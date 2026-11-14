@@ -1,0 +1,31 @@
+{
+  "args": [
+    {
+      "role": "member",
+      "space": {
+        "everyone": {
+          "allow": [
+            "invite",
+            "poll"
+          ],
+          "deny": [
+            "invite",
+            "poll"
+          ]
+        }
+      }
+    }
+  ],
+  "description": "at one level deny beats allow",
+  "expect": [
+    "view",
+    "send",
+    "react",
+    "thread",
+    "pin",
+    "attach",
+    "aside",
+    "history"
+  ],
+  "fn": "space_perms"
+}

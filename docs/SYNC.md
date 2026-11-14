@@ -124,10 +124,11 @@ wrote them (no read receipts as ops: per member, they'd show another account who
 channels of a space an account receives — this is how a single internal channel is shared with an
 outside account (a *guest*: it gets the space's scope but only that channel's ops). Permission
 resolution is one SQL rule on the server (`chorus-server/src/perms.rs`, DATA_MODEL §4.4): clients
-never decide delivery, so it isn't in `chorus-core`. Because different accounts see different
+never decide delivery (the same rule is in `chorus_core::perms` only so they can hide controls).
+Because different accounts see different
 subsets, the digest (§6.4) is computed per *(scope, account)*. When an op that changes the rule's
-inputs is accepted (`channel.set_permission`, `space.set_role`, `space.set_roles`, `space.join`,
-`space.leave`), every connected device of that scope (except the pusher) gets a `caught` frame
+inputs is accepted (`channel.set_permission`, `space.set_permission`, `space.set_role`,
+`space.set_roles`, `space.join`, `space.leave`), every connected device of that scope (except the pusher) gets a `caught` frame
 with its fresh digest; a device that gained or lost a channel sees a mismatch and re-pulls the
 scope (§6.5), which fetches what it may now see and evicts what it may not. Devices that were
 offline repair the same way at their next catch-up. (The pusher is a manager and keeps `view`
@@ -533,7 +534,7 @@ closes the window with `reconcile-close` or `POST /admin/reconcile/close`.
 Areas: `hlc`, `time`, `lww`, `set`, `groups_cycle`, `front`, `review`, `text_entities` (`fixtures/text/`, headings: `headings_*`, D-134),
 `speaker_parse`, `feed_query`, `visibility`, `digest`, `poll` (D-081/D-086; test-only helper
 adapters documented in `fixtures/poll/README.md`), `search` (message search: the web's word
-index runs these too, `web/src/lib/search.test.ts`). `ticks` (D-131: `ticks_for` and `ticks_upto`; the web and Android clients call the same core). `member_state` (D-138/D-159: reading a member's state, clear on leave, the shared part, and `validate_op` for its pref; test-only adapters in `fixtures/member_state/README.md`; the web and Android state parsers run the `parse_*` vectors). Rust runs all of them in CI. Any non-Rust
+index runs these too, `web/src/lib/search.test.ts`). `ticks` (D-131: `ticks_for` and `ticks_upto`; the web and Android clients call the same core). `member_state` (D-138/D-159: reading a member's state, clear on leave, the shared part, and `validate_op` for its pref; test-only adapters in `fixtures/member_state/README.md`; the web and Android state parsers run the `parse_*` vectors). `perms` (D-133: `space_perms`, the permission rule with channel and space levels; the clients call the same core through wasm/UniFFI). Rust runs all of them in CI. Any non-Rust
 reimplementation must run them too.
 
 ### 9.2 Convergence simulator

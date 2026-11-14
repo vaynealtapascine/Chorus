@@ -1,0 +1,33 @@
+{
+  "args": [
+    {
+      "channel": {
+        "role": {
+          "deny": [
+            "send"
+          ]
+        }
+      },
+      "role": "read_only",
+      "space": {
+        "account": {
+          "allow": [
+            "send",
+            "attach"
+          ]
+        }
+      }
+    }
+  ],
+  "description": "the account's space override beats its role's channel override",
+  "expect": [
+    "view",
+    "send",
+    "react",
+    "attach",
+    "poll",
+    "aside",
+    "history"
+  ],
+  "fn": "space_perms"
+}

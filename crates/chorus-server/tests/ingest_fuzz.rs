@@ -87,6 +87,9 @@ const KEYS: &[&str] = &[
     "title",
     "note",
     "items",
+    "member_names",
+    "fronts",
+    "fronts_delay_min",
 ];
 
 struct World {

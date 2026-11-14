@@ -1,0 +1,29 @@
+{
+  "args": [
+    {
+      "role": "mod",
+      "roles": [
+        {
+          "id": "mod",
+          "name": "Mods",
+          "perms": [
+            "view",
+            "send",
+            "manage"
+          ]
+        }
+      ]
+    }
+  ],
+  "description": "a custom role has what it lists plus attach, poll, aside and history",
+  "expect": [
+    "view",
+    "send",
+    "manage",
+    "attach",
+    "poll",
+    "aside",
+    "history"
+  ],
+  "fn": "space_perms"
+}

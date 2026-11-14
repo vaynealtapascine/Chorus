@@ -64,6 +64,9 @@ const KEYS: &[&str] = &[
     "tags",
     "title",
     "items",
+    "member_names",
+    "fronts",
+    "fronts_delay_min",
 ];
 
 fn pool() -> Vec<String> {

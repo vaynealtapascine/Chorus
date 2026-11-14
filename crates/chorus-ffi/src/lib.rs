@@ -148,6 +148,13 @@ pub fn ticks_for(msgs_json: String, member_marks_json: String, foreign_json: Str
     wrap(api::ticks_for(&msgs_json, &member_marks_json, &foreign_json))
 }
 
+/// D-133: the permissions one account has in a space (and channel), from its override levels
+/// (`chorus_core::api::space_perms`) → JSON array of permission names.
+#[uniffi::export]
+pub fn space_perms(levels_json: String) -> Result<String, CoreError> {
+    wrap(api::space_perms(&levels_json))
+}
+
 /// A message search box → query JSON (SPEC §5.3: words, from:, in:, has:, before:/after:,
 /// is:pinned), or an error with `{"pos", "message"}`.
 #[uniffi::export]

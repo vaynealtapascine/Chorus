@@ -362,7 +362,7 @@ fn home_table(spec: &op::KindSpec) -> Option<&'static str> {
         Special => match spec.kind {
             "follow.request" | "follow.accept" | "follow.set_ceiling" | "follow.end" => Some("follow"),
             "message.pin" | "message.unpin" => Some("message"),
-            "space.set_role" | "space.set_roles" => Some("space"),
+            "space.set_role" | "space.set_roles" | "space.set_permission" | "space.set_sharing" => Some("space"),
             "channel.set_permission" => Some("channel"),
             _ => None,
         },

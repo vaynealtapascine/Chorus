@@ -1,0 +1,14 @@
+{
+  "args": [
+    [
+      "not",
+      "levels"
+    ]
+  ],
+  "description": "levels must be an object",
+  "expect": {
+    "error": true,
+    "message": "bad levels JSON: invalid type: string \"not\", expected a boolean"
+  },
+  "fn": "space_perms"
+}

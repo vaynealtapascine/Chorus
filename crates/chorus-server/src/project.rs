@@ -826,6 +826,18 @@ fn element_set(conn: &Connection, table: &str, o: &Op) -> anyhow::Result<()> {
         names.push("added_by_member".into());
         values.push(o.member_id.clone().map(Sql::Text).unwrap_or(Sql::Null));
     }
+    // D-133: when the account's current stretch in the space began, by the server's clock: the
+    // earliest join received after its latest leave (all from the log, so a rebuild agrees)
+    if table == "space_member" {
+        let joined_at = e.is_present().then(|| {
+            ops.iter()
+                .filter(|x| x.kind == "space.join" && e.removed.is_none_or(|r| x.hlc > r))
+                .filter_map(|x| x.received_at)
+                .min()
+        });
+        names.push("joined_at".into());
+        values.push(joined_at.flatten().map(Sql::Integer).unwrap_or(Sql::Null));
+    }
     let key_cols: Vec<&str> = keys.iter().map(|(c, _)| *c).collect();
     upsert(conn, table, &key_cols, &names, &values)?;
     if table == "space_member" {
@@ -847,8 +859,13 @@ fn space_access(conn: &Connection, o: &Op, account: &str, present: bool) -> anyh
         .optional()?;
     let (owner, kind) = row.map_or((None, None), |(o, k)| (Some(o), k));
     let author = o.account_id.clone().unwrap_or_default();
+    // D-133: an account allowed to `invite` (an admin, or as the space's overrides say) brings
+    // people in too; ingest has checked it may (perms::write_denied)
     let manages = match &owner {
-        Some(ow) => *ow == author,
+        Some(ow) => {
+            *ow == author
+                || (kind.as_deref() == Some("shared") && crate::perms::can_space(conn, &author, space, "invite")?)
+        }
         None => author == account,
     };
     let self_leave = !present
@@ -1320,6 +1337,71 @@ fn special(conn: &Connection, o: &Op) -> anyhow::Result<()> {
             }
             Ok(())
         }
+        // D-133: overrides for the whole space. Unlike a channel's, an account override here never
+        // makes an outsider a guest: the space levels apply to present members only (perms.rs).
+        "space.set_permission" => {
+            let key = [
+                ("space_id", o.entity().unwrap_or("").to_string()),
+                ("target_type", p("target_type")),
+                ("target_id", p("target_id")),
+            ];
+            if newer_than_stored(conn, "space_permission", &key, o)? {
+                let allow = o.payload.get("allow").cloned().unwrap_or(Value::Array(vec![]));
+                let deny = o.payload.get("deny").cloned().unwrap_or(Value::Array(vec![]));
+                let mut names: Vec<String> = key.iter().map(|(c, _)| c.to_string()).collect();
+                let mut vals: Vec<Sql> = key.iter().map(|(_, v)| Sql::Text(v.clone())).collect();
+                names.extend(["allow".into(), "deny".into(), "hlc".into()]);
+                vals.extend([Sql::Text(allow.to_string()), Sql::Text(deny.to_string()), Sql::Text(o.hlc.to_string())]);
+                upsert(conn, "space_permission", &["space_id", "target_type", "target_id"], &names, &vals)?;
+            }
+            Ok(())
+        }
+        // D-133: what the writing account shares in the space, LWW per field like the core model
+        "space.set_sharing" => {
+            let (space, account) = (o.entity().unwrap_or(""), o.account_id.as_deref().unwrap_or(""));
+            let stored: Option<String> = query_cached(
+                conn,
+                "SELECT clocks FROM space_sharing WHERE space_id = ?1 AND account_id = ?2",
+                params![space, account],
+                |r| r.get(0),
+            )
+            .optional()?;
+            let mut clocks = chorus_core::lww::Clocks::from_json(
+                &stored.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(Value::Null),
+            );
+            let payload: serde_json::Map<String, Value> = o
+                .payload_obj()
+                .into_iter()
+                .flatten()
+                .filter(|(k, _)| op::SHARING_FIELDS.contains(&k.as_str()))
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            let won = chorus_core::lww::apply_fields(&mut clocks, o.hlc, &payload);
+            exec(
+                conn,
+                "INSERT OR IGNORE INTO space_sharing(space_id, account_id) VALUES (?1, ?2)",
+                params![space, account],
+            )?;
+            let mut sets = vec!["clocks = ?1".to_string()];
+            let mut vals = vec![Sql::Text(clocks.to_json().to_string())];
+            for (k, v) in &won {
+                vals.push(to_sql(v));
+                sets.push(format!("{k} = ?{}", vals.len()));
+            }
+            vals.push(Sql::Text(space.to_string()));
+            vals.push(Sql::Text(account.to_string()));
+            let n = vals.len();
+            exec(
+                conn,
+                &format!(
+                    "UPDATE space_sharing SET {} WHERE space_id = ?{} AND account_id = ?{n}",
+                    sets.join(", "),
+                    n - 1
+                ),
+                params_from_iter(vals),
+            )?;
+            Ok(())
+        }
         "space.set_role" => {
             exec(
                 conn,
@@ -1520,6 +1602,8 @@ pub(crate) const DERIVED: &[&str] = &[
     "space_member",
     "channel",
     "channel_permission",
+    "space_permission",
+    "space_sharing",
     "message",
     "message_segment",
     "message_segment_author",

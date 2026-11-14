@@ -27,7 +27,7 @@ schemaless things, and a set of `v_*` views (§6) that pre-join the common quest
 | JSON | TEXT with `CHECK (json_valid(x))`. Used for: entities, settings, visibility, clocks, snapshots. |
 | Soft delete | `deleted_at` (tombstone). Queries/views exclude them. |
 | Trash stamps | For `message`, `post`, `member`, `member_group` and `channel` the reference projection also carries `created_by_account_id` (first create) and `deleted_by_account_id` (latest delete, cleared on restore), plus `deleted_by_member_id` (the delete op's acting `member_id`, null when none was named; cleared on restore; projection v6) for Trash's "Deleted by". Only those two accounts may restore (`core::restore::allowed`, D-053). |
-| Space owner and members | The reference projection stamps `space` rows with `created_by_account_id` as well: the creator, which is the server's `space.owner_account_id`. Who is in a space is the `space_member` **set** (`space.join`/`space.leave`, keyed `<space>|{"account_id":…}`); `space_member` rows carry only the role from `space.set_role` and never `exists`. A role counts while the join is present, else it is `member` (perms.rs). Since projection v5. |
+| Space owner and members | The reference projection stamps `space` rows with `created_by_account_id` as well: the creator, which is the server's `space.owner_account_id`. Who is in a space is the `space_member` **set** (`space.join`/`space.leave`, keyed `<space>|{"account_id":…}`); `space_member` rows carry only the role from `space.set_role` and never `exists`. A role counts while the join is present, else it is `member` (perms.rs). Since projection v5. Since v8 (D-133) the projection also has `space_permission` rows keyed `<space>|<target_type>|<target_id>` (`{allow, deny}`, like `channel_permission`'s `<channel>|…`) and `space_sharing` rows keyed `<space>|<account>` (`{member_names?, fronts?, fronts_delay_min?}`, only the keys ever written; absent = default). The server's `space_member.joined_at` has no core counterpart (the server filters history before sending). |
 | LWW clocks | Tables with field-level last-writer-wins carry `clocks` JSON: `{"name": "<hlc>", ...}`. Only the merge code reads it. |
 | HLC | String `"<physical_ms, 12 hex>-<counter, 4 hex>-<device short_id, 8 hex>"`, zero-padded, e.g. `"01a0c27d1e3f-0003-a1b2c3d4"`; plain string comparison = HLC order. See SYNC.md §3. |
 | Rich text | `text` (plain UTF-8) + `entities` JSON array `[{"type":"bold","offset":0,"length":5}, ...]`. Offsets/lengths are in **UTF-16 code units** (Telegram-compatible; what Android and JS use natively). Posts and journal entries may also carry `{"type":"heading","level":1|2,"offset","length"}` over one whole line (markup `# ` / `## `, D-134); `validate_new` refuses it on messages, at other levels, or over part of a line, and chat keeps `# ` literal. Renderers and `to_markup` drop entity types they don't know (`Rich::lenient`) instead of failing the text. |
@@ -112,7 +112,8 @@ from the payload), `occurred_at`, `received_at`.
 checks more than `op::validate`'s field names: every payload field stored in a constrained column obeys
 `op::FIELD_RULES` (never `null` for a NOT NULL column, an object or list for a JSON column,
 `true`/`false` for a flag, one of the allowed values for an `IN (…)` check), plus per-kind rules
-(`channel.set_permission` needs a `target_type`/`target_id` and known permissions, reactions a
+(`channel.set_permission` and `space.set_permission` need a `target_type`/`target_id` and known permissions, `invite`/`history` only on the space,
+`space.set_sharing` only its three keys with their types, reactions a
 `target_type`/`target_id`/`emoji`, message and post `text` is text and `entities`/`tags` lists, entities and segments are
 `{offset, length}` ranges (UTF-16) inside the text with a `type`/`authors` (so another
 account's message can't make a renderer slice out of range),
@@ -195,7 +196,9 @@ Merge column: **LWW-F** = field-level last-writer-wins by HLC · **SET** = LWW e
 | `space.create` / `space.set` / `space.delete` | | LWW-F |
 | `space.join` / `space.leave` / `space.set_role` | `{account_id, role}` | SET / LWW-F |
 | `channel.create` / `channel.set` / `channel.archive` / `channel.delete` / `channel.restore` | | LWW-F |
-| `channel.set_permission` | `{target_type: role or account, target_id, allow:[…], deny:[…]}` | LWW-F per (channel, target) |
+| `channel.set_permission` | `{target_type: role or account, target_id, allow:[…], deny:[…]}`; lists of channel permissions (§4.4; not `invite`/`history`) | LWW-F per (channel, target) |
+| `space.set_permission` | `{target_type: role or account, target_id, allow:[…], deny:[…]}`; entity is the space; any permission, `invite` and `history` included (D-133, §4.4); admins only | LWW-F per (space, target) |
+| `space.set_sharing` | `{member_names?: bool, fronts?: bool, fronts_delay_min?: 0–1440}`; entity is the space; what the **writing** account shares there, keyed (space, author) so an account only sets its own; shared spaces only, members only (D-133) | LWW-F per (space, account, field) |
 | `space.set_roles` | custom roles for shared spaces `{roles:[{id,name,color,perms}]}` | LWW-F |
 | `message.send` | `{channel_id, authors:[member_id], text, entities, segments?:[{offset,length,authors}], reply_to?, quote?, forward?, cw?, visibility?, attachments?:[attachment_id], sent_offline:bool, poll?:{question?, options:[{id,text}], multiple, closes_at?}}`; segment offsets/lengths are UTF-16. `poll` is fixed at creation (edits may not carry it; POLLS.md). `quote` is a single `{message_id,offset,length,text}` or a bundle `{items:[snapshot]}` (D-048). | APP |
 | `message.edit` | `{message_id, text, entities, segments?, cw?}` → new revision; supply updated segments when editing text so attribution and offsets stay aligned (D-045); structural fields (`channel_id`, `visibility`, `reply_to`, `quote`, `forward_*`, `poll`…) and managed columns in the payload are ignored (D-123) | APP (latest HLC shown) |
@@ -454,8 +457,23 @@ CREATE TABLE space_member (
   role TEXT NOT NULL CHECK (role IN ('owner','admin','member','read_only')),
   joined_hlc TEXT, left_hlc TEXT,
   is_present INTEGER GENERATED ALWAYS AS (joined_hlc IS NOT NULL AND (left_hlc IS NULL OR joined_hlc > left_hlc)) STORED,
+  joined_at INTEGER,          -- D-133 (0024, server only): received_at of the earliest join after the latest leave
   PRIMARY KEY (space_id, account_id)
 );
+
+-- D-133 (0024): overrides for a whole space, under the channel ones (§4.4); `space.set_permission`
+CREATE TABLE space_permission (
+  space_id TEXT NOT NULL, target_type TEXT NOT NULL CHECK (target_type IN ('role','account')),
+  target_id TEXT NOT NULL, allow TEXT NOT NULL DEFAULT '[]', deny TEXT NOT NULL DEFAULT '[]',
+  hlc TEXT NOT NULL, PRIMARY KEY (space_id, target_type, target_id)
+) WITHOUT ROWID;
+-- D-133 (0024): what each account shares in a space, its own row; `space.set_sharing`, LWW per field.
+-- NULL = default: member_names on, fronts off, fronts_delay_min 15
+CREATE TABLE space_sharing (
+  space_id TEXT NOT NULL, account_id TEXT NOT NULL,
+  member_names INTEGER, fronts INTEGER, fronts_delay_min INTEGER,
+  clocks TEXT NOT NULL DEFAULT '{}', PRIMARY KEY (space_id, account_id)
+) WITHOUT ROWID;
 
 CREATE TABLE channel (
   id TEXT PRIMARY KEY,
@@ -519,7 +537,7 @@ CREATE TABLE channel_permission (                -- Discord-style overrides (D-0
   channel_id  TEXT NOT NULL REFERENCES channel(id),
   target_type TEXT NOT NULL CHECK (target_type IN ('role','account')),
   target_id   TEXT NOT NULL,                     -- role id/name or account id
-  allow       TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(allow)),   -- ["view","send","react","thread","pin","manage"]
+  allow       TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(allow)),   -- channel permissions: view send react thread pin manage attach poll aside
   deny        TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(deny)),
   hlc         TEXT NOT NULL,
   PRIMARY KEY (channel_id, target_type, target_id)
@@ -807,9 +825,10 @@ account's own ops on demand through the shared core. See FRONTS.md for the integ
 in control ("fronting", "steering"). Android's setup (F1.2) and System settings write both, keeping
 the other keys.
 
-### 4.4 Channel permissions: the rule (D-047, M5.10)
+### 4.4 Channel and space permissions: the rule (D-047, M5.10, D-133)
 
-One rule, `chorus-server/src/perms.rs::can_sql`, is spliced into every server path that decides
+One rule, `chorus-server/src/perms.rs::can_sql` (and `can_space_sql` for the whole-space
+permissions), is spliced into every server path that decides
 what an account may see or do in a space: writes (`perms::write_denied`, from `ingest::accept`),
 sync fan-out and catch-up (`visibility::op_visible_to` and the batched `visible_digest`), the REST
 message reads, search, blobs, author cards and notification recipients. Before any of it, a
@@ -818,23 +837,43 @@ channel, message or thread parent an op names, and a `channel.create`'s `space_i
 op's `space:` scope; and the members a message, reaction or post speaks as (`authors`, segment
 `authors`, `member_id`, the envelope's `member_id`) are the author account's own or not yet known
 (`ingest::foreign_speaker`); and a message or attachment stays its creator's: no other account
-sets an attachment's fields or re-creates an existing id (`ingest::foreign_item`). `can(account, channel,
-perm)` holds when both `perm` and `view` resolve to allow:
+sets an attachment's fields or re-creates an existing id (`ingest::foreign_item`). The pure rule is
+`chorus_core::perms` (`resolve`, `can`, `allowed`, `base`, `PERMISSIONS`, `SPACE_ONLY`), which the
+clients call through wasm/UniFFI (`spacePerms` / `space_perms`) to hide controls; the server's SQL is
+property-tested against it (`tests/permissions.rs`) and `fixtures/perms/` pins it.
+
+Permissions: **channel** ones `view`, `send`, `react`, `thread`, `pin`, `manage`, and since D-133
+`attach` (a message or forward with non-empty `attachments`), `poll` (with a `poll`), `aside` (with a
+non-public `visibility`); **space-only** ones (`SPACE_ONLY`) `invite` (bring a connected account into a
+shared space) and `history` (read messages received before one's current join). Overrides come from
+`channel.set_permission` (per channel; channel permissions only) and `space.set_permission` (the whole
+space; any permission). `can(account, channel, perm)` holds when both `perm` and `view` resolve to
+allow; a space-only permission resolves from the space levels alone and needs no `view`:
 
 1. A thread uses its parent message's channel.
 2. The space's owner, an `admin`, and any participant of a `dm` space: everything.
-3. Otherwise the most specific override that mentions `perm` decides — the account's own
-   override, then its role's, then the role `everyone` — and at one level `deny` beats `allow`.
-4. With no override: the role's base set. `member`: view, send, react, thread, pin. `read_only`:
-   view, react. A custom role (`space.roles[].perms`): its list. `manage` is never in a base set.
-5. An account that isn't a present member of the space gets only what an account override
-   allows — a **guest**. Allowing a guest `view` gives them the space's scope (`scope_access`,
-   `perms::refresh_guest`), but only that channel's ops sync to them (plus `space.create` and
-   `space.set`, so they can name it). Removing the last `view` removes the scope.
+3. The channel's override for the account.
+4. An account that isn't a present member of the space gets nothing more — a **guest**. Allowing a
+   guest `view` gives them the space's scope (`scope_access`, `perms::refresh_guest`), but only that
+   channel's ops sync to them (plus `space.create` and `space.set`, so they can name it). Removing
+   the last `view` removes the scope. Space-level overrides never reach a guest.
+5. Then, most specific first: the space's override for the account, the channel's for its role, the
+   space's for its role, the channel's for `everyone`, the space's for `everyone`. The first level
+   that mentions `perm` decides, and at one level `deny` beats `allow`. Space-only permissions skip
+   the channel levels.
+6. With no override: the role's base set. `member`: view, send, react, thread, pin, attach, poll,
+   aside, history. `read_only`: view, react, attach, poll, aside, history (the last four do nothing
+   without `send`, or matter only for reading). A custom role (`space.roles[].perms`): its list plus
+   attach, poll, aside and history (`perms::IMPLIED`: every role had those before D-133, so no
+   existing space narrows). `manage` and `invite` are never in a base set.
 
-Writes: `space.*` needs an admin (never in a DM; leaving is your own); `channel.create` needs a
+Writes: `space.*` needs an admin (never in a DM; leaving is your own), except `space.join` of another
+account into a shared space, which `invite` allows when the inviter is connected to them (an active
+follow either way, as `POST /spaces/{id}/members` checks), and `space.set_sharing`, which any member
+of a shared space writes about itself; `channel.create` needs a
 manager (admin, or a DM participant), or `thread` on the parent's channel for a thread; other
-`channel.*` need `manage`; `message.send`/`forward` need `send`; `message.pin`/`unpin` need `pin`;
+`channel.*` need `manage`; `message.send`/`forward` need `send`, plus `attach`, `poll` and `aside`
+for what they carry; `message.pin`/`unpin` need `pin`;
 other `message.*` need `view` on your own message and `manage` on someone else's, except
 `message.edit`, which only the message's author may send (D-073); `reaction.*`
 needs `react`; `read.*` needs `view`. Outside the internal space, a channel whose `member_ids`
@@ -842,8 +881,8 @@ name some of the author account's members is a private chat (D-098, `perms::kept
 uses its parent's channel): that account's `message.send`/`forward`, edit segments and
 `reaction.*` may only speak as those members; `member_ids` may only name members of accounts in
 the space; and a `channel.set` or repeated `channel.create` against an existing channel may change only the author account's own entries in it. Existing channels keep their create-only structural fields (`space_id`, `kind`, `parent_message_id`); ingest checks their stored scope rather than trusting the incoming scope. This
-applies to the owner too. A refused op is acked `forbidden` with the reason.
-Property-tested against an independent model of these rules in `tests/permissions.rs`.
+applies to the owner too. A refused op is acked `forbidden` with the reason. A join written by an
+account allowed to `invite` (the owner, an admin, or by override) grants the joiner the space's scope.
 
 ## 5. What each device stores
 

@@ -1,0 +1,39 @@
+{
+  "args": [
+    {
+      "channel": {
+        "account": {
+          "allow": [
+            "view",
+            "attach"
+          ]
+        },
+        "everyone": {
+          "allow": [
+            "send"
+          ]
+        }
+      },
+      "role": null,
+      "space": {
+        "account": {
+          "allow": [
+            "send",
+            "history"
+          ]
+        },
+        "everyone": {
+          "allow": [
+            "view"
+          ]
+        }
+      }
+    }
+  ],
+  "description": "not in the space: only the channel's account override counts",
+  "expect": [
+    "view",
+    "attach"
+  ],
+  "fn": "space_perms"
+}

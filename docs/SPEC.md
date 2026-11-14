@@ -160,6 +160,18 @@ custom order.
   Deny beats allow at the same level; account overrides beat role overrides. This also lets a
   system share **one internal channel** with an outside account (e.g. a partner can view
   #announcements) without sharing the rest of the internal space.
+- **Space permissions** (D-133, F5.11): a shared space also has overrides for the whole space,
+  under each channel's own, and three more channel permissions — `attach` (photos and files),
+  `poll` (create polls), `aside` (system asides) — plus two for the whole space: `invite` (bring in
+  people the inviter is connected to) and `history` (read what was said before joining; without
+  it a member reads only messages received since their latest join). Every role keeps what it
+  could do before (attach, poll, aside, history on; invite off), so existing spaces don't narrow.
+  Enforced by the server, mirrored in core (`chorus_core::perms`), editable on both clients.
+- **What each system shares in a shared space** (D-133), its own choice, never an admin's:
+  *member names on each message* (on by default; off = other accounts see only the system on our
+  messages there: the server withholds our members' names, avatars and profile links from them)
+  and *our fronting status* (off by default; on = everyone in the space sees our current front,
+  revealed after its own delay, as a least-privileged follower would). See NOTIFICATIONS §5.
 - **Member DMs** inside the internal space: a `member_dm` channel between two members (or more:
   "member group DM").
 - **Threads**: any message can spawn a thread (a `thread` channel with `parent_message_id`).

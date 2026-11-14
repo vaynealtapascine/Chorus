@@ -1,0 +1,30 @@
+{
+  "args": [
+    {
+      "role": "member",
+      "space": {
+        "everyone": {
+          "allow": [
+            "invite"
+          ],
+          "deny": [
+            "history",
+            "attach"
+          ]
+        }
+      }
+    }
+  ],
+  "description": "F5.11 set for everyone: no history before joining, no files, may invite",
+  "expect": [
+    "view",
+    "send",
+    "react",
+    "thread",
+    "pin",
+    "poll",
+    "aside",
+    "invite"
+  ],
+  "fn": "space_perms"
+}

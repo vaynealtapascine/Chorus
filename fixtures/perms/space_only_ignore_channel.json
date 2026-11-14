@@ -1,0 +1,30 @@
+{
+  "args": [
+    {
+      "channel": {
+        "account": {
+          "allow": [
+            "invite"
+          ],
+          "deny": [
+            "history"
+          ]
+        }
+      },
+      "role": "member"
+    }
+  ],
+  "description": "invite and history read only the space levels",
+  "expect": [
+    "view",
+    "send",
+    "react",
+    "thread",
+    "pin",
+    "attach",
+    "poll",
+    "aside",
+    "history"
+  ],
+  "fn": "space_perms"
+}

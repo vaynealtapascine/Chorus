@@ -1,0 +1,20 @@
+{
+  "args": [
+    {
+      "role": "member"
+    }
+  ],
+  "description": "a member with no overrides: what members could do before D-133, and no invite",
+  "expect": [
+    "view",
+    "send",
+    "react",
+    "thread",
+    "pin",
+    "attach",
+    "poll",
+    "aside",
+    "history"
+  ],
+  "fn": "space_perms"
+}
