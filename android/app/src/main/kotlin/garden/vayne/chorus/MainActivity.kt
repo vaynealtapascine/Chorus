@@ -87,7 +87,7 @@ import garden.vayne.chorus.ui.ContentSearch
 import garden.vayne.chorus.ui.Journal
 import garden.vayne.chorus.ui.InsightsScreen
 
-private data class OpenChatRequest(val id: Long, val spaceId: String?, val channelId: String)
+private data class OpenChatRequest(val id: Long, val spaceId: String?, val channelId: String, val messageId: String? = null)
 /** A tapped post alert (D-106): the post, or (no post) Friends for a request or its answer. */
 /** Somewhere a link or a notification opens: a post, a message, a friend's page or a tab ("notifications", "history"). */
 private data class OpenPostRequest(val id: Long, val postId: String?, val messageId: String? = null,
@@ -99,6 +99,14 @@ class MainActivity : ComponentActivity() {
         /** Open the switch sheet (the front widget's Switch and Handover, F3.8). */
         const val ACTION_SWITCH = "garden.vayne.chorus.SWITCH"
         const val EXTRA_HANDOVER = "garden.vayne.chorus.HANDOVER"
+        /** Open the Handover chat with its composer ready and At next switch on (the front widget's and the lock screen's Handover, D-132). */
+        const val ACTION_HANDOVER = "garden.vayne.chorus.HANDOVER_COMPOSE"
+        /** The message a chat opens at (a handover notification). */
+        const val EXTRA_OPEN_MESSAGE = "garden.vayne.chorus.OPEN_MESSAGE"
+
+        /** An Activity intent, so Android asks to unlock first (A12). */
+        fun handoverIntent(ctx: android.content.Context): Intent = Intent(ctx, MainActivity::class.java).setAction(ACTION_HANDOVER)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         const val EXTRA_OPEN_CHANNEL = "garden.vayne.chorus.OPEN_CHANNEL"
         const val EXTRA_OPEN_SPACE = "garden.vayne.chorus.OPEN_SPACE"
         const val EXTRA_OPEN_POST = "garden.vayne.chorus.OPEN_POST"
@@ -119,6 +127,8 @@ class MainActivity : ComponentActivity() {
     private var openPostRequest = mutableStateOf<OpenPostRequest?>(null)
     /** A switch sheet asked for from outside: null none, else whether it is a handover. */
     private var switchRequest = mutableStateOf<Boolean?>(null)
+    /** The Handover composer asked for from outside (widget, lock screen): a new id per ask. */
+    private var handoverRequest = mutableStateOf<Long?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -127,6 +137,7 @@ class MainActivity : ComponentActivity() {
         sharedDraft.value = SharedDraft.from(intent, ++nextShareId)
         if (intent.action == "garden.vayne.chorus.NEW_ENTRY") newEntryRequest.value = ++nextEntryId
         if (intent.action == ACTION_SWITCH) switchRequest.value = intent.getBooleanExtra(EXTRA_HANDOVER, false)
+        if (intent.action == ACTION_HANDOVER) handoverRequest.value = ++nextOpenChatId
         openChatFrom(intent)?.let { openChatRequest.value = it }
         openPostFrom(intent)?.let { openPostRequest.value = it }
         val chorus = Chorus.get(this)
@@ -148,7 +159,8 @@ class MainActivity : ComponentActivity() {
             onOpenChatConsumed = { openChatRequest.value = null },
             openPostRequest = openPostRequest.value,
             onOpenPostConsumed = { openPostRequest.value = null },
-            switchRequest = switchRequest.value, onSwitchConsumed = { switchRequest.value = null }) } } } }
+            switchRequest = switchRequest.value, onSwitchConsumed = { switchRequest.value = null },
+            handoverRequest = handoverRequest.value, onHandoverConsumed = { handoverRequest.value = null }) } } } }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -157,6 +169,7 @@ class MainActivity : ComponentActivity() {
         inviteFrom(intent)?.let { inviteLink.value = it }
         SharedDraft.from(intent, ++nextShareId)?.let { sharedDraft.value = it }
         if (intent.action == ACTION_SWITCH) switchRequest.value = intent.getBooleanExtra(EXTRA_HANDOVER, false)
+        if (intent.action == ACTION_HANDOVER) handoverRequest.value = ++nextOpenChatId
         if (intent.action == "garden.vayne.chorus.NEW_ENTRY") {
             sharedDraft.value = null
             newEntryRequest.value = ++nextEntryId
@@ -218,7 +231,7 @@ class MainActivity : ComponentActivity() {
     private fun openChatFrom(i: Intent?): OpenChatRequest? {
         val channel = i?.getStringExtra(EXTRA_OPEN_CHANNEL)?.takeIf { it.isNotBlank() } ?: return null
         val space = i.getStringExtra(EXTRA_OPEN_SPACE)?.takeIf { it.isNotBlank() }
-        return OpenChatRequest(++nextOpenChatId, space, channel)
+        return OpenChatRequest(++nextOpenChatId, space, channel, i.getStringExtra(EXTRA_OPEN_MESSAGE)?.takeIf { it.isNotBlank() })
     }
 }
 
@@ -236,7 +249,8 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
     onShareDismissed: () -> Unit, newEntryRequest: Long?, onNewEntryConsumed: () -> Unit,
     openChatRequest: OpenChatRequest? = null, onOpenChatConsumed: () -> Unit = {},
     openPostRequest: OpenPostRequest? = null, onOpenPostConsumed: () -> Unit = {},
-    switchRequest: Boolean? = null, onSwitchConsumed: () -> Unit = {}) {
+    switchRequest: Boolean? = null, onSwitchConsumed: () -> Unit = {},
+    handoverRequest: Long? = null, onHandoverConsumed: () -> Unit = {}) {
     val p = LocalChorusPalette.current
     val context = LocalContext.current
     val navPrefs = remember { context.getSharedPreferences("chorus.navigation", 0) }
@@ -324,6 +338,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
         if (status == Status.Loading || status == Status.NoDevice || status == Status.SignedOut || status == Status.StorageError) return@LaunchedEffect
         chatSpace = req.spaceId ?: model.channels.find { it.id == req.channelId }?.spaceId
         chatChannel = req.channelId
+        chatMessage = req.messageId
         chatSearchHit = null
         searchOpen = false; settingsOpen = false; insightsOpen = false; frontsOpen = false; layersFront = null
         tab = Tab.Chat
@@ -357,6 +372,21 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
         else if (searchOpen) searchOpen = false else if (insightsOpen) insightsOpen = false else if (layersFront != null) layersFront = null
         else if (frontsOpen) frontsOpen = false
         else if (settingsPath.contains('>')) settingsPath = settingsPath.substringBeforeLast('>') else settingsOpen = false
+    }
+    // the Handover composer (widget and lock screen): the Handover chat, composer focused, At next switch on
+    var handoverCompose by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(handoverRequest, status) {
+        val request = handoverRequest ?: return@LaunchedEffect
+        if (status == Status.Loading || status == Status.NoDevice || status == Status.SignedOut || status == Status.StorageError) return@LaunchedEffect
+        val chat = garden.vayne.chorus.data.Special.channel(model, garden.vayne.chorus.data.Special.HANDOVER)
+        if (chat == null || model.isPerson) android.widget.Toast.makeText(linkContext, "Handover isn't available here.", android.widget.Toast.LENGTH_SHORT).show()
+        else {
+            chatSpace = chat.spaceId; chatChannel = chat.id; chatMessage = null; chatSearchHit = null
+            searchOpen = false; settingsOpen = false; insightsOpen = false; frontsOpen = false; layersFront = null
+            handoverCompose = request
+            tab = Tab.Chat
+        }
+        onHandoverConsumed()
     }
     var handoverOpen by remember { mutableStateOf(false) }
     LaunchedEffect(switchRequest, status) {
@@ -495,8 +525,8 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                 when (shownTab) {
                     Tab.Home -> garden.vayne.chorus.ui.HomeScreen(chorus, model, garden.vayne.chorus.ui.HomeRoutes(
                         onSearch = { searchSection = "Messages"; searchOpen = true },
-                        onChat = { space, channel ->
-                            if (channel != null) { chatSpace = space; chatChannel = channel; chatMessage = null; chatSearchHit = null }
+                        onChat = { space, channel, message ->
+                            if (channel != null) { chatSpace = space; chatChannel = channel; chatMessage = message; chatSearchHit = null }
                             tab = Tab.Chat
                         },
                         onFriends = { route -> friendsRoute = route; tab = Tab.People },
@@ -526,6 +556,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                         active = shownTab == activeTab, onFocusedRoute = { chatFocused = it },
                         onOpenConsumed = { chatSpace = null; chatChannel = null; chatMessage = null },
                         requestedMessage = chatMessage,
+                        handoverCompose = handoverCompose, onHandoverCompose = { handoverCompose = null },
                         onOpenProfile = { journalOpenProfile = it; journalOpenPost = null; tab = Tab.Journal },
                         onFriends = { tab = Tab.People })
                     Tab.Journal -> Journal(chorus, model, journalReplyPost,

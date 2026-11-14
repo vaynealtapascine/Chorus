@@ -309,6 +309,7 @@ private fun KindBadge(item: InboxItem) {
         "poll_nudge" -> Triple(R.drawable.ic_poll, null, p.accent)
         "dm", "message", "member_dm" -> Triple(R.drawable.ic_message, null, p.accent)
         "switch", "own_switch" -> Triple(R.drawable.ic_switch_arrows, null, p.accent)
+        "handover" -> Triple(R.drawable.ic_handover, null, p.accent)
         "reaction" -> Triple(R.drawable.ic_heart, null, p.danger)
         "repost" -> Triple(R.drawable.ic_repost, null, p.ok)
         "quote" -> Triple(R.drawable.ic_format_quote, null, p.ok)

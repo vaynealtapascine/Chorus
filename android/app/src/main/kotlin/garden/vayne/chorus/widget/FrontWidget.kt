@@ -60,8 +60,10 @@ class FrontWidget : AppWidgetProvider() {
             for (id in ids) manager.updateAppWidget(id, views(ctx, model, manager.getAppWidgetOptions(id)))
         }
 
+        /** Switch opens the switcher; Handover opens the Handover chat's composer (D-132), an Activity intent so it asks to unlock first. */
         private fun open(ctx: Context, handover: Boolean): PendingIntent = PendingIntent.getActivity(ctx, if (handover) 2 else 1,
-            Intent(ctx, MainActivity::class.java).setAction(MainActivity.ACTION_SWITCH).putExtra(MainActivity.EXTRA_HANDOVER, handover)
+            if (handover) MainActivity.handoverIntent(ctx)
+            else Intent(ctx, MainActivity::class.java).setAction(MainActivity.ACTION_SWITCH)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_IMMUTABLE)
 
         internal fun views(ctx: Context, model: Model, options: Bundle?): RemoteViews {

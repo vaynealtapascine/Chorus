@@ -61,6 +61,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.Entry
+import garden.vayne.chorus.data.Handover
+import garden.vayne.chorus.data.Special
 import garden.vayne.chorus.data.ForeignAuthor
 import garden.vayne.chorus.data.Front
 import garden.vayne.chorus.data.FriendCard
@@ -99,7 +101,7 @@ import kotlinx.coroutines.launch
 internal class HomeRoutes(
     val onSearch: () -> Unit,
     /** A chat (space, channel), or the chat list when null. */
-    val onChat: (String?, String?) -> Unit,
+    val onChat: (String?, String?, String?) -> Unit,
     /** Friends, or a page in it (`friend:<account>`). */
     val onFriends: (List<String>?) -> Unit,
     val onHistory: () -> Unit,
@@ -116,7 +118,7 @@ internal class HomeRoutes(
  * Chorus Home (D-130, Figma F0.1–F0.6): who's fronting with Switch and Log a past one, Quick
  * switch, chats waiting, friends right now, Today and new posts from friends; a person gets a
  * composer row, friends, chats and posts, and a first day of Welcome and Try. Each reader chooses
- * and orders the sections (F0.3, `home.sections`). Handover (D-132) takes its place once built.
+ * and orders the sections (F0.3, `home.sections`). The handover card (D-132) leads the chats waiting.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -175,6 +177,14 @@ internal fun HomeScreen(chorus: Chorus, model: Model, routes: HomeRoutes) {
             catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) {}
         }
     }
+    // the newest unread handover (D-132): core's view for whoever acknowledges it, the primary fronter else our first member
+    val handoverChat = remember(model.spaces, model.channels) { if (person) null else Special.channel(model, Special.HANDOVER) }
+    val acknowledger = remember(model) { Handover.reader(model, accountId) }
+    val handoverView = rememberHandoverView(chorus, model, handoverChat?.id, acknowledger?.id)
+    val handoverCard = remember(handoverView, model.handoverMessages, model.members) {
+        Handover.card(handoverView, model.handoverMessages) { model.member(it)?.shownName.orEmpty() }
+    }
+    var reading by remember { mutableStateOf(false) }
     val chatRows = remember(model, accountId, directory, privateCards) { chatListRows(model, null, accountId, directory, emptyMap(), privateCards) }
     val waiting = HomeDashboard.waiting(chatRows, { it.unread }, { it.muted }, { it.archived }, { it.latest?.occurredAt ?: 0L })
     val friendCards = remember(friends, now) { HomeDashboard.friends(friends.rows, now) }
@@ -254,6 +264,21 @@ internal fun HomeScreen(chorus: Chorus, model: Model, routes: HomeRoutes) {
                     "fronting" -> item(key = "fronting") {
                         FrontingNowCard(model, scene, since, now, onFace = { placing = it }, onSwitch = { switcher = true }, onLog = { logging = true })
                     }
+                    "handover" -> handoverCard?.let { card -> item(key = "handover") {
+                        HandoverHomeCard(card, reading, onOpen = { routes.onChat(handoverChat?.spaceId, card.channelId, card.id) }, onRead = {
+                            val speaker = acknowledger ?: return@HandoverHomeCard
+                            reading = true
+                            actions.launch {
+                                try {
+                                    chorus.create("handover.ack", card.id, Handover.ackPayload(card.id, speaker.id),
+                                        scope = "space:${handoverChat?.spaceId}", memberId = speaker.id)
+                                    error = null
+                                } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                                catch (e: Exception) { error = e.message ?: "Couldn’t acknowledge the handover." }
+                                finally { reading = false }
+                            }
+                        })
+                    } }
                     "quick_switch" -> {
                         item(key = "quick_head") { HomeHeader("Quick switch", "Edit") { pins = true } }
                         item(key = "quick") {
@@ -261,11 +286,11 @@ internal fun HomeScreen(chorus: Chorus, model: Model, routes: HomeRoutes) {
                         }
                     }
                     "waiting" -> {
-                        item(key = "waiting_head") { HomeHeader("Waiting for you", "Chat".takeIf { waiting.isNotEmpty() }) { routes.onChat(null, null) } }
+                        item(key = "waiting_head") { HomeHeader("Waiting for you", "Chat".takeIf { waiting.isNotEmpty() }) { routes.onChat(null, null, null) } }
                         if (waiting.isEmpty()) item(key = "waiting_none") { HomeQuiet(R.drawable.ic_message, "Nothing waiting") }
                         for (row in waiting) item(key = "w:${row.channel.id}") {
                             val context = row.space.name.takeIf { row.space.kind == "shared" && it != row.title }
-                            Row(Modifier.fillMaxWidth().clickable(onClickLabel = "Open ${row.title}") { routes.onChat(row.space.id, row.channel.id) }
+                            Row(Modifier.fillMaxWidth().clickable(onClickLabel = "Open ${row.title}") { routes.onChat(row.space.id, row.channel.id, null) }
                                 .heightIn(min = 72.dp).padding(horizontal = 12.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 ChatRowBody(model, row, row.peer(model, reader?.id), false, row.title, context = context)

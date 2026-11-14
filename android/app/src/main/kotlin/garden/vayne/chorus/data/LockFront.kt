@@ -72,6 +72,7 @@ object LockFront {
         // an Activity intent, so Android asks to unlock before the switcher opens
         val switch = PendingIntent.getActivity(app, 1, Intent(app, MainActivity::class.java).setAction(MainActivity.ACTION_SWITCH)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_IMMUTABLE)
+        val handover = PendingIntent.getActivity(app, 2, MainActivity.handoverIntent(app), PendingIntent.FLAG_IMMUTABLE)
         nm.notify(ID, NotificationCompat.Builder(app, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_chorus)
             .setContentTitle(line)
@@ -81,6 +82,7 @@ object LockFront {
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setContentIntent(home)
             .addAction(0, "Switch", switch)
+            .addAction(0, "Handover", handover)
             .build())
     }
 }

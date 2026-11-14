@@ -45,6 +45,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.platform.LocalConfiguration
 import garden.vayne.chorus.data.ChatPresentation
+import androidx.compose.ui.focus.focusRequester
 import garden.vayne.chorus.data.Handover
 import garden.vayne.chorus.data.Special
 import garden.vayne.chorus.designsystem.R
@@ -191,6 +192,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     active: Boolean = true, onFocusedRoute: (Boolean) -> Unit = {}, onOpenConsumed: () -> Unit = {},
     /** A link to a message (D-109): open its chat at it. */
     requestedMessage: String? = null,
+    /** The Handover composer asked for (front widget, lock screen; D-132): At next switch goes on and the composer takes focus. */
+    handoverCompose: Long? = null, onHandoverCompose: () -> Unit = {},
     /** A face in a message opens its profile in the Journal (owner, 2026-11-06): our member's id, or
      * "<account> <member>" for another account's, whose server read decides what shows (D-101). */
     onOpenProfile: (String) -> Unit = {},
@@ -1621,7 +1624,15 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     }
                 }
             }
+            val composerFocus = remember { androidx.compose.ui.focus.FocusRequester() }
             if (handoverMode) {
+                LaunchedEffect(handoverCompose) {
+                    if (handoverCompose == null) return@LaunchedEffect
+                    handoverNext = true
+                    delay(150) // the composer is laid out by now
+                    runCatching { composerFocus.requestFocus() }
+                    onHandoverCompose()
+                }
                 if (checklistOpen) ChecklistEditor(checklist) { checklist = it }
                 HandoverBar(canAcknowledge = handover?.unread?.isNotEmpty() == true && author != null, items = checklist.count { it.isNotBlank() },
                     nextSwitch = handoverNext, checklistOpen = checklistOpen,
@@ -1657,6 +1668,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                         onChoose = { selectedAuthor = it; authorsOpen = false }, onDismiss = { authorsOpen = false })
                 }
                 BasicTextField(draft, { draft = it }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+                    .focusRequester(composerFocus)
                     .background(p.surface2, RoundedCornerShape(24.dp))
                     .then(if (aside) Modifier.dashedBorder(1.dp, p.accent, RoundedCornerShape(24.dp)) else Modifier)
                     .semantics { contentDescription = if (aside) "Aside" else "Message" },

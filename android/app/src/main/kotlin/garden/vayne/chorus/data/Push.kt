@@ -472,6 +472,9 @@ object Push {
                 .apply {
                     if (spec.channelId.isNotEmpty()) putExtra(MainActivity.EXTRA_OPEN_CHANNEL, spec.channelId)
                     spec.spaceId?.let { putExtra(MainActivity.EXTRA_OPEN_SPACE, it) }
+                    // a handover opens its chat scrolled to it (D-132)
+                    if (p.optString("kind") == "handover") p.optString("message_id").takeIf { it.isNotBlank() }
+                        ?.let { putExtra(MainActivity.EXTRA_OPEN_MESSAGE, it) }
                 }
             val open = PendingIntent.getActivity(
                 ctx, noteId, openIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,

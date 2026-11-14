@@ -10,12 +10,13 @@ import org.junit.Test
 class HomeDashboardTest {
     private fun stored(vararg s: Pair<String, Boolean>) = JSONArray(s.map { JSONObject().put("id", it.first).put("on", it.second) })
 
-    @Test fun sectionsDefaultInFigmaOrderAndHandoverWaitsForD132() {
+    @Test fun sectionsDefaultInFigmaOrderAndHandoverShows() {
         val system = HomeDashboard.parse(null, person = false)
         assertEquals(HomeDashboard.SYSTEM, system.map { it.id })
         assertTrue(system.all { it.on })
-        assertFalse("handover" in HomeDashboard.shown(system))
-        assertFalse(HomeDashboard.editable(system).any { it.id == "handover" })
+        // D-132 built it: the handover card shows and is editable like any section
+        assertEquals(HomeDashboard.SYSTEM, HomeDashboard.shown(system))
+        assertTrue(HomeDashboard.editable(system).any { it.id == "handover" })
         assertEquals(listOf("write", "friends", "waiting", "new_from_friends"), HomeDashboard.shown(HomeDashboard.parse(null, person = true)))
     }
 
@@ -25,7 +26,7 @@ class HomeDashboardTest {
         // quick_switch follows fronting, handover follows it, friends follows waiting, new_from_friends follows today
         assertEquals(listOf("today", "new_from_friends", "waiting", "friends", "fronting", "quick_switch", "handover"), sections.map { it.id })
         assertFalse(sections.first { it.id == "waiting" }.on)
-        assertEquals(listOf("today", "new_from_friends", "friends", "fronting", "quick_switch"), HomeDashboard.shown(sections))
+        assertEquals(listOf("today", "new_from_friends", "friends", "fronting", "quick_switch", "handover"), HomeDashboard.shown(sections))
         // a person's list never takes a system's sections
         assertEquals(HomeDashboard.PERSON, HomeDashboard.parse(raw, person = true).map { it.id })
     }

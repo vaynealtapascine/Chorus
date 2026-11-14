@@ -61,7 +61,7 @@ object NotifyCheck {
                 .put("title", account?.let { a -> a.text("display_name") ?: a.text("handle")?.let { "@$it" } } ?: "Chorus")
                 .put("text", i.optString("text")).put("time", i.optJSONObject("time") ?: JSONObject())
         }
-        "mention", "dm", "reply", "message", "member_dm" -> JSONObject().put("t", "message").put("id", i.optString("id"))
+        "mention", "dm", "reply", "message", "member_dm", "handover" -> JSONObject().put("t", "message").put("id", i.optString("id"))
             .put("kind", i.optString("kind"))
             .put("title", i.text("title") ?: "Chorus").put("text", i.optString("text"))
             .put("channel_id", i.optString("channel_id")).put("message_id", i.optString("message_id"))

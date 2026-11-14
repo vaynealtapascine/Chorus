@@ -18,6 +18,7 @@ object Rings {
         Kind("reply", "Replies", "replies", urgent = true, account = true),
         Kind("post", "New posts you asked for", Push.CHANNEL_POSTS, urgent = false, account = false),
         Kind("poll_nudge", "Poll nudges", "poll_nudges", urgent = false, account = true),
+        Kind("handover", "Handovers when the front changes", "handovers", urgent = true, account = true),
         Kind("own_switch", "Our own switches", "own_switches", urgent = false, account = true),
     )
 
@@ -27,6 +28,7 @@ object Rings {
             "mention" -> "mention"
             "dm", "member_dm" -> "dm"
             "reply" -> "reply"
+            "handover" -> "handover"
             else -> null
         }
         "switch" -> if (p.optString("account_id") == "own") "own_switch" else "switch"

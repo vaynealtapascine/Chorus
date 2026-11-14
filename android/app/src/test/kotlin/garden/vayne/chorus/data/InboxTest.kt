@@ -21,6 +21,19 @@ class InboxTest {
         {"id":"g1","kind":"message","title":"#general","text":"hello","delivered_at":80,"channel_id":"c"},
         {"id":"md","kind":"member_dm","title":"Amy","text":"psst","delivered_at":70,"channel_id":"c"}]""")
 
+    @Test fun aHandoverIsListedForOurSystemAndOpensTheChatAtIt() {
+        val rows = Inbox.fromNotifications(JSONArray("""[{"id":"h1","kind":"handover","title":"Handover from Amarynthe","text":"Checklist · 2 items",
+            "delivered_at":500,"channel_id":"ch","message_id":"hm","scope":"space:s","sender":{"name":"Amarynthe"}}]"""))
+        assertEquals(1, rows.size)
+        assertEquals("Handover from Amarynthe", rows[0].title)
+        assertEquals("Checklist · 2 items", rows[0].detail)
+        assertEquals("system", rows[0].category)
+        assertEquals("ch", rows[0].channelId)
+        assertEquals("hm", rows[0].messageId)
+        assertEquals(1, Inbox.visible(rows, "all", null).size)
+        assertTrue(Inbox.chips(false).any { it.first == "system" })
+    }
+
     @Test fun notificationsBecomeRowsInTheirChips() {
         val rows = Inbox.fromNotifications(notes)
         assertEquals(listOf("m1", "s1", "o1", "r1", "n1"), rows.map { it.id })

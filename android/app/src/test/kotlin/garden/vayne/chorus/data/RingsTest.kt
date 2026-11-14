@@ -12,6 +12,8 @@ class RingsTest {
         assertEquals("mention", Rings.keyOf(push("""{"t":"message","kind":"mention"}""")))
         assertEquals("dm", Rings.keyOf(push("""{"t":"message","kind":"member_dm"}""")))
         assertEquals("reply", Rings.keyOf(push("""{"t":"message","kind":"reply"}""")))
+        assertEquals("handover", Rings.keyOf(push("""{"t":"message","kind":"handover"}""")))
+        assertEquals("handovers", Rings.channelOf(push("""{"t":"message","kind":"handover"}""")))
         assertEquals("reply", Rings.keyOf(push("""{"t":"post","kind":"post_reply"}""")))
         assertEquals("post", Rings.keyOf(push("""{"t":"post"}""")))
         assertEquals("switch", Rings.keyOf(push("""{"t":"switch","account_id":"a1"}""")))

@@ -22,6 +22,13 @@ class NotifyCheckTest {
         assertEquals(false, dm.has("reply_as"))
 
         assertNull(NotifyCheck.asPush(JSONObject("""{"id":"n3","kind":"export_ready","delivered_at":11}""")))
+        // a handover (D-132) is a message ping that opens the Handover chat at it
+        val handover = NotifyCheck.asPush(JSONObject("""{"id":"h1","kind":"handover","title":"Handover from Amarynthe","text":"Checklist · 2 items",
+            "delivered_at":12,"channel_id":"ch","message_id":"hm","scope":"space:s"}"""))!!
+        assertEquals("message", handover.getString("t"))
+        assertEquals("handover", handover.getString("kind"))
+        assertEquals("hm", handover.getString("message_id"))
+        assertEquals("ch", handover.getString("channel_id"))
     }
 
     @Test fun nudgesOpenThePollTheyAreAbout() {

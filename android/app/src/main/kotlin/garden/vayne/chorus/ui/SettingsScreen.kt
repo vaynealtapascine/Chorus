@@ -220,7 +220,8 @@ private fun NotificationsPage(chorus: Chorus, model: Model, saver: PrefSaver) {
     }
     SectionLabel("This phone rings for")
     FormCard {
-        Rings.KINDS.filter { !(model.isPerson && it.key == "own_switch") }.forEachIndexed { i, k ->
+        // a person has no fronts to switch and no Handover (D-093)
+        Rings.KINDS.filter { !(model.isPerson && (it.key == "own_switch" || it.key == "handover")) }.forEachIndexed { i, k ->
             if (i > 0) FormDivider()
             val allowed = !k.account || prefs.chatEnabled(k.key)
             ToggleRow(k.label, rings[k.key] == true && allowed, enabled = !saver.busy) { on ->

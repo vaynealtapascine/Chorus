@@ -24,9 +24,6 @@ object HomeDashboard {
 
     val SYSTEM = listOf("fronting", "quick_switch", "handover", "waiting", "friends", "today", "new_from_friends")
     val PERSON = listOf("write", "friends", "waiting", "new_from_friends")
-    /** Sections waiting on a feature: Handover is D-132. They keep their place but never show. */
-    val UNBUILT = setOf("handover")
-
     fun key(reader: String?): String = if (reader.isNullOrBlank()) PREF else READER + reader
 
     /** The stored order and switches, with unknown ids dropped and missing ones put back where the
@@ -53,11 +50,11 @@ object HomeDashboard {
     fun forReader(byReader: Map<String, Any?>, accountWide: Any?, reader: String?, person: Boolean): List<HomeSection> =
         parse(reader?.let { byReader[it] } ?: accountWide, person)
 
-    /** What the drawer lists: everything built. */
-    fun editable(sections: List<HomeSection>): List<HomeSection> = sections.filter { it.id !in UNBUILT }
+    /** What the drawer lists: every section. */
+    fun editable(sections: List<HomeSection>): List<HomeSection> = sections
 
     /** What Home draws, in order. */
-    fun shown(sections: List<HomeSection>): List<String> = sections.filter { it.on && it.id !in UNBUILT }.map { it.id }
+    fun shown(sections: List<HomeSection>): List<String> = sections.filter { it.on }.map { it.id }
 
     fun value(sections: List<HomeSection>): JSONArray =
         JSONArray(sections.map { JSONObject().put("id", it.id).put("on", it.on) })

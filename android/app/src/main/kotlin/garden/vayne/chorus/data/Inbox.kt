@@ -113,6 +113,9 @@ object Inbox {
                         accountId = account?.text("id"))
                 }
                 "own_switch" -> InboxItem(id, kind, "system", "own_switches", at, null, title, detail = text)
+                // a handover reaching whoever fronts next (D-132): opens the Handover chat at it
+                "handover" -> InboxItem(id, kind, "system", null, at, who, title, detail = text, color = sender?.text("color"),
+                    avatarBlob = sender?.text("avatar_blob"), channelId = n.text("channel_id"), messageId = n.text("message_id"))
                 "alert_request", "alert_accepted" -> InboxItem(id, kind, "friends", null, at, null, title, detail = text,
                     memberId = n.text("member_id"), accountId = n.text("account_id"))
                 "export_ready" -> InboxItem(id, kind, "app", null, at, null, title, detail = text)
