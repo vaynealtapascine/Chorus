@@ -1,4 +1,4 @@
-![AI Disclosure: Repo code is AI-written, human-designed. Makes use of anthropic/claude-opus-5.5, openai/gpt-6.1-sol, anthropic/claude-sonnet-5.5, openai/gpt-6-sol, openai/gpt-6-astra, google/gemini-4-argon, google/gemini-4-hydrogen and deepseek/deepseek-v4.1-flash-1017](assets/ai-transparency-disclosure.png)
+![AI Disclosure: Repo code is AI-written, human-designed. Makes use of anthropic/claude-opus-5.5, openai/gpt-6.1-sol, anthropic/claude-sonnet-5.5, anthropic/claude-fable-5.2, openai/gpt-6-sol, openai/gpt-6-astra, google/gemini-4-argon, google/gemini-4-hydrogen and deepseek/deepseek-v4.1-flash-1017](assets/ai-transparency-disclosure.png)
 
 # Chorus
 
